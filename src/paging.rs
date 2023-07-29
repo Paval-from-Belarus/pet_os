@@ -45,7 +45,7 @@ pub struct SystemAllocator {}
 impl Page {
     pub fn next_entry(&self) -> Option<&mut Page> {
         let entry;
-        if self.next != ptr::null_mut() {
+        if !self.next.is_null() {
             unsafe {
                 entry = Some(&mut *self.next);
             }
@@ -56,7 +56,7 @@ impl Page {
     }
     pub fn prev_entry(&self) -> Option<&mut Page> {
         let entry;
-        if self.prev != ptr::null_mut() {
+        if !self.prev.is_null() {
             unsafe {
                 entry = Some(&mut *self.prev);
             }
@@ -166,7 +166,12 @@ impl Allocator for KernelAllocator {
         todo!()
     }
 }
+pub struct Pages {
 
+}
+impl Pages {
+
+}
 impl Page {
     pub const SIZE: usize = 4096;
     pub const fn upper_bound(byte_size: usize) -> usize {
