@@ -10,12 +10,15 @@ extern "C" {
 }
 
 pub struct PageMarker {
-    directory: Option<&'static mut [DirEntry]>,
-    allocator: Option<&'static mut KernelAllocator>,
+    dir_entries: &'static mut [DirEntry; ENTRIES_PER_DIRECTORY],
 }
 
 const ENTRIES_PER_DIRECTORY: usize = 1024;
 const ENTRIES_PER_TABLE: usize = 1024;
+
+struct PageDirectory {
+    entries: &'static mut [DirEntry; ENTRIES_PER_DIRECTORY],
+}
 
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
@@ -119,8 +122,6 @@ impl TableEntry {
     }
 }
 
-pub static mut PAGE_MANAGER: PageMarker = PageMarker::new();
-
 macro_rules! table_index {
     ($argument:expr) => {
         ($argument >> 22) & 0x3FF
@@ -139,46 +140,34 @@ pub enum PageAllocationError {
 }
 
 impl PageMarker {
-    const fn new() -> PageMarker {
-        PageMarker { directory: None, allocator: None }
+    pub fn wrap(dir_entries: &'static mut [DirEntry; ENTRIES_PER_DIRECTORY]) -> PageMarker {
+        PageMarker { dir_entries }
     }
-    pub fn init(&mut self, dir_entries: &'static mut [DirEntry], allocator: &'static mut KernelAllocator) {
-        for mut dir_entry in dir_entries.iter_mut() {
+    pub fn reset(&mut self) {
+        for dir_entry in self.dir_entries.iter_mut() {
             dir_entry.set(ptr::null_mut(), DirEntryFlag::EMPTY);
         }
-        self.directory = Some(dir_entries);
-        self.allocator = Some(allocator);
     }
     // pub fn mark_dir_entry(&mut self, )
     //this function allocate required space for pages
     //physical address automatically align to page (for potential performance increase)
     //The only one case when method return None ― when no more
     pub fn mark_table_entry(&mut self, physical_address: PhysicalAddress, virtual_address: VirtualAddress, page_flags: TableEntryFlag) -> Result<&mut TableEntry, PageAllocationError> {
-        if self.directory.is_none() || self.allocator.is_none() {
-            return Err(ManagerInconsistency);
-        }
-        let mut result = Err(ManagerInconsistency);
         let physical_address: PhysicalAddress = Page::upper_bound(physical_address);
         let dir_entry_index = table_index!(virtual_address);
         let table_entry_index = entry_index!(virtual_address);
-        let dir_entry = self.get_dir_entry(dir_entry_index).unwrap();
-        if dir_entry.flags().contains(DirEntryFlag::PRESENT) {
+        let dir_entry = unsafe {
+            self.dir_entries.get_unchecked_mut(dir_entry_index)
+        };
+        let result = if dir_entry.flags().contains(DirEntryFlag::PRESENT) {
             let table_entry = unsafe {
                 core::slice::from_raw_parts_mut(dir_entry.table_offset(), ENTRIES_PER_DIRECTORY).get_unchecked_mut(table_entry_index)
             };
             table_entry.set(physical_address, page_flags);
-            result = Ok(table_entry);
+            Ok(table_entry)
         } else {
-            return Err(EmptyDirEntry);
-        }
+            Err(EmptyDirEntry)
+        };
         return result;
-    }
-    fn get_dir_entry(&self, table_index: usize) -> Option<&mut DirEntry> {
-        return self.directory.map(|dir_entries| unsafe {
-            dir_entries.get_unchecked_mut(table_index)
-        });
-    }
-    unsafe fn alloc_page(allocator: &mut KernelAllocator) -> Option<VirtualAddress> {
-        return allocator.alloc(Any, 1).map(|byte_offset| byte_offset as usize); //automatically panic if not space
     }
 }

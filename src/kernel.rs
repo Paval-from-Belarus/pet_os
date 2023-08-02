@@ -23,7 +23,7 @@ use panic_halt as _;
 use alloca::{with_alloca};
 use paging::{MemRangeRec, CaptureMemRec};
 use paging::{CaptureAllocator, KernelAllocator};
-use crate::memory::{DirEntry, PageMarker};
+use crate::memory::{DirEntry, PageMarker, TableEntry};
 use crate::paging::{Allocator, AllocOffset, Page};
 
 #[repr(packed)]
@@ -41,6 +41,10 @@ pub unsafe extern "C" fn main(records_cnt: usize, records: *mut MemRangeRec) {
     let kernel_offset = 0x10;
     let ranges = unsafe {
         core::slice::from_raw_parts_mut(records, records_cnt)
+    };
+    let dir_offset = records as *mut DirEntry;
+    let dir_entries: &mut [DirEntry; 1024] = {
+        core::slice::from_raw_parts_mut(dir_offset, 1024).try_into().unwrap()
     };
     let allocator = with_alloca(records_cnt * core::mem::size_of::<CaptureMemRec>(), |stack_buffer| {
         let mut stack_buffer = stack_buffer.as_mut_ptr() as *mut CaptureMemRec;
