@@ -23,16 +23,19 @@ use core::arch::asm;
 use core::ptr;
 
 use panic_halt as _;
-use memory::{PagingProperties, KernelAllocator};
+use memory::{PagingProperties, PageAllocator, UtilsAllocator};
 
 
-fn test_main() {
-    
-}
+static ALLOCATOR: UtilsAllocator = UtilsAllocator::empty();
 #[cfg(not(test))]
 #[no_mangle]
-pub unsafe extern "C" fn main(properties: PagingProperties) {
-    let allocator = KernelAllocator::new(properties.allocator(), properties.page_marker());
+pub unsafe extern "C" fn main(properties: *const PagingProperties) {
+    let allocator: PageAllocator = unsafe {
+        let allocator = (*properties).allocator();
+        let marker = (*properties).page_marker();
+        PageAllocator::new(allocator, marker)
+    };
+
     // let ranges = unsafe {
     //     core::slice::from_raw_parts_mut(records, records_cnt)
     // };
