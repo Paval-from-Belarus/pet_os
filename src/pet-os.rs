@@ -5,7 +5,7 @@
 #![feature(core_intrinsics)]
 
 mod memory;
-
+mod file_system;
 #[cfg(not(test))]
 #[lang = "eh_personality"]
 pub extern "C" fn eh_personality() {}
@@ -15,6 +15,7 @@ extern crate static_assertions;
 extern crate bitfield;
 extern crate bitflags;
 extern crate spin;
+extern crate alloc;
 // extern crate alloc;
 
 

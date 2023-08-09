@@ -34,7 +34,8 @@ pub trait ToPhysicalAddress {
 pub trait ToVirtualAddress {
     fn as_virtual(&self) -> VirtualAddress;
 }
-
+/// The struct is simply used to transfer physical layout for page allcoator
+#[derive(Copy, Clone)]
 pub struct PageMarker {
     dir_entries: *mut DirEntry,
 }
