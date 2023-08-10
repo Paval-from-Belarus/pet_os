@@ -38,6 +38,7 @@ pub struct PageRec {
     flags: PageRecFlag,
     offset: PhysicalAddress, //it's easy to use in calculation
 }
+
 //todo! carefully check in mutlti threaded environment
 impl Page {
     pub const SIZE: usize = 4096;
@@ -48,45 +49,42 @@ impl Page {
         return byte_size / Page::SIZE;
     }
 }
-
 impl PageRec {
-    pub fn set_next(&mut self, next: Option<PageRec>) {
-        if next.is_none() {
-            self.next = ptr::null_mut();
-        } else {
-            self.next = next.unwrap() as *mut PageRec;
-        }
+    pub fn set_next(&mut self, next: *mut PageRec) {
+        self.next = next;
     }
-    pub fn set_prev(&mut self, prev: Option<&'static mut PageRec>) {
-        if prev.is_none() {
-            self.prev = ptr::null_mut();
-        } else {
-            self.next = prev.unwrap() as *mut PageRec;
-        }
+    pub fn set_prev(&mut self, prev: *mut PageRec) {
+        self.prev = prev;
     }
-    pub fn next_entry(&self) -> Option<&'static mut PageRec> {
-        let entry;
-        if !self.next.is_null() {
-            unsafe {
-                entry = Some(&mut *self.next);
+    pub fn next_ref(&self) -> Option<&'static mut PageRec> {
+        let result;
+        unsafe {
+            if self.next.is_null() {
+               result = None;
+            } else {
+                result = Some(&mut *self.next);
             }
-        } else {
-            entry = None;
         }
-        return entry;
+        return result;
     }
-    pub fn prev_entry(&self) -> Option<&'static mut PageRec> {
-        let entry;
-        if !self.prev.is_null() {
-            unsafe {
-                entry = Some(&mut *self.prev);
+    pub fn prev_ref(&self) -> Option<&'static mut PageRec> {
+        let result;
+        unsafe {
+            if self.prev.is_null() {
+                result = None;
+            } else {
+                result = Some(&mut *self.prev);
             }
-        } else {
-            entry = None;
         }
-        return entry;
+        return result;
     }
-    pub fn copy(&self) -> PageRec {
-        return *self;
+    pub fn next_ptr(&self) -> *mut PageRec {
+        self.next
+    }
+    pub fn prev_ptr(&self) -> *mut PageRec {
+        self.prev
+    } 
+    pub fn read_only(page: &mut PageRec) -> &PageRec {
+        return page as &PageRec;
     }
 }

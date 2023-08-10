@@ -1,13 +1,10 @@
-use alloc::vec;
+
 use crate::memory::{PageRec, PhysicalAddress, VirtualAddress, Page, PageRecFlag, MemRangeFlag, ToPhysicalAddress};
 use crate::memory::paging::{CaptureAllocator, CaptureMemRec, PageMarker, PageMarkerError};
 use crate::memory::paging;
 use core::{mem, ptr};
-use core::cmp::Ordering;
 use crate::memory::atomics::AtomicCell;
-
-use crate::memory::allocators::MemoryMapper;
-use crate::memory::allocators::mapper_list::{PageList, ZoneType};
+use crate::memory::allocators::mapper_list::{PageList};
 use crate::memory::allocators::page::AllocationError::OutOfMemory;
 
 ///It's a responsibility of caller class to maintain synchronized caller sequence
@@ -53,30 +50,30 @@ impl PageAllocator {
         marker.mark_range(heap_offset, next_entry_offset, list_mem_size, list_access_flags).expect("Allocator initialization failed");
         let heap_offset = heap_offset + list_mem_size;
         let mut last_entry = ptr::null_mut();
-        for pivot in allocator.as_pivots().iter() {
-            let mut rest_size = pivot.get_free_pages_cnt() * Page::SIZE;
-            let mut physical_offset = pivot.get_memory_offset();
-            while rest_size >= Page::SIZE {
-                let info_rec: PageRec = PageRec {
-                    prev: last_entry,
-                    next: ptr::null_mut(),
-                    offset: physical_offset,
-                    flags: PageRecFlag::PRESENT,
-                };
-                unsafe {
-                    //todo! use heap_offset to convert to reference
-                    let next_entry = PageAllocator::store_entry(next_entry_offset, info_rec);
-                    if !last_entry.is_null() {
-                        (&mut *last_entry).next = next_entry;
-                    }
-                    last_entry = next_entry;
-                }
-                next_entry_offset += mem::size_of::<PageRec>();
-                rest_size -= mem::size_of::<PageRec>();
-                physical_offset += Page::SIZE;
-            }
-        }
-        return PageAllocator { memory_list: last_entry, marker: AtomicCell::new(marker) };
+        // for pivot in allocator.as_pivots().iter() {
+        //     let mut rest_size = pivot.get_free_pages_cnt() * Page::SIZE;
+        //     let mut physical_offset = pivot.get_memory_offset();
+        //     while rest_size >= Page::SIZE {
+        //         let info_rec: PageRec = PageRec {
+        //             prev: last_entry,
+        //             next: ptr::null_mut(),
+        //             offset: physical_offset,
+        //             flags: PageRecFlag::PRESENT,
+        //         };
+        //         unsafe {
+        //             //todo! use heap_offset to convert to reference
+        //             let next_entry = PageAllocator::store_entry(next_entry_offset, info_rec);
+        //             if !last_entry.is_null() {
+        //                 (&mut *last_entry).next = next_entry;
+        //             }
+        //             last_entry = next_entry;
+        //         }
+        //         next_entry_offset += mem::size_of::<PageRec>();
+        //         rest_size -= mem::size_of::<PageRec>();
+        //         physical_offset += Page::SIZE;
+        //     }
+        // }
+        return PageAllocator { memory_list: last_entry, marker: AtomicCell::wrap(marker)};
     }
     unsafe fn store_entry(dest: PhysicalAddress, info_rec: PageRec) -> *mut PageRec {
         let entry_offset = dest as *mut PageRec;
@@ -102,11 +99,12 @@ impl PageAllocator {
             let pages = self.capture_pages(page_cnt);
             if pages.size() == page_cnt {
                 let mut virtual_offset = info_rec.heap_offset;
-                pages.mut_iter().for_each(|page_rec| {
+                pages.iter().for_each(|page_rec| {
                     marker.mark_range(virtual_offset, page_rec.offset, Page::SIZE, info_rec.flags).unwrap();//todo! check errors
                     virtual_offset += Page::SIZE;
                 });
                 info_rec.heap_pages.add_all(pages);
+                info_rec.heap_offset = virtual_offset;
                 result = Ok(());
             } else {
                 result = Err(OutOfMemory);
@@ -118,10 +116,13 @@ impl PageAllocator {
             }
             let shrunk_space = -expanded_space;
             let page_cnt = Page::lower_bound(shrunk_space as usize);
-            // let pages:PageList = info_rec.heap_pages.mut_iter().rev()
-            //     .take(page_cnt)
-            // vec![1, 2].drain()
-            // let vec = [1, 2].iter()
+            let heap_pages = &mut info_rec.heap_pages;
+            let pages = heap_pages.sub_list(heap_pages.size() - page_cnt, heap_pages.size());
+            let mut virtual_offset = info_rec.heap_offset;
+            for page_rec in pages.iter() {
+
+            }
+            self.release_pages(pages);
 
             //do erase pages
         }

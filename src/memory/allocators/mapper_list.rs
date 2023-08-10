@@ -1,6 +1,5 @@
-use core::ops::RangeBounds;
+use core::ops::Deref;
 use core::ptr;
-use core::slice::Iter;
 use crate::memory::{Page, PageRec};
 
 pub enum ZoneType {
@@ -17,22 +16,21 @@ pub struct MemoryMapper {
 ///The sequence of free pages
 ///Simply, it's a header of pages
 pub struct PageList {
-
-    header: Option<PageRec>,
-    tail: Option<PageRec>,
+    head: *mut PageRec,
+    tail: *mut PageRec,
     items_cnt: usize,
 }
 
-pub struct PageIterator {
+pub struct Iter {
     front_pivot: Option<&'static PageRec>,
     back_pivot: Option<&'static PageRec>,
 }
 
 impl IntoIterator for PageList {
     type Item = &'static PageRec;
-    type IntoIter = PageIterator;
+    type IntoIter = Iter;
     fn into_iter(self) -> Self::IntoIter {
-        self.mut_iter()
+        self.iter()
     }
 }
 
@@ -45,60 +43,69 @@ impl IntoIterator for PageList {
 //     }
 // }
 
-impl Iterator for PageIterator {
+impl Iterator for Iter {
     type Item = &'static PageRec;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.front_pivot;
-        let option = next.and_then(|rec| rec.next_entry());
+        let option = next.and_then(|rec| rec.next_ref());
         self.front_pivot = option.map(|rec| rec as &PageRec);
         return next;
     }
 }
 
-impl DoubleEndedIterator for PageIterator {
+impl DoubleEndedIterator for Iter {
     fn next_back(&mut self) -> Option<Self::Item> {
         let prev = self.back_pivot;
-        let option = prev.and_then(|rec| rec.prev_entry());
-        self.back_pivot = option.map(|rec| rec as &PageRec);
+        let option = prev.and_then(|rec| rec.prev_ref());
+        self.back_pivot = option.map(PageRec::read_only);
         return prev;
     }
 }
 
 impl PageList {
     pub fn empty() -> PageList {
-        PageList { header: None, tail: None, items_cnt: 0 }
+        PageList { head: ptr::null_mut(), tail: ptr::null_mut(), items_cnt: 0 }
     }
-    pub fn new(header: PageRec, tail: Option<PageRec>) -> PageList {
+    pub fn new(header: &'static mut PageRec, tail: Option<&'static mut PageRec>) -> PageList {
         let mut items_cnt: usize = 1;
+        let header_ptr: *mut PageRec = header;
+        let tail_ptr: *mut PageRec;
         if tail.is_some() {
+            tail_ptr = tail.unwrap();
             items_cnt += 1;
+        } else {
+            tail_ptr = header_ptr;
         }
-        let tail = tail.unwrap_or(header);
-        PageList { header: Some(header), tail: Some(tail), items_cnt }
+        PageList { head: header_ptr, tail: tail_ptr, items_cnt }
     }
-    pub fn push_back(&mut self, page: PageRec) {
-        PageList::clear_pushed(&mut page);
-        if !self.is_empty() {
-            let tail: PageRec = self.tail.unwrap();
-            tail.set_next(Some(&mut page));
-            page.set_prev(Some(&mut tail));
-            self.tail = Some(page);
+    pub fn first(&self) -> Option<&'static PageRec> {
+        return self.first_mut().map(PageRec::read_only);
+    }
+    pub fn last(&self) -> Option<&'static PageRec> {
+        return self.last_mut().map(PageRec::read_only);
+    }
+
+    pub fn push_back(&mut self, page: &'static mut PageRec) {
+        PageList::clear_links(page);
+        if let Some(tail) = self.last_mut() {
+            tail.set_next(page);
+            page.set_prev(tail);
+            self.tail = page;
+            self.items_cnt += 1;
         } else {
             self.init_empty_list(page);
         }
-        self.items_cnt += 1;
     }
-    pub fn push_front(&mut self, page: PageRec) {
-        PageList::clear_pushed(&mut page);
-        if !self.is_empty() {
-            let header: PageRec = self.header.unwrap();
-            header.set_prev(Some(&mut page));
-            page.set_next(Some(&mut header));
-            self.header = Some(page);
+    pub fn push_front(&mut self, page: &'static mut PageRec) {
+        PageList::clear_links(page);
+        if let Some(head) = self.first_mut() {
+            head.set_prev(page);
+            page.set_next(head);
+            self.head = page;
+            self.items_cnt += 1;
         } else {
             self.init_empty_list(page);
         }
-        self.items_cnt += 1;
     }
     pub fn size(&self) -> usize {
         self.items_cnt
@@ -112,38 +119,74 @@ impl PageList {
         if from_index >= self.size() || self.is_empty() {
             return PageList::empty();
         }
-        let to_index= core::cmp::min(to_index, self.size());
+        let to_index = core::cmp::min(to_index, self.size());
         let mut list = PageList::empty();
-        let rest_tail = self.mut_iter().skip(from_index).take(1);
-        for page_rec in rest_tail.next().into_iter() {
-            page_rec.
+        for page_rec in self.iter().skip(from_index).take(to_index) {
+            list.push_back(self.pull(page_rec));
         }
-        for page_rec in rest_tail.next().into_iter()
+        // for page_rec in rest_tail.next().into_iter()
         return PageList::empty();
     }
-    pub fn mut_iter(&self) -> PageIterator {
-        let front_pivot = self.header.map(|header| &header);
-        let back_pivot = self.tail.map(|tail| &tail);
-        PageIterator { front_pivot, back_pivot }
+    pub fn iter(&self) -> Iter {
+        let front_pivot = self.first();
+        let back_pivot = self.last();
+        Iter { front_pivot, back_pivot }
     }
-    fn pull(&mut self, page: &PageRec)  { //-> PageRec {
+    fn pull(&mut self, page: &PageRec) -> &'static mut PageRec {
         //self.lock();
-        let prev = page.prev_entry();
-        let next = page.next_entry();
-        // if prev.is_some() {
-        //     prev.unwrap().set_next(next);
-        // } else {
-        //     self.header = next.and_then()
-        // }
-        //
+        if let Some(prev) = page.prev_ref() {
+            prev.set_next(page.next_ptr());
+            if let Some(next) = page.next_ref() {
+                next.set_prev(page.prev_ptr());
+            }
+        } else {
+            self.head = page.next_ptr(); //we have already removed header
+        }
+        if let Some(next) = page.next_ref() {
+            next.set_prev(page.prev_ptr());
+            if let Some(prev) = page.prev_ref() {
+                prev.set_next(page.next_ptr());
+            }
+        } else {
+            self.tail = page.prev_ptr();
+        }
+        self.items_cnt = core::cmp::max(0, self.items_cnt - 1);
+        let page = ptr::from_ref(page) as *mut PageRec;
+        return unsafe {
+            &mut *page
+        };
     }
-    fn clear_pushed(page: &mut PageRec) {
-        page.set_prev(None);
-        page.set_next(None);
+    fn init_empty_list(&mut self, page: &'static mut PageRec) {
+        let pointer: *mut PageRec = page;
+        self.head = pointer;
+        self.tail = pointer;
+        self.items_cnt = 1;
     }
-    fn init_empty_list(&mut self, page: PageRec) {
-        self.header = Some(page.copy());
-        self.tail = Some(page);
+    fn first_mut(&self) -> Option<&'static mut PageRec> {
+        let result: Option<&mut PageRec>;
+        if !self.is_empty() {
+            unsafe {
+                result = Some(&mut *self.head);
+            }
+        } else {
+            result = None;
+        }
+        return result;
+    }
+    fn last_mut(&self) -> Option<&'static mut PageRec> {
+        let result: Option<&mut PageRec>;
+        if !self.is_empty() {
+            unsafe {
+                result = Some(&mut *self.tail);
+            }
+        } else {
+            result = None;
+        }
+        return result;
+    }
+    fn clear_links(page: &mut PageRec) {
+        page.set_prev(ptr::null_mut());
+        page.set_next(ptr::null_mut());
     }
 }
 
