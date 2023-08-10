@@ -3,6 +3,7 @@
 #![feature(slice_ptr_get)]
 #![feature(let_chains)]
 #![feature(core_intrinsics)]
+#![feature(ptr_from_ref)]
 
 mod memory;
 mod file_system;
@@ -15,9 +16,7 @@ extern crate static_assertions;
 extern crate bitfield;
 extern crate bitflags;
 extern crate spin;
-extern crate alloc;
 // extern crate alloc;
-
 
 
 use core::arch::asm;
@@ -25,7 +24,6 @@ use core::ptr;
 
 use panic_halt as _;
 use memory::{PagingProperties, PageAllocator, UtilsAllocator};
-
 
 static ALLOCATOR: UtilsAllocator = UtilsAllocator::empty();
 #[cfg(not(test))]

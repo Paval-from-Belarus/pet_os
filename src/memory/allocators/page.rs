@@ -1,18 +1,24 @@
 use alloc::vec;
-use alloc::vec::Vec;
 use crate::memory::{PageRec, PhysicalAddress, VirtualAddress, Page, PageRecFlag, MemRangeFlag, ToPhysicalAddress};
 use crate::memory::paging::{CaptureAllocator, CaptureMemRec, PageMarker, PageMarkerError};
 use crate::memory::paging;
 use core::{mem, ptr};
+use core::cmp::Ordering;
+use crate::memory::atomics::AtomicCell;
 
 use crate::memory::allocators::MemoryMapper;
-use crate::memory::allocators::mapper_list::{PageLongSequence, PageSequence, ZoneType};
+use crate::memory::allocators::mapper_list::{PageList, ZoneType};
 use crate::memory::allocators::page::AllocationError::OutOfMemory;
 
+///It's a responsibility of caller class to maintain synchronized caller sequence
+///It's really recommended to use SystemCallQueue to control the order of invocation
+///All methods are thread-safe
 pub struct PageAllocator {
     //todo: replace with custom collection
     memory_list: *mut PageRec,
-    marker: PageMarker,
+    marker: AtomicCell<PageMarker>,
+    //all atomic operations should be atomic in system scope
+    //it means that no thread switching will be enabled while atomic operations are not finished
 }
 
 /// What is a PageLayout table? PageLayout table is solid array (table) of PageRec in memory
@@ -22,10 +28,13 @@ pub struct HeapLayoutsRec {
     ///<code> heap_offset % Page::SIZE </code> <br>
     ///index of last touched page in PageLayout Table
     heap_offset: VirtualAddress,
+    //I believe that heap_offset should be aligned to Page::SIZE. Practically, space will be access
     //offset of stack memory -> used for erasing stack memory
     stack_offset: VirtualAddress,
     last_page_index: usize,
-
+    heap_pages: PageList,
+    stack_pages: PageList,
+    flags: MemRangeFlag, //Write | NoPrivilege
 }
 
 pub enum AllocationError {
@@ -67,38 +76,53 @@ impl PageAllocator {
                 physical_offset += Page::SIZE;
             }
         }
-        return PageAllocator { memory_list: last_entry, marker };
+        return PageAllocator { memory_list: last_entry, marker: AtomicCell::new(marker) };
     }
     unsafe fn store_entry(dest: PhysicalAddress, info_rec: PageRec) -> *mut PageRec {
         let entry_offset = dest as *mut PageRec;
         ptr::write(entry_offset, info_rec);
         return entry_offset;
     }
+    //current version of kernel disallow to manage page caching policies
     //similar to UNIX (Linux) brk system call
-    pub fn heap_alloc(&mut self, infoRec: &mut HeapLayoutsRec, offset: VirtualAddress) -> Result<(), AllocationError> {
-        let required_space = offset - infoRec.heap_offset;
-        if required_space == 0 {
-            return Ok(()); //dummy case ― nothing to do
+    pub fn heap_alloc(&mut self, info_rec: &mut HeapLayoutsRec, request_offset: VirtualAddress) -> Result<(), AllocationError> {
+        let mut marker = self.marker.get(); //todo: change marker access behaviour (probably, by passing marker as parameter)
+        let expanded_space = (request_offset - info_rec.heap_offset) as isize;
+        if expanded_space == 0 {
+            return Ok(()); //dummy system call -> no space required
         }
-        if offset > 0 {
-            if (required_space % Page::SIZE) <= Page::SIZE {
-                infoRec.heap_offset = offset; //nothing more to do -> because all is already done
-                return Ok(());
+        let result: Result<(), AllocationError>;
+        if request_offset > 0 {
+            let page_cnt = Page::upper_bound(expanded_space as usize); //head_offset stored in infoRec is already captured
+            let pages = self.capture_pages(page_cnt);
+            if pages.size() != page_cnt {
+                self.release_pages(pages);
+                //try to swap memory pages to disk
             }
-            let page_cnt = Page::upper_bound(required_space); //head_offset stored in infoRec is already captured
             let pages = self.capture_pages(page_cnt);
             if pages.size() == page_cnt {
-                let mut virtual_offset: VirtualAddress = Page::upper_bound(infoRec.heap_offset); //previous page was already allocated -> start with the following
-                for page_rec in pages.into_iter() {
-                    self.marker.mark_range(virtual_offset, page_rec.offset, Page::SIZE, MemRangeFlag::WRITABLE).unwrap();//todo! check errors
+                let mut virtual_offset = info_rec.heap_offset;
+                pages.mut_iter().for_each(|page_rec| {
+                    marker.mark_range(virtual_offset, page_rec.offset, Page::SIZE, info_rec.flags).unwrap();//todo! check errors
                     virtual_offset += Page::SIZE;
-                }
-                pages.into_iter().for_each(|page_rec| {
-                })
+                });
+                info_rec.heap_pages.add_all(pages);
+                result = Ok(());
             } else {
-                return Err(OutOfMemory);
+                result = Err(OutOfMemory);
             }
         } else {
+            //possible, that it's not erasing. But even soo, no page should be erased
+            if (info_rec.heap_offset % request_offset) < Page::SIZE {
+                return Ok(());
+            }
+            let shrunk_space = -expanded_space;
+            let page_cnt = Page::lower_bound(shrunk_space as usize);
+            // let pages:PageList = info_rec.heap_pages.mut_iter().rev()
+            //     .take(page_cnt)
+            // vec![1, 2].drain()
+            // let vec = [1, 2].iter()
+
             //do erase pages
         }
         Ok(())
@@ -110,9 +134,10 @@ impl PageAllocator {
         Ok(())
     }
     //this function is used to captured required for allocation list of pages
-    fn capture_pages(&mut self, page_cnt: usize) -> PageSequence {
-        PageSequence {}
+    fn capture_pages(&mut self, page_cnt: usize) -> PageList {
+        PageList::empty()
     }
+    fn release_pages(&mut self, pages: PageList) {}
     fn get_page_rec_by_index(&mut self, index: usize) -> Option<PageRec> {
         None
     }

@@ -1,21 +1,27 @@
+use core::ptr;
 use bitflags::bitflags;
+use spin::{Barrier, MutexGuard, Spin};
 
 mod paging;
 mod allocators;
+mod atomics;
 
 pub use allocators::{UtilsAllocator, PageAllocator};
 pub use paging::{PagingProperties, ToPhysicalAddress, ToVirtualAddress};
 
+pub use atomics::AtomicCell;
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
 
 pub struct Page; //something info about range???
 bitflags! {
+    #[derive(Clone)]
     pub struct PageRecFlag: usize {
         const PRESENT = 0b10;
     }
 }
 bitflags! {
+    #[derive(Clone, Copy)]
     pub struct MemRangeFlag: usize { //flags that used to mark specific memory range
         const ACCESSED = 0b100_000;
         const CACHE_DISABLED = 0b10_000;
@@ -44,7 +50,21 @@ impl Page {
 }
 
 impl PageRec {
-    pub fn next_entry(&self) -> Option<&mut PageRec> {
+    pub fn set_next(&mut self, next: Option<PageRec>) {
+        if next.is_none() {
+            self.next = ptr::null_mut();
+        } else {
+            self.next = next.unwrap() as *mut PageRec;
+        }
+    }
+    pub fn set_prev(&mut self, prev: Option<&'static mut PageRec>) {
+        if prev.is_none() {
+            self.prev = ptr::null_mut();
+        } else {
+            self.next = prev.unwrap() as *mut PageRec;
+        }
+    }
+    pub fn next_entry(&self) -> Option<&'static mut PageRec> {
         let entry;
         if !self.next.is_null() {
             unsafe {
@@ -55,7 +75,7 @@ impl PageRec {
         }
         return entry;
     }
-    pub fn prev_entry(&self) -> Option<&mut PageRec> {
+    pub fn prev_entry(&self) -> Option<&'static mut PageRec> {
         let entry;
         if !self.prev.is_null() {
             unsafe {
@@ -65,5 +85,8 @@ impl PageRec {
             entry = None;
         }
         return entry;
+    }
+    pub fn copy(&self) -> PageRec {
+        return *self;
     }
 }
