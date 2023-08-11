@@ -4,9 +4,11 @@
 #![feature(let_chains)]
 #![feature(core_intrinsics)]
 #![feature(ptr_from_ref)]
+#![feature(const_trait_impl)]
 
 mod memory;
 mod file_system;
+
 #[cfg(not(test))]
 #[lang = "eh_personality"]
 pub extern "C" fn eh_personality() {}
@@ -20,20 +22,23 @@ extern crate spin;
 
 
 use core::arch::asm;
+use core::mem::align_of;
 use core::ptr;
 
 use panic_halt as _;
 use memory::{PagingProperties, PageAllocator, UtilsAllocator};
 
 static ALLOCATOR: UtilsAllocator = UtilsAllocator::empty();
+
 #[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn main(properties: *const PagingProperties) {
-    let allocator: PageAllocator = unsafe {
+    let (allocator, layout) = unsafe {
         let allocator = (*properties).allocator();
         let marker = (*properties).page_marker();
-        PageAllocator::new(allocator, marker)
+        memory::init_kernel_space(allocator, marker)
     };
+    ALLOCATOR.configure(allocator, layout);
 
     // let ranges = unsafe {
     //     core::slice::from_raw_parts_mut(records, records_cnt)

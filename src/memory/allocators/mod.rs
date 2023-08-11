@@ -7,4 +7,5 @@ pub use page::PageAllocator;
 pub use utils::UtilsAllocator;
 pub use system::SystemAllocator;
 
-pub use mapper_list::MemoryMapper;
+pub use mapper_list::PageList;
+

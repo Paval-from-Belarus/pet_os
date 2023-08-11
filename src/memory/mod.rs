@@ -1,6 +1,7 @@
+use core::marker::PhantomData;
+use core::ops::{Add, AddAssign};
 use core::ptr;
-use bitflags::bitflags;
-use spin::{Barrier, MutexGuard, Spin};
+use bitflags::{bitflags, Flags};
 
 mod paging;
 mod allocators;
@@ -10,14 +11,37 @@ pub use allocators::{UtilsAllocator, PageAllocator};
 pub use paging::{PagingProperties, ToPhysicalAddress, ToVirtualAddress};
 
 pub use atomics::AtomicCell;
+use crate::memory::paging::{CaptureAllocator, PageMarker};
+use crate::memory::allocators::PageList;
+
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
 
+/// What is a PageLayout table? PageLayout table is solid array (table) of PageRec in memory
+pub struct MemoryLayoutRec {
+    ///offset of data segment
+    ///It's redundant to store any information about last page ― it's can be easily calculated from heap_offset as:<br>
+    ///<code> heap_offset % Page::SIZE </code> <br>
+    ///index of last touched page in PageLayout Table
+    heap_offset: VirtualAddress,
+    //I believe that heap_offset should be aligned to Page::SIZE. Practically, space will be access
+    //offset of stack memory -> used for erasing stack memory
+    stack_offset: VirtualAddress,
+    last_page_index: usize,
+    heap_pages: PageList,
+    stack_pages: PageList,
+    flags: MemRangeFlag,
+    //Write | NoPrivilege
+    marker: PageMarker,
+}
+
 pub struct Page; //something info about range???
 bitflags! {
-    #[derive(Clone)]
+    #[derive(Clone, Copy)]
     pub struct PageRecFlag: usize {
         const PRESENT = 0b10;
+        const USABLE =  0b10_00;
+        const Device = 0b01_00;
     }
 }
 bitflags! {
@@ -39,6 +63,22 @@ pub struct PageRec {
     offset: PhysicalAddress, //it's easy to use in calculation
 }
 
+///Return crucial structures for kernel
+///Without them, it's impossible
+pub fn init_kernel_space(mut allocator: CaptureAllocator, marker: PageMarker) -> (PageAllocator, MemoryLayoutRec) {
+    let (allocator, heap_offset) = PageAllocator::new(allocator, &mut marker, paging::get_heap_initial_offset());
+    let layout = MemoryLayoutRec {
+        heap_offset,
+        stack_offset: 0,
+        last_page_index: 0,
+        heap_pages: PageList::empty(),
+        stack_pages: PageList::empty(),
+        flags: KERNEL_LAYOUT_FLAGS,
+        marker,
+    };
+    return (allocator, layout);
+}
+const KERNEL_LAYOUT_FLAGS: MemRangeFlag = MemRangeFlag::WRITABLE.union(MemRangeFlag::WRITE_THROUGH);
 //todo! carefully check in mutlti threaded environment
 impl Page {
     pub const SIZE: usize = 4096;
@@ -49,6 +89,7 @@ impl Page {
         return byte_size / Page::SIZE;
     }
 }
+
 impl PageRec {
     pub fn set_next(&mut self, next: *mut PageRec) {
         self.next = next;
@@ -60,7 +101,7 @@ impl PageRec {
         let result;
         unsafe {
             if self.next.is_null() {
-               result = None;
+                result = None;
             } else {
                 result = Some(&mut *self.next);
             }
@@ -83,7 +124,7 @@ impl PageRec {
     }
     pub fn prev_ptr(&self) -> *mut PageRec {
         self.prev
-    } 
+    }
     pub fn read_only(page: &mut PageRec) -> &PageRec {
         return page as &PageRec;
     }

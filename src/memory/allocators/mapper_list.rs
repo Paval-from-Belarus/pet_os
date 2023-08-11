@@ -1,7 +1,6 @@
 use core::ops::Deref;
 use core::ptr;
 use crate::memory::{Page, PageRec};
-
 pub enum ZoneType {
     Usable,
     Device,
@@ -114,8 +113,8 @@ impl PageList {
         self.size() == 0
     }
     pub fn add_all(&mut self, other: PageList) {}
-    //to_index -> exclusive
-    pub fn sub_list(&mut self, from_index: usize, to_index: usize) -> PageList {
+    ///The method excludes elements specified by [from_index; to_index) range
+    pub fn split_list(&mut self, from_index: usize, to_index: usize) -> PageList {
         if from_index >= self.size() || self.is_empty() {
             return PageList::empty();
         }
