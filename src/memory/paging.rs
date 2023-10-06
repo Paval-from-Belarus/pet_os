@@ -1,8 +1,7 @@
-use core::iter::Filter;
-use core::mem::size_of;
+use core::mem;
 use core::ptr;
+use crate::{bitflags};
 
-use bitflags::{bitflags, Flags};
 
 use crate::memory::{MemRangeFlag, Page, PhysicalAddress, VirtualAddress};
 
@@ -34,13 +33,14 @@ pub trait ToPhysicalAddress {
 pub trait ToVirtualAddress {
     fn as_virtual(&self) -> VirtualAddress;
 }
+
 /// The struct is simply used to transfer physical layout for page allcoator
 #[derive(Copy, Clone)]
 pub struct PageMarker {
     dir_entries: *mut DirEntry,
 }
 
-#[derive(Debug)]
+
 pub enum PageMarkerError {
     EmptyDirEntry,
     EmptyTableEntry,
@@ -58,6 +58,15 @@ pub struct PagingProperties {
     captures_cnt: usize,
     //offset to DirectoryTable
     directory: *mut DirEntry,
+    descriptors: *mut GDTTable,
+}
+
+pub struct GDTTable {
+    entry: GDTEntry,
+}
+
+pub struct GDTEntry {
+    entry: usize,
 }
 
 pub struct CaptureMemRec {
@@ -70,54 +79,50 @@ pub struct CaptureAllocator {
     pivots: &'static mut [CaptureMemRec],
 }
 
-#[derive(Debug)]
 pub struct DirEntry {
     entry: usize,
 }
 
-#[derive(Debug)]
 pub struct TableEntry {
     entry: usize,
 }
-bitflags! {
-    pub struct DirEntryFlag: usize {
-    const HUGE_SIZE = 0b10_000_000;
-    const ACCESSED= 0b100_000;
-    const CACHE_DISABLED = 0b10_000;
-    const WRITE_THROUGH = 0b1000;
-    const NO_PRIVILEGE = 0b100;
-    const WRITABLE = 0b10;
-    const PRESENT = 0b1;
-    const EMPTY = 0b0;
-    }
-}
-bitflags! {
-    pub struct TableEntryFlag: usize {
-        const GLOBAL = 0b10_000_000;
-        const DIRTY = 0b10_000_000;
-        const ACCESSED = 0b100_000;
-        const CACHE_DISABLED = 0b10_000;
-        const WRITE_THROUGH = 0b1000;
-        const NO_PRIVILEGE = 0b100;
-        const WRITABLE = 0b10;
-        const PRESENT = 0b1;
-        const EMPTY = 0b0;
-    }
-}
+bitflags!(
+    pub DirEntryFlag(usize),
+    HUGE_SIZE = 0b10_000_000,
+    ACCESSED= 0b100_000,
+    CACHE_DISABLED = 0b10_000,
+    WRITE_THROUGH = 0b1000,
+    NO_PRIVILEGE = 0b100,
+    WRITABLE = 0b10,
+    PRESENT = 0b1,
+    EMPTY = 0b0
+);
+bitflags!(
+    pub TableEntryFlag(usize),
+    GLOBAL = 0b10_000_000,
+    DIRTY = 0b10_000_000,
+    ACCESSED = 0b100_000,
+    CACHE_DISABLED = 0b10_000,
+    WRITE_THROUGH = 0b1000,
+    NO_PRIVILEGE = 0b100,
+    WRITABLE = 0b10,
+    PRESENT = 0b1,
+    EMPTY = 0b0
+);
 impl PagingProperties {
-    pub unsafe fn page_marker(&self) -> PageMarker {
+    pub fn page_marker(&self) -> PageMarker {
         PageMarker::wrap(self.directory)
     }
-    pub unsafe fn allocator(&self) -> CaptureAllocator {
-        let captures: &mut [CaptureMemRec] = core::slice::from_raw_parts_mut(self.captures, self.captures_cnt);
-        return CaptureAllocator::new(captures);
+    pub fn allocator(&self) -> CaptureAllocator {
+        let captures: &mut [CaptureMemRec] = unsafe { core::slice::from_raw_parts_mut(self.captures, self.captures_cnt) };
+        CaptureAllocator::new(captures)
     }
     //not used
     fn get_captured_pages(marker: &mut PageMarker) -> usize {
         let captured_pages: usize = marker.entries().iter()
             .filter(|entry| entry.is_present())
             .map(|entry| -> usize {
-                let table_entries: &mut [TableEntry] = entry.get_table_entries().unwrap();
+                let table_entries: &mut [TableEntry] = unsafe { entry.get_table_entries().unwrap_unchecked() };
                 let live_page_cnt: usize = table_entries.iter()
                     .filter(|entry| entry.is_present())
                     .count();
@@ -152,15 +157,16 @@ impl CaptureAllocator {
     pub fn new(captures: &'static mut [CaptureMemRec]) -> CaptureAllocator {
         CaptureAllocator { pivots: captures }
     }
-    pub fn alloc(&mut self, search_offset: Option<usize>, page_cnt: usize) -> Option<PhysicalAddress> {
+    pub fn alloc(&mut self, search_offset: VirtualAddress, page_cnt: usize) -> Option<PhysicalAddress> {
         let mut mem_offset = None;
         for pivot in self.pivots.iter_mut() {
-            if search_offset.is_none() || search_offset.unwrap() <= pivot.memory_offset {
+            if search_offset < pivot.memory_offset {
                 mem_offset = pivot.capture_offset(page_cnt);
             }
             if mem_offset.is_some() {
                 break;
             }
+
         }
         return mem_offset;
     }
@@ -190,30 +196,9 @@ impl ToVirtualAddress for PhysicalAddress {
     }
 }
 
-impl DirEntryFlag {
-    pub fn as_table_entry_flags(&self) -> TableEntryFlag {
-        return TableEntryFlag::from_bits_truncate(self.bits() & !(DirEntryFlag::HUGE_SIZE.bits()));
-    }
-}
-
-impl TableEntryFlag {
-    pub fn as_dir_entry_flags(&self) -> DirEntryFlag {
-        return DirEntryFlag::from_bits_truncate(self.bits() & !(TableEntryFlag::GLOBAL.bits() | TableEntryFlag::DIRTY.bits()));
-    }
-}
-
-impl MemRangeFlag {
-    fn as_table_flag(&self) -> TableEntryFlag {
-        return TableEntryFlag::from_bits_truncate(self.bits());
-    }
-    fn as_directory_flag(&self) -> DirEntryFlag {
-        return DirEntryFlag::from_bits_truncate(self.bits());
-    }
-}
-
 impl DirEntry {
     const ADDRESS_MASK: usize = 0xFF_FF_FC_00;
-    const BYTE_SIZE: usize = core::mem::size_of::<usize>();
+    const BYTE_SIZE: usize = mem::size_of::<usize>();
     pub fn new(table_offset: Option<&'static mut [TableEntry]>, flags: DirEntryFlag) -> DirEntry {
         let virtual_offset: VirtualAddress;
         if table_offset.is_some() {
@@ -222,18 +207,18 @@ impl DirEntry {
         } else {
             virtual_offset = VirtualAddress::NULL;
         }
-        return DirEntry { entry: virtual_offset.as_physical() | flags.bits() };
+        DirEntry { entry: virtual_offset.as_physical() | flags.0 }
     }
     //This is impossible to change offset to PageTable
     //The first reason ― it's a problem how to access memory
     pub fn set_flags(&mut self, flags: DirEntryFlag) {
-        self.entry = (self.entry & DirEntry::ADDRESS_MASK) | flags.bits();
+        self.entry = (self.entry & DirEntry::ADDRESS_MASK) | flags.0;
     }
     pub fn get_flags(&self) -> DirEntryFlag {
-        return DirEntryFlag::from_bits_truncate(self.entry);
+        DirEntryFlag(self.entry & !DirEntry::ADDRESS_MASK)
     }
     pub fn is_present(&self) -> bool {
-        return self.get_flags().contains(DirEntryFlag::PRESENT);
+        self.get_flags().contains(DirEntryFlag::PRESENT)
     }
     //return virtual offset stored in entry
     //Each should be already accessible. So, this method only use real value of entry and convert to reference (whereas of value)
@@ -248,7 +233,7 @@ impl DirEntry {
         } else {
             table_offset = None;
         }
-        return table_offset;
+        table_offset
     }
 }
 
@@ -258,19 +243,19 @@ impl TableEntry {
     //TableEntry is fully mutable
     //Page and flags should be change per time for entry consistent
     pub fn new(page_offset: PhysicalAddress, flags: TableEntryFlag) -> TableEntry {
-        return TableEntry { entry: page_offset & TableEntry::ADDRESS_MASK | flags.bits() };
+        TableEntry { entry: page_offset & TableEntry::ADDRESS_MASK | flags.0 }
     }
     pub fn set(&mut self, page_offset: PhysicalAddress, flags: TableEntryFlag) {
-        self.entry = page_offset & TableEntry::ADDRESS_MASK | flags.bits();
+        self.entry = page_offset & TableEntry::ADDRESS_MASK | flags.0;
     }
     pub fn get_flags(&self) -> TableEntryFlag {
-        return TableEntryFlag::from_bits_truncate(self.entry);
+        TableEntryFlag(self.entry & !TableEntry::ADDRESS_MASK)
     }
     pub fn get_page_offset(&self) -> PhysicalAddress {
-        return self.entry & TableEntry::ADDRESS_MASK;
+        self.entry & TableEntry::ADDRESS_MASK
     }
     pub fn is_present(&self) -> bool {
-        return self.get_flags().contains(TableEntryFlag::PRESENT);
+        self.get_flags().contains(TableEntryFlag::PRESENT)
     }
 }
 
@@ -284,9 +269,29 @@ macro_rules! entry_index {
         ($argument >> 12) & 0x3FF
     };
 }
+impl DirEntryFlag {
+    pub fn as_table_entry_flags(&self) -> TableEntryFlag {
+        TableEntryFlag(self.0 & !(DirEntryFlag::HUGE_SIZE))
+    }
+}
+
+impl TableEntryFlag {
+    pub fn as_dir_entry_flags(&self) -> DirEntryFlag {
+        DirEntryFlag(self.0 & !(TableEntryFlag::GLOBAL | TableEntryFlag::DIRTY))
+    }
+}
+
+impl MemRangeFlag {
+    fn as_table_flag(&self) -> TableEntryFlag {
+        TableEntryFlag(self.0)
+    }
+    fn as_directory_flag(&self) -> DirEntryFlag {
+        DirEntryFlag(self.0)
+    }
+}
 
 impl PageMarker {
-    pub unsafe fn wrap(dir_entries: *mut DirEntry) -> PageMarker {
+    pub fn wrap(dir_entries: *mut DirEntry) -> PageMarker {
         PageMarker { dir_entries }
     }
     fn entries(&mut self) -> &mut [DirEntry] {
@@ -303,11 +308,8 @@ impl PageMarker {
         let result: Result<&mut TableEntry, PageMarkerError>;
         if dir_entry.is_present() {
             let table_entries = dir_entry.get_table_entries();
-            if table_entries.is_some() {
-                let table_entries = table_entries.unwrap();
-                let entry = unsafe {
-                    table_entries.get_unchecked_mut(table_entry_index)
-                };
+            if let Some(table_entries) = table_entries {
+                let entry = unsafe { table_entries.get_unchecked_mut(table_entry_index) };
                 result = Ok(entry);
             } else {
                 result = Err(PageMarkerError::InvalidTableAddress);
@@ -336,7 +338,7 @@ impl PageMarker {
                     table_entries.get_unchecked_mut(table_entry_index)
                 };
                 if entry.is_present() {
-                    entry.set(physical_address, page_flags | TableEntryFlag::PRESENT);
+                    entry.set(physical_address, TableEntryFlag(page_flags.0 | TableEntryFlag::PRESENT));
                     result = Ok(());
                 } else {
                     result = Err(PageMarkerError::EmptyTableEntry);
@@ -349,6 +351,7 @@ impl PageMarker {
         }
         return result;
     }
+
     fn mark_dir_entry(&mut self, virtual_offset: VirtualAddress, flags: DirEntryFlag) {
         let dir_entry = unsafe {
             self.entries().get_unchecked_mut(table_index!(virtual_offset))
@@ -362,8 +365,7 @@ impl PageMarker {
         let mut physical_offset = physical_offset;
         for _ in 0..page_cnt {
             let table_entry = self.get_page_entry(virtual_offset);
-            if table_entry.is_ok() {
-                let table_entry = table_entry.unwrap();
+            if let Ok(table_entry) = table_entry {
                 if table_entry.is_present() {
                     table_entry.set(physical_offset, flags.as_table_flag());
                     self.mark_dir_entry(virtual_offset, flags.as_directory_flag());
@@ -371,7 +373,7 @@ impl PageMarker {
                     return Err(PageMarkerError::CapturedMemoryRange);
                 }
             } else {
-                return Err(table_entry.unwrap_err());//todo!
+                return Err(unsafe { table_entry.unwrap_err_unchecked() });
             }
             virtual_offset += Page::SIZE;
             physical_offset += Page::SIZE;
@@ -383,11 +385,10 @@ impl PageMarker {
               S: FnMut(PhysicalAddress) -> () {
         let result: Result<PageMarker, PageMarkerError>;
         let directory = alloc_handler(Page::upper_bound(ENTRIES_PER_DIRECTORY) * DirEntry::BYTE_SIZE);
-        if directory.is_some() {
-            let directory_offset = directory.unwrap();
+        if let Some(directory_offset) = directory {
             let tables = alloc_handler(ENTRIES_PER_DIRECTORY);
-            if tables.is_some() {
-                let dir_entries: *mut DirEntry = tables.unwrap() as *mut DirEntry;
+            if let Some(tables) = tables {
+                let dir_entries: *mut DirEntry = tables as *mut DirEntry;
                 result = Ok(PageMarker { dir_entries })
             } else {
                 free_handler(directory_offset);

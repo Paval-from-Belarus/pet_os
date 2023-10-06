@@ -1,7 +1,6 @@
 use core::marker::PhantomData;
 use core::ops::{Add, AddAssign};
 use core::ptr;
-use bitflags::{bitflags, Flags};
 
 mod paging;
 mod allocators;
@@ -13,10 +12,27 @@ pub use paging::{PagingProperties, ToPhysicalAddress, ToVirtualAddress};
 pub use atomics::AtomicCell;
 use crate::memory::paging::{CaptureAllocator, PageMarker};
 use crate::memory::allocators::PageList;
+use crate::{bitflags};
 
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
-
+bitflags!(
+    //something info about range???
+    pub MemRangeFlag(usize),
+    ACCESSED = 0b100_000,
+    CACHE_DISABLED = 0b10_000,
+    WRITE_THROUGH = 0b1000,
+    NO_PRIVILEGE = 0b100,
+    WRITABLE = 0b10,
+    PRESENT = 0b1,
+    EMPTY = 0b0
+);
+bitflags!(
+    pub PageRecFlag(usize),
+    PRESENT = 0b10,
+    USABLE = 0b10_00,
+    DEVICE = 0b01_00
+);
 /// What is a PageLayout table? PageLayout table is solid array (table) of PageRec in memory
 pub struct MemoryLayoutRec {
     ///offset of data segment
@@ -35,27 +51,8 @@ pub struct MemoryLayoutRec {
     marker: PageMarker,
 }
 
-pub struct Page; //something info about range???
-bitflags! {
-    #[derive(Clone, Copy)]
-    pub struct PageRecFlag: usize {
-        const PRESENT = 0b10;
-        const USABLE =  0b10_00;
-        const Device = 0b01_00;
-    }
-}
-bitflags! {
-    #[derive(Clone, Copy)]
-    pub struct MemRangeFlag: usize { //flags that used to mark specific memory range
-        const ACCESSED = 0b100_000;
-        const CACHE_DISABLED = 0b10_000;
-        const WRITE_THROUGH = 0b1000;
-        const NO_PRIVILEGE = 0b100;
-        const WRITABLE = 0b10;
-        const PRESENT = 0b1;
-        const EMPTY = 0b0;
-    }
-}
+pub struct Page;
+
 pub struct PageRec {
     next: *mut PageRec,
     prev: *mut PageRec,
@@ -65,11 +62,11 @@ pub struct PageRec {
 
 ///Return crucial structures for kernel
 ///Without them, it's impossible
-pub fn init_kernel_space(mut allocator: CaptureAllocator, marker: PageMarker) -> (PageAllocator, MemoryLayoutRec) {
+pub fn init_kernel_space(allocator: CaptureAllocator, mut marker: PageMarker) -> (PageAllocator, MemoryLayoutRec) {
     let (allocator, heap_offset) = PageAllocator::new(allocator, &mut marker, paging::get_heap_initial_offset());
     let layout = MemoryLayoutRec {
         heap_offset,
-        stack_offset: 0,
+        stack_offset: 0, //what about stack
         last_page_index: 0,
         heap_pages: PageList::empty(),
         stack_pages: PageList::empty(),
@@ -78,7 +75,9 @@ pub fn init_kernel_space(mut allocator: CaptureAllocator, marker: PageMarker) ->
     };
     return (allocator, layout);
 }
-const KERNEL_LAYOUT_FLAGS: MemRangeFlag = MemRangeFlag::WRITABLE.union(MemRangeFlag::WRITE_THROUGH);
+
+const KERNEL_LAYOUT_FLAGS: MemRangeFlag = MemRangeFlag(MemRangeFlag::WRITABLE | MemRangeFlag::WRITE_THROUGH);
+
 //todo! carefully check in mutlti threaded environment
 impl Page {
     pub const SIZE: usize = 4096;

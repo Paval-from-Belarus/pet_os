@@ -69,6 +69,7 @@ impl PageList {
         let mut items_cnt: usize = 1;
         let header_ptr: *mut PageRec = header;
         let tail_ptr: *mut PageRec;
+        if let Some(tail) = 
         if tail.is_some() {
             tail_ptr = tail.unwrap();
             items_cnt += 1;

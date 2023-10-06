@@ -2,7 +2,6 @@ use crate::memory::{PageRec, PhysicalAddress, VirtualAddress, Page, PageRecFlag,
 use crate::memory::paging::{CaptureAllocator, CaptureMemRec, PageMarker, PageMarkerError};
 use crate::memory::paging;
 use core::{mem, ptr};
-use bitflags::Flags;
 use crate::memory::atomics::AtomicCell;
 use crate::memory::allocators::mapper_list::{PageList};
 use crate::memory::allocators::page::AllocationError::{OutOfMemory, PageMarkerInvalidation};
@@ -39,7 +38,7 @@ pub enum AllocationError {
 //     //     marker: (),
 //     // }
 // }
-const LIST_ACCESS_FLAG: MemRangeFlag = MemRangeFlag::WRITABLE.union(MemRangeFlag::PRESENT);
+const LIST_ACCESS_FLAG: MemRangeFlag = MemRangeFlag(MemRangeFlag::PRESENT | MemRangeFlag::WRITABLE);
 
 impl PageAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
@@ -47,8 +46,14 @@ impl PageAllocator {
         let free_mem_size = allocator.free_memory();
         let rec_cnt = free_mem_size / mem::size_of::<PageRec>();
         let entries_mem_size = rec_cnt * mem::size_of::<PageRec>();
-        let entries_start_offset = allocator.alloc(None, entries_mem_size).unwrap();
-        marker.mark_range(heap_offset, entries_start_offset, entries_mem_size, LIST_ACCESS_FLAG).expect("Allocator initialization failed");
+        let entries_start_offset = allocator.alloc(None, entries_mem_size);
+        if entries_start_offset.is_none() {
+            panic!() //can to initialize Page allocator
+        }
+        let entries_start_offset = unsafe { entries_start_offset.unwrap_unchecked() };
+        if marker.mark_range(heap_offset, entries_start_offset, entries_mem_size, LIST_ACCESS_FLAG).is_err() {
+            panic!();
+        }
         let mut last_entry = ptr::null_mut();
         let mut next_offset = heap_offset;
         for pivot in allocator.as_pivots().iter() {
@@ -59,7 +64,7 @@ impl PageAllocator {
                     prev: last_entry,
                     next: ptr::null_mut(),
                     offset: physical_offset,
-                    flags: PageRecFlag::PRESENT | PageRecFlag::USABLE,
+                    flags: PageRecFlag(PageRecFlag::PRESENT | PageRecFlag::USABLE),
                 };
                 unsafe {
                     let next_entry = PageAllocator::store_entry(next_offset, info_rec);
@@ -98,13 +103,12 @@ impl PageAllocator {
             let pages = self.capture_pages(page_cnt);
             if pages.size() == page_cnt {
                 let mark_result = PageAllocator::mark_pages(&mut info_rec.marker, info_rec.heap_offset, &pages, info_rec.flags);
-                if mark_result.is_ok() {
-                    info_rec.heap_offset += pages.size() * Page::SIZE;
-                    info_rec.heap_pages.add_all(pages);
-                    result = Ok(());
-                } else {
-                    result = Err(PageMarkerInvalidation(mark_result.unwrap_err()));
+                if let Err(error_code) = mark_result {
+                    return Err(PageMarkerInvalidation(error_code));
                 }
+                info_rec.heap_offset += pages.size() * Page::SIZE;
+                info_rec.heap_pages.add_all(pages);
+                result = Ok(());
             } else {
                 result = Err(OutOfMemory);
             }
@@ -117,15 +121,13 @@ impl PageAllocator {
             let page_cnt = Page::lower_bound(shrunk_space as usize); //shrunk_space is bigger then Page::SIZe -> so it's possible to remove only redundant pages
             let heap_pages = &mut info_rec.heap_pages;
             let pages = heap_pages.split_list(heap_pages.size() - page_cnt, heap_pages.size());
-            let mark_result = PageAllocator::mark_pages(&mut info_rec.marker, info_rec.heap_offset, &pages, MemRangeFlag::EMPTY);
-            if mark_result.is_ok() {
-                info_rec.heap_offset -= pages.size() * Page::SIZE;
-                self.release_pages(pages);
-                result = Ok(());
-            } else {
-                heap_pages.add_all(pages);
-                result = Err(PageMarkerInvalidation(mark_result.unwrap_err()));
+            let mark_result = PageAllocator::mark_pages(&mut info_rec.marker, info_rec.heap_offset, &pages, MemRangeFlag(MemRangeFlag::EMPTY));
+            if let Err(error_code) = mark_result {
+                return Err(PageMarkerInvalidation(error_code));
             }
+            info_rec.heap_offset -= pages.size() * Page::SIZE;
+            self.release_pages(pages);
+            result = Ok(());
         }
         return result;
     }
