@@ -1,18 +1,14 @@
-
-
-
-
-mod paging;
 mod allocators;
 mod atomics;
+mod paging;
 
-pub use allocators::{PageAllocator};
+pub use allocators::PageAllocator;
 pub use paging::{PagingProperties, ToPhysicalAddress, ToVirtualAddress};
 
-pub use atomics::AtomicCell;
-use crate::memory::paging::{CaptureAllocator, PageMarker};
+use crate::bitflags;
 use crate::memory::allocators::PageList;
-use crate::{bitflags};
+use crate::memory::paging::{CaptureAllocator, PageMarker};
+pub use atomics::AtomicCell;
 
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
@@ -62,8 +58,12 @@ pub struct PageRec {
 
 ///Return crucial structures for kernel
 ///Without them, it's impossible
-pub fn init_kernel_space(allocator: CaptureAllocator, mut marker: PageMarker) -> (PageAllocator, MemoryLayoutRec) {
-    let (allocator, heap_offset) = PageAllocator::new(allocator, &mut marker, paging::get_heap_initial_offset());
+pub fn init_kernel_space(
+    allocator: CaptureAllocator,
+    mut marker: PageMarker,
+) -> (PageAllocator, MemoryLayoutRec) {
+    let (allocator, heap_offset) =
+        PageAllocator::new(allocator, &mut marker, paging::get_heap_initial_offset());
     let layout = MemoryLayoutRec {
         heap_offset,
         stack_offset: 0, //what about stack
@@ -76,7 +76,8 @@ pub fn init_kernel_space(allocator: CaptureAllocator, mut marker: PageMarker) ->
     return (allocator, layout);
 }
 
-const KERNEL_LAYOUT_FLAGS: MemRangeFlag = MemRangeFlag(MemRangeFlag::WRITABLE | MemRangeFlag::WRITE_THROUGH);
+const KERNEL_LAYOUT_FLAGS: MemRangeFlag =
+    MemRangeFlag(MemRangeFlag::WRITABLE | MemRangeFlag::WRITE_THROUGH);
 
 //todo! carefully check in mutlti threaded environment
 impl Page {

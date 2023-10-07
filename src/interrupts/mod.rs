@@ -1,6 +1,5 @@
-use core::marker::PhantomData;
-
 use crate::memory::VirtualAddress;
+use core::marker::PhantomData;
 
 #[repr(C)] //the wrapper on real stack frame
 struct InterruptStackFrame {
@@ -39,9 +38,13 @@ impl IDTEntry<Handler> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::mem;
 
     #[test]
     fn integrity_tests() {
-        debug_assert!(mem::size_of::<IDTEntry<usize>>() == 10, "Invalid size of IDTEntries");
+        debug_assert!(
+            mem::size_of::<IDTEntry<usize>>() == 10,
+            "Invalid size of IDTEntries"
+        );
     }
 }

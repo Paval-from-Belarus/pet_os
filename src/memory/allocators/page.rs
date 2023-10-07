@@ -1,8 +1,8 @@
-use crate::memory::{PageRec, PhysicalAddress, VirtualAddress, MemRangeFlag, MemoryLayoutRec};
 use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError};
+use crate::memory::{MemRangeFlag, MemoryLayoutRec, PageRec, PhysicalAddress, VirtualAddress};
 
+use crate::memory::allocators::mapper_list::PageList;
 use core::{mem, ptr};
-use crate::memory::allocators::mapper_list::{PageList};
 
 use crate::stop_execution;
 
@@ -16,7 +16,6 @@ pub struct PageAllocator {
     //all atomic operations should be atomic in system scope
     //it means that no thread switching will be enabled while atomic operations are not finished
 }
-
 
 pub enum AllocationError {
     OutOfMemory,
@@ -42,17 +41,29 @@ const LIST_ACCESS_FLAG: MemRangeFlag = MemRangeFlag(MemRangeFlag::PRESENT | MemR
 
 impl PageAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
-    pub fn new(mut allocator: CaptureAllocator, marker: &mut PageMarker, heap_offset: VirtualAddress) -> (PageAllocator, VirtualAddress) {
+    pub fn new(
+        mut allocator: CaptureAllocator,
+        marker: &mut PageMarker,
+        heap_offset: VirtualAddress,
+    ) -> (PageAllocator, VirtualAddress) {
         let free_mem_size = allocator.free_memory();
         let rec_cnt = free_mem_size / mem::size_of::<PageRec>();
         let entries_mem_size = rec_cnt * mem::size_of::<PageRec>();
         // let entries_start_offset = allocator.alloc(0, entries_mem_size).unwrap();
         let entries_start_offset = match allocator.alloc(0, entries_mem_size) {
             None => stop_execution(),
-            Some(memory_offset) => memory_offset
+            Some(memory_offset) => memory_offset,
         };
-        if marker.mark_range(heap_offset, entries_start_offset, entries_mem_size, LIST_ACCESS_FLAG).is_err() {
-            stop_execution();//mark_range result holds error code, but we can do nothing with such error_code
+        if marker
+            .mark_range(
+                heap_offset,
+                entries_start_offset,
+                entries_mem_size,
+                LIST_ACCESS_FLAG,
+            )
+            .is_err()
+        {
+            stop_execution(); //mark_range result holds error code, but we can do nothing with such error_code
         }
         let last_entry = ptr::null_mut();
 
@@ -80,7 +91,13 @@ impl PageAllocator {
         //         physical_offset += Page::SIZE;
         //     }
         // }
-        return (PageAllocator { memory_list: last_entry, free_pages: PageList::empty() }, heap_offset + entries_mem_size);
+        return (
+            PageAllocator {
+                memory_list: last_entry,
+                free_pages: PageList::empty(),
+            },
+            heap_offset + entries_mem_size,
+        );
     }
     unsafe fn store_entry(dest: VirtualAddress, info_rec: PageRec) -> *mut PageRec {
         let entry_offset = dest as *mut PageRec;
@@ -89,7 +106,11 @@ impl PageAllocator {
     }
     //current version of kernel disallow to manage page caching policies
     //similar to UNIX (Linux) brk system call
-    pub fn heap_alloc(&mut self, _info_rec: &mut MemoryLayoutRec, _request_offset: VirtualAddress) -> Result<(), AllocationError> {
+    pub fn heap_alloc(
+        &mut self,
+        _info_rec: &mut MemoryLayoutRec,
+        _request_offset: VirtualAddress,
+    ) -> Result<(), AllocationError> {
         Ok(())
         // let expanded_space = (request_offset - info_rec.heap_offset) as isize;
         // if expanded_space == 0 {
@@ -134,7 +155,12 @@ impl PageAllocator {
         // }
         // return result;
     }
-    fn mark_pages(_marker: &mut PageMarker, start_offset: VirtualAddress, _pages: &PageList, _flags: MemRangeFlag) -> Result<(), PageMarkerError> {
+    fn mark_pages(
+        _marker: &mut PageMarker,
+        start_offset: VirtualAddress,
+        _pages: &PageList,
+        _flags: MemRangeFlag,
+    ) -> Result<(), PageMarkerError> {
         let _offset = start_offset;
         // for page_rec in pages.iter() {
         //     let mark_result = marker.mark_range(offset, page_rec.offset, Page::SIZE, flags);
@@ -153,7 +179,11 @@ impl PageAllocator {
     pub fn alloc(&mut self, _page_cnt: usize) -> Option<PhysicalAddress> {
         None
     }
-    pub fn dealoc(&mut self, _offset: PhysicalAddress, _page_cnt: usize) -> Result<(), AllocationError> {
+    pub fn dealoc(
+        &mut self,
+        _offset: PhysicalAddress,
+        _page_cnt: usize,
+    ) -> Result<(), AllocationError> {
         Ok(())
     }
     //this function is used to captured required for allocation list of pages

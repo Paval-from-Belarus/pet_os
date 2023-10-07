@@ -1,7 +1,6 @@
-
-use core::{ptr};
+use crate::memory::PageRec;
+use core::ptr;
 use core::slice::IterMut;
-use crate::memory::{PageRec};
 
 pub enum ZoneType {
     Usable,
@@ -64,9 +63,16 @@ impl DoubleEndedIterator for Iter {
 
 impl PageList {
     pub fn empty() -> PageList {
-        PageList { head: ptr::null_mut(), tail: ptr::null_mut(), items_cnt: 0 }
+        PageList {
+            head: ptr::null_mut(),
+            tail: ptr::null_mut(),
+            items_cnt: 0,
+        }
     }
-    pub fn new(header: &'static mut PageRec, option_tail: Option<&'static mut PageRec>) -> PageList {
+    pub fn new(
+        header: &'static mut PageRec,
+        option_tail: Option<&'static mut PageRec>,
+    ) -> PageList {
         let items_cnt: usize = 1;
         let header_ptr: *mut PageRec = header;
         let tail_ptr: *mut PageRec;
@@ -75,7 +81,11 @@ impl PageList {
         } else {
             tail_ptr = header_ptr;
         }
-        PageList { head: header_ptr, tail: tail_ptr, items_cnt }
+        PageList {
+            head: header_ptr,
+            tail: tail_ptr,
+            items_cnt,
+        }
     }
     pub fn first(&self) -> Option<&'static PageRec> {
         return self.first_mut().map(PageRec::read_only);
@@ -129,7 +139,10 @@ impl PageList {
     pub fn iter(&self) -> Iter {
         let front_pivot = self.first();
         let back_pivot = self.last();
-        Iter { front_pivot, back_pivot }
+        Iter {
+            front_pivot,
+            back_pivot,
+        }
     }
     pub fn iter_mut(&mut self) -> IterMut<'static, PageRec> {
         todo!()

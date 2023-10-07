@@ -1,4 +1,4 @@
-use crate::memory::{VirtualAddress, PageAllocator};
+use crate::memory::{PageAllocator, VirtualAddress};
 
 struct MemBounds {
     lower: VirtualAddress,

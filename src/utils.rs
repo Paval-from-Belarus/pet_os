@@ -28,8 +28,6 @@ macro_rules! bitflags {
 #[macro_export]
 macro_rules! unwrap_err_unchecked {
     ($expr: expr) => {
-        unsafe {
-            $expr.unwrap_err_unchecked()
-        }
+        unsafe { $expr.unwrap_err_unchecked() }
     };
 }
