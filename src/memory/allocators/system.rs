@@ -1,4 +1,4 @@
-use crate::memory::{VirtualAddress, PhysicalAddress, PageAllocator};
+use crate::memory::{VirtualAddress, PageAllocator};
 
 struct MemBounds {
     lower: VirtualAddress,
@@ -23,7 +23,7 @@ impl SystemAllocator {
             allocator,
         }
     }
-    pub fn data_break(offset: VirtualAddress) -> VirtualAddress {
+    pub fn data_break(_offset: VirtualAddress) -> VirtualAddress {
         0
     }
 }

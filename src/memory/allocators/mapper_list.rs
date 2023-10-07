@@ -1,7 +1,7 @@
-use core::ops::Deref;
-use core::{ptr, slice};
+
+use core::{ptr};
 use core::slice::IterMut;
-use crate::memory::{Page, PageRec};
+use crate::memory::{PageRec};
 
 pub enum ZoneType {
     Usable,
@@ -67,7 +67,7 @@ impl PageList {
         PageList { head: ptr::null_mut(), tail: ptr::null_mut(), items_cnt: 0 }
     }
     pub fn new(header: &'static mut PageRec, option_tail: Option<&'static mut PageRec>) -> PageList {
-        let mut items_cnt: usize = 1;
+        let items_cnt: usize = 1;
         let header_ptr: *mut PageRec = header;
         let tail_ptr: *mut PageRec;
         if let Some(tail) = option_tail {
@@ -112,7 +112,7 @@ impl PageList {
     pub fn is_empty(&self) -> bool {
         self.size() == 0
     }
-    pub fn add_all(&mut self, other: PageList) {}
+    pub fn add_all(&mut self, _other: PageList) {}
     ///The method excludes elements specified by [from_index; to_index) range
     pub fn split_list(&mut self, from_index: usize, to_index: usize) -> PageList {
         if from_index >= self.size() || self.is_empty() {
@@ -190,5 +190,5 @@ impl PageList {
 }
 
 impl MemoryMapper {
-    pub fn get_zone(zone: ZoneType) {}
+    pub fn get_zone(_zone: ZoneType) {}
 }

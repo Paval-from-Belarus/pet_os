@@ -36,7 +36,7 @@ use memory::{PagingProperties};
 //
 // static ALLOCATOR: UtilsAllocator = UtilsAllocator::empty();
 #[panic_handler]
-pub fn panic(info: &PanicInfo) -> ! {
+pub fn panic(_info: &PanicInfo) -> ! {
     stop_execution();
 }
 
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn main(properties: *const PagingProperties) {
         let allocator = (*properties).allocator();
         let mut marker = (*properties).page_marker();
         // memory::init_kernel_space(allocator, marker)
-        let page_allocator = PageAllocator::new(allocator, &mut marker, 0);
+        let _page_allocator = PageAllocator::new(allocator, &mut marker, 0);
     };
     // ALLOCATOR.configure(allocator, layout);
 

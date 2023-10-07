@@ -1,9 +1,9 @@
-use crate::memory::{PageRec, PhysicalAddress, VirtualAddress, Page, PageRecFlag, MemRangeFlag, ToPhysicalAddress, MemoryLayoutRec};
-use crate::memory::paging::{CaptureAllocator, CaptureMemRec, PageMarker, PageMarkerError};
-use crate::memory::paging;
+use crate::memory::{PageRec, PhysicalAddress, VirtualAddress, MemRangeFlag, MemoryLayoutRec};
+use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError};
+
 use core::{mem, ptr};
 use crate::memory::allocators::mapper_list::{PageList};
-use crate::memory::allocators::page::AllocationError::{OutOfMemory, PageMarkerInvalidation};
+
 use crate::stop_execution;
 
 ///It's a responsibility of caller class to maintain synchronized caller sequence
@@ -89,7 +89,7 @@ impl PageAllocator {
     }
     //current version of kernel disallow to manage page caching policies
     //similar to UNIX (Linux) brk system call
-    pub fn heap_alloc(&mut self, info_rec: &mut MemoryLayoutRec, request_offset: VirtualAddress) -> Result<(), AllocationError> {
+    pub fn heap_alloc(&mut self, _info_rec: &mut MemoryLayoutRec, _request_offset: VirtualAddress) -> Result<(), AllocationError> {
         Ok(())
         // let expanded_space = (request_offset - info_rec.heap_offset) as isize;
         // if expanded_space == 0 {
@@ -134,8 +134,8 @@ impl PageAllocator {
         // }
         // return result;
     }
-    fn mark_pages(marker: &mut PageMarker, start_offset: VirtualAddress, pages: &PageList, flags: MemRangeFlag) -> Result<(), PageMarkerError> {
-        let mut offset = start_offset;
+    fn mark_pages(_marker: &mut PageMarker, start_offset: VirtualAddress, _pages: &PageList, _flags: MemRangeFlag) -> Result<(), PageMarkerError> {
+        let _offset = start_offset;
         // for page_rec in pages.iter() {
         //     let mark_result = marker.mark_range(offset, page_rec.offset, Page::SIZE, flags);
         //     if mark_result.is_err() {
@@ -146,18 +146,18 @@ impl PageAllocator {
         return Ok(());
     }
     //capture available pages in rec
-    fn capture_pages(&mut self, page_cnt: usize) -> PageList {
+    fn capture_pages(&mut self, _page_cnt: usize) -> PageList {
         PageList::empty()
     }
-    fn release_pages(&mut self, pages: PageList) {}
-    pub fn alloc(&mut self, page_cnt: usize) -> Option<PhysicalAddress> {
+    fn release_pages(&mut self, _pages: PageList) {}
+    pub fn alloc(&mut self, _page_cnt: usize) -> Option<PhysicalAddress> {
         None
     }
-    pub fn dealoc(&mut self, offset: PhysicalAddress, page_cnt: usize) -> Result<(), AllocationError> {
+    pub fn dealoc(&mut self, _offset: PhysicalAddress, _page_cnt: usize) -> Result<(), AllocationError> {
         Ok(())
     }
     //this function is used to captured required for allocation list of pages
-    fn get_page_rec_by_index(&mut self, index: usize) -> Option<PageRec> {
+    fn get_page_rec_by_index(&mut self, _index: usize) -> Option<PageRec> {
         None
     }
 }

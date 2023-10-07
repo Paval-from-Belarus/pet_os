@@ -1,8 +1,8 @@
-use core::f32::consts::E;
-use core::{hint, mem, pin};
-use core::intrinsics::unchecked_sub;
-use core::ptr;
-use crate::{bitflags, stop_execution};
+
+use core::{hint, mem};
+
+
+use crate::{bitflags};
 
 
 use crate::memory::{MemRangeFlag, Page, PhysicalAddress, VirtualAddress};
@@ -298,7 +298,7 @@ impl PageMarker {
     }
     fn get_page_entry(&mut self, virtual_address: VirtualAddress) -> Result<&mut TableEntry, PageMarkerError> {
         let dir_entry_index = table_index!(virtual_address);
-        let table_entry_index = entry_index!(virtual_address);
+        let _table_entry_index = entry_index!(virtual_address);
         // let dir_entry = unsafe { self.entries().get_mut(dir_entry_index).unwrap_unchecked() };
         let dir_entry = self.entries().get_mut(dir_entry_index);
         // if dir_entry.is_none() {
@@ -405,7 +405,7 @@ extern crate std;
 
 
 mod tests {
-    use super::*;
+    
 
     #[test]
     fn import() {

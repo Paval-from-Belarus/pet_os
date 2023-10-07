@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use core::mem;
+
 use crate::memory::VirtualAddress;
 
 #[repr(C)] //the wrapper on real stack frame
@@ -29,8 +29,8 @@ struct IDTEntry<T> {
 impl IDTEntry<Handler> {
     pub fn new(handler: Handler) -> IDTEntry<Handler> {
         let handler_offset = handler as *const Handler as VirtualAddress;
-        let lower_offset = (handler_offset & 0xFFFF) as u16;
-        let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
+        let _lower_offset = (handler_offset & 0xFFFF) as u16;
+        let _upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
 
         todo!()
     }
