@@ -26,6 +26,7 @@ OBJCOPY := objcopy
 STRIP := strip
 OBJDUMP := objdump
 RM := rm -f
+MAKE := make
 #configuration properties
 LD_SCRIPT = $(SCRIPTS_PATH)/kernel.ld
 LD_FLAGS := -n --gc-sections
@@ -54,8 +55,7 @@ $(TARGET_IMAGE): $(ASM_CONFIG_FILE) $(TARGET_KERNEL_PATH)/kernel.o
 	$(IMAGE_BUILDER)
 	@cp $(ASM_PROJECT_PATH)/target/Boot.iso $(TARGET_IMAGE)
 	@cp $(ASM_PROJECT_PATH)/target/Boot.img $(TARGET_IMAGES_PATH)/petos.img
-kernel: $(TARGET_KERNEL_PATH)/kernel.o
-$(TARGET_KERNEL_PATH)/kernel.o: $(LD_SCRIPT) $(TARGET_SPEC) $(TARGET_KERNEL_PATH)/entry.o
+kernel: src $(LD_SCRIPT) $(TARGET_SPEC) $(TARGET_KERNEL_PATH)/entry.o
 	$(CARGO) build $(CARGO_FLAGS) --target=$(TARGET_SPEC) --release
 	@cp --preserve $(TARGET_LIB_PATH)/libpet_os.a $(TARGET_KERNEL_PATH)/kernel.a
 	$(LD) $(LD_FLAGS) -o $@ $(TARGET_KERNEL_PATH)/entry.o $(TARGET_KERNEL_PATH)/kernel.a

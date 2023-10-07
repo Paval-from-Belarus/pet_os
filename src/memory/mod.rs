@@ -6,7 +6,7 @@ mod paging;
 mod allocators;
 mod atomics;
 
-pub use allocators::{UtilsAllocator, PageAllocator};
+pub use allocators::{PageAllocator};
 pub use paging::{PagingProperties, ToPhysicalAddress, ToVirtualAddress};
 
 pub use atomics::AtomicCell;

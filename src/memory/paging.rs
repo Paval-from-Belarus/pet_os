@@ -1,6 +1,8 @@
-use core::mem;
+use core::f32::consts::E;
+use core::{hint, mem, pin};
+use core::intrinsics::unchecked_sub;
 use core::ptr;
-use crate::{bitflags};
+use crate::{bitflags, stop_execution};
 
 
 use crate::memory::{MemRangeFlag, Page, PhysicalAddress, VirtualAddress};
@@ -11,18 +13,15 @@ extern "C" {
     //compile-time info about effective size of kernel
     static KERNEL_SIZE: usize;
     //offset after which memory is free to use
-    static HEAP_VIRTUAL_OFFSET: usize;
+    static KERNEL_VIRTUAL_OFFSET: usize;
 }
 
-const KERNEL_VIRTUAL_OFFSET: usize = 0xC0_000_000;
 //exactly quarter of virtual memory
 const ENTRIES_PER_DIRECTORY: usize = 1024;
 const ENTRIES_PER_TABLE: usize = 1024;
 
-pub fn get_heap_initial_offset() -> VirtualAddress {
-    return unsafe {
-        HEAP_VIRTUAL_OFFSET
-    };
+pub fn get_heap_initial_offset() -> VirtualAddress {//runtime solve
+    todo!()
 }
 
 pub trait ToPhysicalAddress {
@@ -166,7 +165,6 @@ impl CaptureAllocator {
             if mem_offset.is_some() {
                 break;
             }
-
         }
         return mem_offset;
     }
@@ -183,7 +181,7 @@ impl CaptureAllocator {
 impl ToPhysicalAddress for VirtualAddress {
     fn as_physical(&self) -> PhysicalAddress {
         return unsafe {
-            self - KERNEL_VIRTUAL_OFFSET + KERNEL_PHYSICAL_OFFSET
+            self - KERNEL_VIRTUAL_OFFSET
         };
     }
 }
@@ -191,7 +189,7 @@ impl ToPhysicalAddress for VirtualAddress {
 impl ToVirtualAddress for PhysicalAddress {
     fn as_virtual(&self) -> VirtualAddress {
         return unsafe {
-            self + KERNEL_VIRTUAL_OFFSET - KERNEL_PHYSICAL_OFFSET
+            self + KERNEL_VIRTUAL_OFFSET
         };
     }
 }
@@ -199,11 +197,10 @@ impl ToVirtualAddress for PhysicalAddress {
 impl DirEntry {
     const ADDRESS_MASK: usize = 0xFF_FF_FC_00;
     const BYTE_SIZE: usize = mem::size_of::<usize>();
-    pub fn new(table_offset: Option<&'static mut [TableEntry]>, flags: DirEntryFlag) -> DirEntry {
+    pub fn new(table_offset_option: Option<&'static mut [TableEntry]>, flags: DirEntryFlag) -> DirEntry {
         let virtual_offset: VirtualAddress;
-        if table_offset.is_some() {
-            let table_offset: *mut TableEntry = table_offset.unwrap().as_mut_ptr();
-            virtual_offset = table_offset as VirtualAddress;
+        if let Some(table_offset) = table_offset_option {
+            virtual_offset = table_offset.as_ptr() as VirtualAddress;
         } else {
             virtual_offset = VirtualAddress::NULL;
         }
@@ -282,10 +279,10 @@ impl TableEntryFlag {
 }
 
 impl MemRangeFlag {
-    fn as_table_flag(&self) -> TableEntryFlag {
+    pub fn as_table_flag(&self) -> TableEntryFlag {
         TableEntryFlag(self.0)
     }
-    fn as_directory_flag(&self) -> DirEntryFlag {
+    pub fn as_directory_flag(&self) -> DirEntryFlag {
         DirEntryFlag(self.0)
     }
 }
@@ -302,22 +299,33 @@ impl PageMarker {
     fn get_page_entry(&mut self, virtual_address: VirtualAddress) -> Result<&mut TableEntry, PageMarkerError> {
         let dir_entry_index = table_index!(virtual_address);
         let table_entry_index = entry_index!(virtual_address);
-        let dir_entry = unsafe {
-            self.entries().get_unchecked_mut(dir_entry_index)
-        };
-        let result: Result<&mut TableEntry, PageMarkerError>;
-        if dir_entry.is_present() {
-            let table_entries = dir_entry.get_table_entries();
-            if let Some(table_entries) = table_entries {
-                let entry = unsafe { table_entries.get_unchecked_mut(table_entry_index) };
-                result = Ok(entry);
+        // let dir_entry = unsafe { self.entries().get_mut(dir_entry_index).unwrap_unchecked() };
+        let dir_entry = self.entries().get_mut(dir_entry_index);
+        // if dir_entry.is_none() {
+        //     stop_execution();
+        // }
+        let entry: &mut TableEntry;
+        if let Some(dir_entry) = dir_entry {
+            if dir_entry.is_present() {
+                let option_entries = dir_entry.get_table_entries();
+                // entry = unsafe {(dir_entry as *mut DirEntry as *mut TableEntry)};
+                if let Some(table_entries) = option_entries {
+                    // entry = unsafe { &mut *(dir_entry as *mut DirEntry as *mut TableEntry) };
+                    entry = unsafe { table_entries.get_unchecked_mut(1) };
+                    // entry = unsafe { table_entries.get_mut(table_entry_index).unwrap_unchecked() };
+                } else {
+                    return Err(PageMarkerError::InvalidTableAddress);
+                }
             } else {
-                result = Err(PageMarkerError::InvalidTableAddress);
+                return Err(PageMarkerError::EmptyDirEntry);
             }
         } else {
-            result = Err(PageMarkerError::EmptyDirEntry);
+            unsafe {
+                hint::unreachable_unchecked()
+            }
         }
-        return result;
+
+        return Ok(entry);
     }
     //physical address automatically align to page (for potential performance increase)
     //TableEntryFlag::PRESENT is used automatically in best case (if even passed flag doesn't holds present flag -> it will holds PRESENT)
@@ -329,51 +337,43 @@ impl PageMarker {
         let dir_entry = unsafe {
             self.entries().get_unchecked_mut(dir_entry_index)
         };
-        let result: Result<(), PageMarkerError>;
-        if dir_entry.is_present() {
-            let table_entries = dir_entry.get_table_entries();
-            if table_entries.is_some() {
-                let table_entries = table_entries.unwrap();
-                let entry = unsafe {
-                    table_entries.get_unchecked_mut(table_entry_index)
-                };
-                if entry.is_present() {
-                    entry.set(physical_address, TableEntryFlag(page_flags.0 | TableEntryFlag::PRESENT));
-                    result = Ok(());
-                } else {
-                    result = Err(PageMarkerError::EmptyTableEntry);
-                }
-            } else {
-                result = Err(PageMarkerError::InvalidTableAddress);
-            }
-        } else {
-            result = Err(PageMarkerError::EmptyDirEntry);
+        if !dir_entry.is_present() {
+            return Err(PageMarkerError::EmptyDirEntry);
         }
-        return result;
+        let option_entries = dir_entry.get_table_entries();
+        if let Some(table_entries) = option_entries {
+            let entry = unsafe { table_entries.get_unchecked_mut(table_entry_index) };
+            if !entry.is_present() {
+                return Err(PageMarkerError::InvalidTableAddress);
+            }
+            entry.set(physical_address, TableEntryFlag(page_flags.0 | TableEntryFlag::PRESENT));
+        } else {
+            return Err(PageMarkerError::EmptyDirEntry);
+        }
+        return Ok(());
     }
 
     fn mark_dir_entry(&mut self, virtual_offset: VirtualAddress, flags: DirEntryFlag) {
-        let dir_entry = unsafe {
-            self.entries().get_unchecked_mut(table_index!(virtual_offset))
-        };
+        let dir_entry = unsafe { self.entries().get_unchecked_mut(table_index!(virtual_offset)) };
         dir_entry.set_flags(flags);
     }
     //range_offset should be aligned to Page::SIZE
-    pub fn mark_range(&mut self, virtual_offset: VirtualAddress, physical_offset: PhysicalAddress, range_size: usize, flags: MemRangeFlag) -> Result<(), PageMarkerError> {
+    pub fn mark_range(&mut self, mut virtual_offset: VirtualAddress, mut physical_offset: PhysicalAddress, range_size: usize, flags: MemRangeFlag) -> Result<(), PageMarkerError> {
         let page_cnt = Page::upper_bound(range_size);
-        let mut virtual_offset = virtual_offset;
-        let mut physical_offset = physical_offset;
         for _ in 0..page_cnt {
-            let table_entry = self.get_page_entry(virtual_offset);
-            if let Ok(table_entry) = table_entry {
-                if table_entry.is_present() {
-                    table_entry.set(physical_offset, flags.as_table_flag());
-                    self.mark_dir_entry(virtual_offset, flags.as_directory_flag());
-                } else {  //impossible to acquire already used MemoryRange
-                    return Err(PageMarkerError::CapturedMemoryRange);
+            let result_entries = self.get_page_entry(virtual_offset);
+            match result_entries {
+                Ok(table_entry) => {
+                    if table_entry.is_present() {
+                        table_entry.set(physical_offset, flags.as_table_flag());
+                        self.mark_dir_entry(virtual_offset, flags.as_directory_flag());
+                    } else {  //impossible to acquire already used MemoryRange
+                        return Err(PageMarkerError::CapturedMemoryRange);
+                    }
                 }
-            } else {
-                return Err(unsafe { table_entry.unwrap_err_unchecked() });
+                Err(error_code) => {
+                    return Err(error_code);
+                }
             }
             virtual_offset += Page::SIZE;
             physical_offset += Page::SIZE;
@@ -383,20 +383,33 @@ impl PageMarker {
     pub fn new<T, S>(&self, mut alloc_handler: T, mut free_handler: S) -> Result<PageMarker, PageMarkerError>
         where T: FnMut(usize) -> Option<PhysicalAddress>,
               S: FnMut(PhysicalAddress) -> () {
-        let result: Result<PageMarker, PageMarkerError>;
-        let directory = alloc_handler(Page::upper_bound(ENTRIES_PER_DIRECTORY) * DirEntry::BYTE_SIZE);
-        if let Some(directory_offset) = directory {
-            let tables = alloc_handler(ENTRIES_PER_DIRECTORY);
-            if let Some(tables) = tables {
-                let dir_entries: *mut DirEntry = tables as *mut DirEntry;
-                result = Ok(PageMarker { dir_entries })
+        let option_directory_offset = alloc_handler(Page::upper_bound(ENTRIES_PER_DIRECTORY) * DirEntry::BYTE_SIZE);
+        let marker: PageMarker;
+        if let Some(directory_offset) = option_directory_offset {
+            let option_memory_offset = alloc_handler(ENTRIES_PER_DIRECTORY);
+            if let Some(memory_offset) = option_memory_offset {
+                marker = PageMarker { dir_entries: memory_offset as *mut DirEntry };
             } else {
                 free_handler(directory_offset);
-                result = Err(PageMarkerError::OutOfMemory);
+                return Err(PageMarkerError::OutOfMemory);
             }
         } else {
-            result = Err(PageMarkerError::OutOfMemory);
+            return Err(PageMarkerError::OutOfMemory);
         }
-        return result;
+        return Ok(marker);
+    }
+}
+
+#[cfg(test)]
+extern crate std;
+
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import() {
+        let offset: PhysicalAddress = 0;
+        assert_eq!(offset.as_virtual(), 0xC0_000_000);
     }
 }

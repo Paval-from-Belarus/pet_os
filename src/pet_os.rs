@@ -6,6 +6,7 @@
 #![feature(core_intrinsics)]
 #![feature(ptr_from_ref)]
 #![feature(const_trait_impl)]
+
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
 #[allow(dead_code)]
@@ -19,16 +20,14 @@ use memory::{PagingProperties};
 // #[cfg(not(test))]
 // #[lang = "eh_personality"]
 // pub extern "C" fn eh_personality() {}
-
 #[cfg(not(test))]
 #[macro_use]
 // extern crate static_assertions;
 // extern crate bitfield;
 // extern crate bitflags;
-extern crate panic_halt;
+// extern crate panic_halt;
 // // extern crate alloc;
 //
-
 // use core::arch::asm;
 
 
@@ -36,15 +35,29 @@ extern crate panic_halt;
 // use memory::{PagingProperties, UtilsAllocator};
 //
 // static ALLOCATOR: UtilsAllocator = UtilsAllocator::empty();
+#[panic_handler]
+pub fn panic(info: &PanicInfo) -> ! {
+    stop_execution();
+}
+
+pub fn stop_execution() -> ! {
+    unsafe {
+        asm!(
+        "hlt"
+        );
+    }
+    unsafe { hint::unreachable_unchecked() }
+}
 #[cfg(not(test))]
 #[no_mangle]
 #[allow(dead_code)]
 pub unsafe extern "C" fn main(properties: *const PagingProperties) {
 // pub unsafe extern "C" fn main(values: *const u8) {
-    let (allocator, layout) = unsafe {
+    unsafe {
         let allocator = (*properties).allocator();
-        let marker = (*properties).page_marker();
-        memory::init_kernel_space(allocator, marker)
+        let mut marker = (*properties).page_marker();
+        // memory::init_kernel_space(allocator, marker)
+        let page_allocator = PageAllocator::new(allocator, &mut marker, 0);
     };
     // ALLOCATOR.configure(allocator, layout);
 
@@ -80,7 +93,9 @@ pub unsafe extern "C" fn main(properties: *const PagingProperties) {
 }
 
 use core::arch::asm;
+use core::hint;
 use core::panic::PanicInfo;
+use crate::memory::PageAllocator;
 // use crate::memory::PagingProperties;
 // use crate::memory::PageRecFlag;
 
@@ -101,13 +116,3 @@ use core::panic::PanicInfo;
 // }
 
 // //
-// #[cfg(test)]
-// extern crate std;
-//
-//
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn it_works() {}
-// }

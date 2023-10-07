@@ -1,19 +1,17 @@
 OUTPUT_FORMAT(binary)
-KERNEL_PHYSICAL_OFFSET = 0x100000;
-KERNEL_START_OFFSET = 0xC0000000;
 ENTRY(_start);
+KERNEL_VIRTUAL_OFFSET = KERNEL_VIRTUAL_OFFSET * 0x10;
 SECTIONS
 {
 	/* Link the kernel at this address: "." means the current address */
         /* Must be equal to KERNLINK */
-	. = (KERNEL_START_OFFSET + KERNEL_PHYSICAL_OFFSET);
+	. = (KERNEL_PHYSICAL_OFFSET + KERNEL_VIRTUAL_OFFSET);
     LD_KERNEL_START = .;
 	.text : AT(KERNEL_PHYSICAL_OFFSET) {
 		*(.text .stub .text.* .gnu.linkonce.t.*)
 	}
 
 	PROVIDE(etext = .);	/* Define the 'etext' symbol to this value */
-
 	.rodata : {
 		*(.rodata .rodata.* .gnu.linkonce.r.*)
 	}

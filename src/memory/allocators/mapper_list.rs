@@ -1,6 +1,8 @@
 use core::ops::Deref;
-use core::ptr;
+use core::{ptr, slice};
+use core::slice::IterMut;
 use crate::memory::{Page, PageRec};
+
 pub enum ZoneType {
     Usable,
     Device,
@@ -51,7 +53,6 @@ impl Iterator for Iter {
         return next;
     }
 }
-
 impl DoubleEndedIterator for Iter {
     fn next_back(&mut self) -> Option<Self::Item> {
         let prev = self.back_pivot;
@@ -65,14 +66,12 @@ impl PageList {
     pub fn empty() -> PageList {
         PageList { head: ptr::null_mut(), tail: ptr::null_mut(), items_cnt: 0 }
     }
-    pub fn new(header: &'static mut PageRec, tail: Option<&'static mut PageRec>) -> PageList {
+    pub fn new(header: &'static mut PageRec, option_tail: Option<&'static mut PageRec>) -> PageList {
         let mut items_cnt: usize = 1;
         let header_ptr: *mut PageRec = header;
         let tail_ptr: *mut PageRec;
-        if let Some(tail) = 
-        if tail.is_some() {
-            tail_ptr = tail.unwrap();
-            items_cnt += 1;
+        if let Some(tail) = option_tail {
+            tail_ptr = tail;
         } else {
             tail_ptr = header_ptr;
         }
@@ -121,7 +120,7 @@ impl PageList {
         }
         let to_index = core::cmp::min(to_index, self.size());
         let mut list = PageList::empty();
-        for page_rec in self.iter().skip(from_index).take(to_index) {
+        for page_rec in self.iter_mut().skip(from_index).take(to_index) {
             list.push_back(self.pull(page_rec));
         }
         // for page_rec in rest_tail.next().into_iter()
@@ -132,7 +131,10 @@ impl PageList {
         let back_pivot = self.last();
         Iter { front_pivot, back_pivot }
     }
-    fn pull(&mut self, page: &PageRec) -> &'static mut PageRec {
+    pub fn iter_mut(&mut self) -> IterMut<'static, PageRec> {
+        todo!()
+    }
+    fn pull(&mut self, page: &'static mut PageRec) -> &'static mut PageRec {
         //self.lock();
         if let Some(prev) = page.prev_ref() {
             prev.set_next(page.next_ptr());
@@ -151,10 +153,7 @@ impl PageList {
             self.tail = page.prev_ptr();
         }
         self.items_cnt = core::cmp::max(0, self.items_cnt - 1);
-        let page = ptr::from_ref(page) as *mut PageRec;
-        return unsafe {
-            &mut *page
-        };
+        page
     }
     fn init_empty_list(&mut self, page: &'static mut PageRec) {
         let pointer: *mut PageRec = page;
