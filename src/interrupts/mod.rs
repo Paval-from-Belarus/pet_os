@@ -1,6 +1,7 @@
 use crate::memory::VirtualAddress;
 use core::marker::PhantomData;
 
+#[allow(unused)]
 #[repr(C)] //the wrapper on real stack frame
 struct InterruptStackFrame {
     ip: usize,
@@ -11,6 +12,7 @@ struct InterruptStackFrame {
     error_code: usize,
 }
 
+#[allow(unused)]
 type Handler = fn(&mut InterruptStackFrame);
 
 #[derive(Debug)]
@@ -26,6 +28,7 @@ struct IDTEntry<T> {
 }
 
 impl IDTEntry<Handler> {
+    #[allow(unused)]
     pub fn new(handler: Handler) -> IDTEntry<Handler> {
         let handler_offset = handler as *const Handler as VirtualAddress;
         let _lower_offset = (handler_offset & 0xFFFF) as u16;

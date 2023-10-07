@@ -1,6 +1,6 @@
 #![no_std]
 #![crate_name = "pet_os"]
-#![feature(lang_items)]
+//#![feature(lang_items)]
 #![feature(slice_ptr_get)]
 #![feature(let_chains)]
 #![feature(core_intrinsics)]
@@ -13,15 +13,14 @@ mod file_system;
 mod interrupts;
 #[allow(dead_code)]
 mod memory;
-#[macro_use]
 mod utils;
 
 use memory::PagingProperties;
 // #[cfg(not(test))]
 // #[lang = "eh_personality"]
 // pub extern "C" fn eh_personality() {}
-#[cfg(not(test))]
-#[macro_use]
+// #[cfg(not(test))]
+// #[macro_use]
 // extern crate static_assertions;
 // extern crate bitfield;
 // extern crate bitflags;

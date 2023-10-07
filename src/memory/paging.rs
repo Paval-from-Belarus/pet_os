@@ -443,8 +443,9 @@ impl PageMarker {
 #[cfg(test)]
 extern crate std;
 
+#[cfg(test)]
 mod tests {
-
+    use crate::memory::{PhysicalAddress, ToVirtualAddress};
     #[test]
     fn import() {
         let offset: PhysicalAddress = 0;
