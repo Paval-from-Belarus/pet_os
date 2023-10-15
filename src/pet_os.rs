@@ -14,7 +14,6 @@ mod interrupts;
 #[allow(dead_code)]
 mod memory;
 mod utils;
-
 use memory::PagingProperties;
 // #[cfg(not(test))]
 // #[lang = "eh_personality"]
@@ -49,6 +48,7 @@ pub fn stop_execution() -> ! {
 #[allow(dead_code)]
 pub unsafe extern "C" fn main(properties: *const PagingProperties) {
     // pub unsafe extern "C" fn main(values: *const u8) {
+    debug_assert!(true);
     unsafe {
         let allocator = (*properties).allocator();
         let mut marker = (*properties).page_marker();

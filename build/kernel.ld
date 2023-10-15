@@ -1,6 +1,7 @@
 OUTPUT_FORMAT(binary)
 ENTRY(_start);
 KERNEL_VIRTUAL_OFFSET = KERNEL_VIRTUAL_OFFSET * 0x10;
+KERNEL_STACK_SIZE = 4096;
 SECTIONS
 {
 	/* Link the kernel at this address: "." means the current address */
@@ -8,6 +9,7 @@ SECTIONS
 	. = (KERNEL_PHYSICAL_OFFSET + KERNEL_VIRTUAL_OFFSET);
     LD_KERNEL_START = .;
 	.text : AT(KERNEL_PHYSICAL_OFFSET) {
+	    *(.init_text)
 		*(.text .stub .text.* .gnu.linkonce.t.*)
 	}
 
@@ -33,7 +35,7 @@ SECTIONS
 	}
 
 	PROVIDE(edata = .);
-
+    KERNEL_HEAP_OFFSET = .;
 	.bss : {
 		*(.bss)
 	}

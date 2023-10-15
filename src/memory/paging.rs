@@ -1,4 +1,4 @@
-use core::{hint, mem};
+use core::{hint, intrinsics, mem};
 
 use crate::bitflags;
 
@@ -11,12 +11,17 @@ extern "C" {
     static KERNEL_SIZE: usize;
     //offset after which memory is free to use
     static KERNEL_VIRTUAL_OFFSET: usize;
+    pub(crate) static KERNEL_STACK_SIZE: usize;
 }
-
+struct MemoryMappingRegion { //used to copy
+virtual_offset: VirtualAddress,
+    physical_offset: PhysicalAddress,
+    size: usize
+}
 //exactly quarter of virtual memory
 const ENTRIES_PER_DIRECTORY: usize = 1024;
 const ENTRIES_PER_TABLE: usize = 1024;
-
+#[deprecated]
 pub fn get_heap_initial_offset() -> VirtualAddress {
     //runtime solve
     todo!()
@@ -44,17 +49,19 @@ pub enum PageMarkerError {
     OutOfMemory,
     CapturedMemoryRange,
 }
+pub struct KernelProperties {
+    boot_device: u8, //used to invoke virtual task
+    ranges: *const u8
+}
 
-///The Kernel properties are passed from Operation System Loader (asm stub)
-/// On each architecture KernelProperties has specific layout and structure
-///
-#[repr(packed)]
+#[repr(C)]
 pub struct PagingProperties {
     captures: *mut CaptureMemRec,
     captures_cnt: usize,
     //offset to DirectoryTable
     directory: *mut DirEntry,
     descriptors: *mut GDTTable,
+    heap_offset: PhysicalAddress
 }
 
 pub struct GDTTable {
@@ -105,6 +112,11 @@ bitflags!(
     PRESENT = 0b1,
     EMPTY = 0b0
 );
+pub(crate) struct  MemoryMappingFlag {
+    directory_flag: DirEntryFlag,
+    table_flag: TableEntryFlag
+}
+
 impl PagingProperties {
     pub fn page_marker(&self) -> PageMarker {
         PageMarker::wrap(self.directory)
@@ -121,14 +133,17 @@ impl PagingProperties {
             .iter()
             .filter(|entry| entry.is_present())
             .map(|entry| -> usize {
-                let table_entries: &mut [TableEntry] =
-                    unsafe { entry.get_table_entries().unwrap_unchecked() };
-                let live_page_cnt: usize = table_entries
-                    .iter()
-                    .filter(|entry| entry.is_present())
-                    .count();
-                return live_page_cnt
-                    + Page::upper_bound(ENTRIES_PER_TABLE * TableEntry::BYTE_SIZE);
+                let optional_table_entries = entry.get_table_entries();
+                if let Some(table_entries) = optional_table_entries {
+                    let live_page_cnt: usize = table_entries
+                        .iter()
+                        .filter(|entry| entry.is_present())
+                        .count();
+                    return live_page_cnt
+                        + Page::upper_bound(ENTRIES_PER_TABLE * TableEntry::BYTE_SIZE);
+                } else {
+                    unsafe {intrinsics::unreachable();}
+                }
             })
             .sum();
         return captured_pages;
@@ -315,32 +330,33 @@ impl PageMarker {
         virtual_address: VirtualAddress,
     ) -> Result<&mut TableEntry, PageMarkerError> {
         let dir_entry_index = table_index!(virtual_address);
-        let _table_entry_index = entry_index!(virtual_address);
+        let table_entry_index = entry_index!(virtual_address);
         // let dir_entry = unsafe { self.entries().get_mut(dir_entry_index).unwrap_unchecked() };
-        let dir_entry = self.entries().get_mut(dir_entry_index);
+        let entries = self.entries();
+        let dir_entry = entries.get_mut(dir_entry_index);
         // if dir_entry.is_none() {
         //     stop_execution();
         // }
-        let entry: &mut TableEntry;
-        if let Some(dir_entry) = dir_entry {
-            if dir_entry.is_present() {
-                let option_entries = dir_entry.get_table_entries();
-                // entry = unsafe {(dir_entry as *mut DirEntry as *mut TableEntry)};
-                if let Some(table_entries) = option_entries {
-                    // entry = unsafe { &mut *(dir_entry as *mut DirEntry as *mut TableEntry) };
-                    entry = unsafe { table_entries.get_unchecked_mut(1) };
-                    // entry = unsafe { table_entries.get_mut(table_entry_index).unwrap_unchecked() };
-                } else {
-                    return Err(PageMarkerError::InvalidTableAddress);
-                }
-            } else {
-                return Err(PageMarkerError::EmptyDirEntry);
-            }
-        } else {
-            unsafe { hint::unreachable_unchecked() }
-        }
-
-        return Ok(entry);
+        // let entry: &mut TableEntry;
+        // if let Some(dir_entry) = dir_entry {
+        //     if dir_entry.is_present() {
+        //         let option_entries = dir_entry.get_table_entries();
+        //         // entry = unsafe {(dir_entry as *mut DirEntry as *mut TableEntry)};
+        //         if let Some(table_entries) = option_entries {
+        //             entry = unsafe { table_entries.get_unchecked_mut(table_entry_index) };
+        //         } else {
+        //             return Err(PageMarkerError::InvalidTableAddress);
+        //         }
+        //     } else {
+        //         return Err(PageMarkerError::EmptyDirEntry);
+        //     }
+        // } else {
+        //     unsafe {
+        //         intrinsics::unreachable();
+        //     }
+        // }
+        return Err(PageMarkerError::EmptyDirEntry);
+        // return Ok(entry);
     }
     //physical address automatically align to page (for potential performance increase)
     //TableEntryFlag::PRESENT is used automatically in best case (if even passed flag doesn't holds present flag -> it will holds PRESENT)
@@ -416,9 +432,9 @@ impl PageMarker {
         mut alloc_handler: T,
         mut free_handler: S,
     ) -> Result<PageMarker, PageMarkerError>
-    where
-        T: FnMut(usize) -> Option<PhysicalAddress>,
-        S: FnMut(PhysicalAddress) -> (),
+        where
+            T: FnMut(usize) -> Option<PhysicalAddress>,
+            S: FnMut(PhysicalAddress) -> (),
     {
         let option_directory_offset =
             alloc_handler(Page::upper_bound(ENTRIES_PER_DIRECTORY) * DirEntry::BYTE_SIZE);
@@ -446,6 +462,7 @@ extern crate std;
 #[cfg(test)]
 mod tests {
     use crate::memory::{PhysicalAddress, ToVirtualAddress};
+
     #[test]
     fn import() {
         let offset: PhysicalAddress = 0;

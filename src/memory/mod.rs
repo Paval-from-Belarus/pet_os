@@ -29,6 +29,10 @@ bitflags!(
     USABLE = 0b10_00,
     DEVICE = 0b01_00
 );
+pub fn stack_size() -> usize {
+    return unsafe { paging::KERNEL_STACK_SIZE };
+}
+
 /// What is a PageLayout table? PageLayout table is solid array (table) of PageRec in memory
 pub struct MemoryLayoutRec {
     ///offset of data segment

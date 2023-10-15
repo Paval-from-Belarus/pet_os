@@ -27,6 +27,7 @@ STRIP := strip
 OBJDUMP := objdump
 RM := rm -f
 MAKE := make
+BOCHS = build/bochs-debug.sh
 #configuration properties
 LD_SCRIPT = $(SCRIPTS_PATH)/kernel.ld
 LD_FLAGS := -n --gc-sections
@@ -34,7 +35,6 @@ LD_FLAGS += -Map=$(MAP_FILE)
 LD_FLAGS += -T $(LD_SCRIPT)
 LD_FLAGS += -z max-page-size=0x1000
 LD_FLAGS += -melf_i386
-
 TARGET_SPEC := $(SCRIPTS_PATH)/target.json
 FILE_SYSTEM_BUILD_SCRIPT := $(SCRIPTS_PATH)/FileSystem.xml
 CARGO_FLAGS := -Z build-std=core,compiler_builtins
@@ -46,16 +46,20 @@ clean:
 test:
 	$(CARGO) test
 debug: image unlock-debug
-	$(shell ./build/bochs-debug.sh)
+	$(BOCHS)
 unlock-debug:
 	$(RM) $(TARGET_IMAGES_PATH)/*.lock
 image: $(TARGET_IMAGE)
 $(TARGET_IMAGE): $(ASM_CONFIG_FILE) $(TARGET_KERNEL_PATH)/kernel.o
-	@cp --remove-destination $(TARGET_KERNEL_PATH)/kernel.o $(ASM_PROJECT_PATH)/System/Kernel.bin
+	@cp --remove-destination $(TARGET_KERNEL_PATH)/kernel.o  $(ASM_PROJECT_PATH)/System/Kernel.bin
 	$(IMAGE_BUILDER)
 	@cp $(ASM_PROJECT_PATH)/target/Boot.iso $(TARGET_IMAGE)
 	@cp $(ASM_PROJECT_PATH)/target/Boot.img $(TARGET_IMAGES_PATH)/petos.img
-kernel: src $(LD_SCRIPT) $(TARGET_SPEC) $(TARGET_KERNEL_PATH)/entry.o
+rebuild-kernel:
+	@rm $(TARGET_KERNEL_PATH)/kernel.o
+	@make kernel
+kernel: $(TARGET_KERNEL_PATH)/kernel.o
+$(TARGET_KERNEL_PATH)/kernel.o: src $(LD_SCRIPT) $(TARGET_SPEC) $(TARGET_KERNEL_PATH)/entry.o
 	$(CARGO) build $(CARGO_FLAGS) --target=$(TARGET_SPEC) --release
 	@cp --preserve $(TARGET_LIB_PATH)/libpet_os.a $(TARGET_KERNEL_PATH)/kernel.a
 	$(LD) $(LD_FLAGS) -o $@ $(TARGET_KERNEL_PATH)/entry.o $(TARGET_KERNEL_PATH)/kernel.a
