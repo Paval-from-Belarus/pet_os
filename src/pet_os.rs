@@ -6,14 +6,20 @@
 #![feature(core_intrinsics)]
 #![feature(ptr_from_ref)]
 #![feature(const_trait_impl)]
-
+#![feature(abi_x86_interrupt)]
+#![feature(const_maybe_uninit_zeroed)]
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
+
+#[cfg(test)]
+extern crate std;
 mod file_system;
 mod interrupts;
 #[allow(dead_code)]
 mod memory;
 mod utils;
+
+
 use memory::PagingProperties;
 // #[cfg(not(test))]
 // #[lang = "eh_personality"]
@@ -23,8 +29,7 @@ use memory::PagingProperties;
 // extern crate static_assertions;
 // extern crate bitfield;
 // extern crate bitflags;
-// extern crate panic_halt;
-// // extern crate alloc;
+// extern crate alloc;
 //
 // use core::arch::asm;
 
@@ -32,6 +37,7 @@ use memory::PagingProperties;
 // use memory::{PagingProperties, UtilsAllocator};
 //
 // static ALLOCATOR: UtilsAllocator = UtilsAllocator::empty();
+
 #[panic_handler]
 pub fn panic(_info: &PanicInfo) -> ! {
     stop_execution();
@@ -41,14 +47,19 @@ pub fn stop_execution() -> ! {
     unsafe {
         asm!("hlt");
     }
-    unsafe { hint::unreachable_unchecked() }
+    unsafe { intrinsics::unreachable() };
 }
+
 #[cfg(not(test))]
 #[no_mangle]
 #[allow(dead_code)]
-pub unsafe extern "C" fn main(properties: *const PagingProperties) {
+pub unsafe extern "C" fn main() {
+    let properties: *const PagingProperties;
+    asm! {
+    "mov {}, eax",
+    out(reg) properties
+    };
     // pub unsafe extern "C" fn main(values: *const u8) {
-    debug_assert!(true);
     unsafe {
         let allocator = (*properties).allocator();
         let mut marker = (*properties).page_marker();
@@ -90,7 +101,7 @@ pub unsafe extern "C" fn main(properties: *const PagingProperties) {
 
 use crate::memory::PageAllocator;
 use core::arch::asm;
-use core::hint;
+use core::{hint, intrinsics, ptr, slice};
 use core::panic::PanicInfo;
 // use crate::memory::PagingProperties;
 // use crate::memory::PageRecFlag;

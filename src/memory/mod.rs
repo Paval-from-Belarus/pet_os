@@ -12,6 +12,23 @@ pub use atomics::AtomicCell;
 
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
+
+#[derive(Clone, Copy)]
+pub struct SegmentSelector(u16);
+
+impl SegmentSelector {
+    pub const CODE: SegmentSelector = SegmentSelector(0x08);
+    pub const DATA: SegmentSelector = SegmentSelector(0x10);
+    pub const STACK: SegmentSelector = SegmentSelector(0x10);
+    pub const NULL: SegmentSelector = SegmentSelector(0);
+}
+
+impl Into<u16> for SegmentSelector {
+    fn into(self) -> u16 {
+        self.0
+    }
+}
+
 bitflags!(
     //something info about range???
     pub MemRangeFlag(usize),

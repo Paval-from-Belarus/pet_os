@@ -19,7 +19,7 @@ macro_rules! bitflags {
          $(
             $vis const $name: $t = $value;
         )*
-            pub fn contains(&self, bit: $t) -> bool {
+            pub const fn contains(&self, bit: $t) -> bool {
              self.0 & bit == bit
          }
         }

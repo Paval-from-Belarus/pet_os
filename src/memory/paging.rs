@@ -13,14 +13,18 @@ extern "C" {
     static KERNEL_VIRTUAL_OFFSET: usize;
     pub(crate) static KERNEL_STACK_SIZE: usize;
 }
-struct MemoryMappingRegion { //used to copy
-virtual_offset: VirtualAddress,
+
+struct MemoryMappingRegion {
+    //used to copy
+    virtual_offset: VirtualAddress,
     physical_offset: PhysicalAddress,
-    size: usize
+    size: usize,
 }
+
 //exactly quarter of virtual memory
 const ENTRIES_PER_DIRECTORY: usize = 1024;
 const ENTRIES_PER_TABLE: usize = 1024;
+
 #[deprecated]
 pub fn get_heap_initial_offset() -> VirtualAddress {
     //runtime solve
@@ -49,27 +53,41 @@ pub enum PageMarkerError {
     OutOfMemory,
     CapturedMemoryRange,
 }
+
 pub struct KernelProperties {
-    boot_device: u8, //used to invoke virtual task
-    ranges: *const u8
+    boot_device: u8,
+    //used to invoke virtual task
+    ranges: *const u8,
 }
 
 #[repr(C)]
 pub struct PagingProperties {
+    directory: *mut DirEntry,
+    handle: *mut GDTHandle,
+    heap_offset: PhysicalAddress,
     captures: *mut CaptureMemRec,
     captures_cnt: usize,
-    //offset to DirectoryTable
-    directory: *mut DirEntry,
-    descriptors: *mut GDTTable,
-    heap_offset: PhysicalAddress
+}
+pub struct GDTTable {
+    entries: *mut GDTEntry,
+    count: usize,
+
 }
 
-pub struct GDTTable {
-    entry: GDTEntry,
+impl GDTTable {
+    pub const fn new(entries: *mut GDTEntry, count: usize) -> GDTTable {
+        GDTTable { entries, count }
+    }
+
 }
 
 pub struct GDTEntry {
     entry: usize,
+}
+
+pub struct GDTHandle {
+    table_size: usize,
+    table: *mut GDTTable,
 }
 
 pub struct CaptureMemRec {
@@ -112,9 +130,9 @@ bitflags!(
     PRESENT = 0b1,
     EMPTY = 0b0
 );
-pub(crate) struct  MemoryMappingFlag {
+pub(crate) struct MemoryMappingFlag {
     directory_flag: DirEntryFlag,
-    table_flag: TableEntryFlag
+    table_flag: TableEntryFlag,
 }
 
 impl PagingProperties {
@@ -142,7 +160,7 @@ impl PagingProperties {
                     return live_page_cnt
                         + Page::upper_bound(ENTRIES_PER_TABLE * TableEntry::BYTE_SIZE);
                 } else {
-                    unsafe {intrinsics::unreachable();}
+                    unsafe { intrinsics::unreachable(); }
                 }
             })
             .sum();
@@ -455,9 +473,6 @@ impl PageMarker {
         return Ok(marker);
     }
 }
-
-#[cfg(test)]
-extern crate std;
 
 #[cfg(test)]
 mod tests {
