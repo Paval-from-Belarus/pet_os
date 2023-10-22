@@ -1,5 +1,5 @@
 mod allocators;
-mod atomics;
+pub mod atomics;
 mod paging;
 
 pub use allocators::PageAllocator;

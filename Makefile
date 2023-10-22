@@ -44,7 +44,7 @@ all: test image
 clean:
 	rm -rf target/
 test:
-	$(CARGO) test
+	$(CARGO) test --target=i686-unknown-linux-gnu
 debug: image unlock-debug
 	$(BOCHS)
 unlock-debug:

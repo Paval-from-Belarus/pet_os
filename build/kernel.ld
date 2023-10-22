@@ -3,6 +3,7 @@ ENTRY(_start);
 KERNEL_PHYSICAL_OFFSET = 0x100000;
 KERNEL_VIRTUAL_OFFSET = 0xC0000000;
 KERNEL_STACK_SIZE = 4096;
+PAGE_SIZE = 0x1000;
 SECTIONS
 {
 	/* Link the kernel at this address: "." means the current address */
@@ -13,14 +14,13 @@ SECTIONS
 		*(.text .stub .text.* .gnu.linkonce.t.*)
 	}
 
-
-	PROVIDE(etext = .);	/* Define the 'etext' symbol to this value */
+    . = ALIGN(0x1000);
 	.rodata : {
+	    PROVIDE(etext = .);	/* Define the 'etext' symbol to this value */
 		*(.rodata .rodata.* .gnu.linkonce.r.*)
 	}
 
 	/* Adjust the address for the data segment to the next page */
-	. = ALIGN(0x1000);
 
 	/* Conventionally, Unix linkers provide pseudo-symbols
 	 * etext, edata, and end, at the end of the text, data, and bss.
@@ -28,15 +28,16 @@ SECTIONS
 	 * of the data section, but that's not one of the conventional
 	 * symbols, because the convention started before there was a
 	 * read-only rodata section between text and data. */
-	PROVIDE(data = .);
 
 	/* The data segment */
-	.data : {
+	. = ALIGN(0x1000);
+	.data ALIGN(PAGE_SIZE): {
+	    PROVIDE(data = .);
 		*(.data)
 	}
-
-	PROVIDE(edata = .);
-	.bss : {
+    . = ALIGN(0x1000);
+	.bss ALIGN(PAGE_SIZE): {
+	    PROVIDE(edata = .);
 		*(.bss)
 	}
 

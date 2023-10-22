@@ -8,15 +8,21 @@
 #![feature(const_trait_impl)]
 #![feature(abi_x86_interrupt)]
 #![feature(const_maybe_uninit_zeroed)]
+// #![feature(const_mut_refs)]
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
 
 #[cfg(test)]
-extern crate std;
+extern crate static_assertions;
+#[cfg(not(test))]
+#[allow(dead_code)]
+#[macro_use]
 mod file_system;
+#[allow(dead_code)]
 mod interrupts;
 #[allow(dead_code)]
 mod memory;
+#[allow(dead_code)]
 mod utils;
 
 
@@ -37,7 +43,7 @@ use memory::PagingProperties;
 // use memory::{PagingProperties, UtilsAllocator};
 //
 // static ALLOCATOR: UtilsAllocator = UtilsAllocator::empty();
-
+#[cfg(not(test))]
 #[panic_handler]
 pub fn panic(_info: &PanicInfo) -> ! {
     stop_execution();
@@ -66,6 +72,7 @@ pub unsafe extern "C" fn main() {
         // memory::init_kernel_space(allocator, marker)
         let _page_allocator = PageAllocator::new(allocator, &mut marker, 0);
     };
+    interrupts::init();
     // ALLOCATOR.configure(allocator, layout);
 
     // let ranges = unsafe {

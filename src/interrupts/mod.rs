@@ -1,12 +1,14 @@
 use crate::memory::{MemRangeFlag, SegmentSelector, VirtualAddress};
-use core::marker::PhantomData;
-use core::mem;
-use static_assertions::{assert_eq_size, assert_eq_size_val, assert_trait_sub_all, const_assert, const_assert_eq};
-use crate::bitflags;
+use core::{mem, ptr};
+use core::arch::asm;
+use core::ops::ControlFlow::Break;
+use core::sync::atomic::{AtomicBool, Ordering};
+use crate::{bitflags, declare_constants};
+use crate::memory::atomics::SpinLock;
 
 #[allow(unused)]
 #[repr(C)] //the wrapper on real stack frame
-struct InterruptStackFrame {
+pub struct InterruptStackFrame {
     ip: usize,
     cs: usize,
     flags: usize,
@@ -15,18 +17,12 @@ struct InterruptStackFrame {
     ss: usize,
 }
 
-#[allow(unused)]
+
 pub type NakedExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFrame);
 pub type ErrorExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFrame, usize);
 
-trait ExceptionHandler {}
-
-impl ExceptionHandler for NakedExceptionHandler {}
-
-impl ExceptionHandler for ErrorExceptionHandler {}
-
 bitflags!(
-    GateDescriptorFlag(u8),
+    pub GateDescriptorFlag(u8),
     TASK = 0x05,
     INTERRUPT_16BIT = 0x06,
     INTERRUPT_32BIT = 0x0E,
@@ -36,7 +32,7 @@ bitflags!(
     PRESENT = 0x80
 );
 bitflags!(
-    PageFaultError(usize),
+    pub PageFaultError(usize),
     NOT_PRESENT = 0b0,
     LEVEL_PROTECTION = 0b1,
     READ_FAULT = 0b00,
@@ -46,49 +42,20 @@ bitflags!(
     RESERVED_BIT_CAUSE = 0b1000,
     FETCH_CAUSE = 0b10000 //the cause is instruction fetch from page
 );
-
-pub const MAX_INTERRUPTS_COUNT: usize = 256;
-
-pub struct IDTable<T: ExceptionHandler> {
-    entries: [GateDescriptor<T>; MAX_INTERRUPTS_COUNT],
-}
-
-pub const INTERRUPT_FLAG: GateDescriptorFlag = GateDescriptorFlag::from(GateDescriptorFlag::INTERRUPT_32BIT | GateDescriptorFlag::PRESENT);
-
-impl<T: ExceptionHandler + Copy> IDTable<T> {
-    const DIVISION_BY_ZERO: usize = 0x0;
-    const PAGE_FAULT: usize = 14;
-    pub const fn new() -> Self <> {
-        let mut entries = [GateDescriptor::null(); MAX_INTERRUPTS_COUNT];
-        entries[IDTable::PAGE_FAULT] = GateDescriptor::with_error_handler(
-            page_fault_handler,
-            SegmentSelector::CODE,
-            INTERRUPT_FLAG,
-        );
-        // entries[IDTable::DIVISION_BY_ZERO] = GateDescriptor::with_naked_handler(
-        //     division_by_zero,
-        //     SegmentSelector::CODE,
-        //     INTERRUPT_FLAG,
-        // );
-        IDTable { entries }
-    }
-}
-
 #[repr(C)]
 #[derive(Copy, Clone)]
 //each interrupt entry is associate with specific interrupt handler
-struct GateDescriptor<T: ExceptionHandler> {
+pub struct GateDescriptor {
     lower_offset: u16,
     selector: SegmentSelector,
+    /// always should be zeroed
     reserved: u8,
-    //always should be zeroed
     attributes: GateDescriptorFlag,
     upper_offset: u16,
-    phantom: PhantomData<T>,
 }
 
-impl<T: ExceptionHandler> GateDescriptor<T> {
-    pub const fn new(handler_offset: VirtualAddress, selector: SegmentSelector, attributes: GateDescriptorFlag) -> GateDescriptor<T> {
+impl GateDescriptor {
+    pub const fn new(handler_offset: VirtualAddress, selector: SegmentSelector, attributes: GateDescriptorFlag) -> GateDescriptor {
         let lower_offset = (handler_offset & 0xFFFF) as u16;
         let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
         GateDescriptor {
@@ -97,39 +64,158 @@ impl<T: ExceptionHandler> GateDescriptor<T> {
             reserved: 0,
             attributes,
             upper_offset,
-            phantom: PhantomData,
         }
     }
     pub const fn null() -> Self {
-        unsafe { mem::MaybeUninit::<GateDescriptor<T>>::zeroed().assume_init() }//because the present bit is set to zero
+        unsafe { mem::MaybeUninit::<GateDescriptor>::zeroed().assume_init() }//because the present bit is set to zero
     }
-    pub fn is_present(&self) -> bool {
-        self.attributes.contains(GateDescriptorFlag::PRESENT)
-    }
-}
-
-impl GateDescriptor<NakedExceptionHandler> {
     pub fn with_naked_handler(handler: NakedExceptionHandler, selector: SegmentSelector, attributes: GateDescriptorFlag) -> Self {
         let handler_offset = handler as *const NakedExceptionHandler as VirtualAddress;
         GateDescriptor::new(handler_offset, selector, attributes)
     }
-}
-
-impl GateDescriptor<ErrorExceptionHandler> {
     pub fn with_error_handler(handler: ErrorExceptionHandler, selector: SegmentSelector, attributes: GateDescriptorFlag) -> Self {
         let handler_offset = handler as *const ErrorExceptionHandler as VirtualAddress;
         let number = 12usize;
         GateDescriptor::new(handler_offset, selector, attributes)
     }
+    pub const fn is_present(&self) -> bool {
+        self.attributes.contains(GateDescriptorFlag::PRESENT)
+    }
 }
 
-pub extern "x86-interrupt" fn division_by_zero(from: &mut InterruptStackFrame) {}
+const MAX_INTERRUPTS_COUNT: usize = 256;
+pub const INTERRUPT_FLAG: GateDescriptorFlag = GateDescriptorFlag::wrap(GateDescriptorFlag::INTERRUPT_32BIT | GateDescriptorFlag::PRESENT);
+pub const TRAP_FLAG: GateDescriptorFlag = GateDescriptorFlag::wrap(GateDescriptorFlag::TRAP_32BIT | GateDescriptorFlag::PRESENT);
 
-pub extern "x86-interrupt" fn page_fault_handler(frame: &mut InterruptStackFrame, error_code: usize) {}
+pub fn init() {
+    let table = unsafe { &mut INTERRUPT_TABLE };
+    let naked_descriptor = GateDescriptor::with_naked_handler(
+        default_naked_exception_handler,
+        SegmentSelector::CODE,
+        INTERRUPT_FLAG);
+    let error_descriptor = GateDescriptor::with_error_handler(
+        default_error_exception_handler,
+        SegmentSelector::CODE,
+        INTERRUPT_FLAG);
+    table.set(IDTable::DIVISION_BY_ZERO, naked_descriptor);
+    table.set(IDTable::DEBUG, naked_descriptor);
+    table.set(IDTable::NOT_MASKABLE, naked_descriptor);
+    table.set(IDTable::BREAKPOINT, naked_descriptor);
+    table.set(IDTable::OVERFLOW, naked_descriptor);
+    table.set(IDTable::BOUND, naked_descriptor);
+    table.set(IDTable::INVALID_OPCODE, naked_descriptor);
+    table.set(IDTable::DEVICE_NOT_AVAILABLE, naked_descriptor);
+    table.set(IDTable::DOUBLE_FAULT, error_descriptor);
+    table.set(IDTable::COPROCESSOR_OVERRUN, naked_descriptor);
+    table.set(IDTable::INVALID_TSS, error_descriptor);
+    table.set(IDTable::SEGMENT_NOT_PRESENT, error_descriptor);
+    table.set(IDTable::STACK_FAULT, error_descriptor);
+    table.set(IDTable::GENERAL_PROTECTION, error_descriptor);
+    table.set(
+        IDTable::PAGE_FAULT,
+        GateDescriptor::with_error_handler(page_fault_handler, SegmentSelector::CODE, INTERRUPT_FLAG));
+    unsafe {
+        asm!(
+        "mov eax, {}",
+        "lidt [eax]",
+        "sti", //enable interrupts
+        in(reg) &INTERRUPT_TABLE_HANDLE
+        );
+    }
+}
 
-pub extern "x86-interrupt" fn default_naked_exception_handler(frame: &mut InterruptStackFrame) {}
+/// set custom interrupt handler
+pub fn set(index: usize, descriptor: GateDescriptor) -> GateDescriptor {
+    let old = unsafe {
+        INTERRUPT_TABLE.set(index, descriptor)
+    };
+    old
+}
 
-pub extern "x86-interrupt" fn default_error_exception_handler(frame: &mut InterruptStackFrame, error_code: usize) {}
+#[repr(C, packed)]
+struct IDTHandle {
+    table_size: u16,
+    table_offset: *const GateDescriptor,
+}
+
+unsafe impl Sync for IDTHandle {}
+
+#[repr(C)]
+struct IDTable {
+    entries: [GateDescriptor; MAX_INTERRUPTS_COUNT],
+    lock: SpinLock,
+}
+
+unsafe impl Sync for IDTable {}
+
+unsafe impl Send for IDTable {}
+
+impl IDTHandle {
+    pub const fn new(table: &IDTable) -> Self {
+        IDTHandle {
+            table_size: table.byte_size().saturating_sub(1) as u16,
+            table_offset: table.entries.as_ptr(),
+        }
+    }
+}
+
+static INTERRUPT_TABLE_HANDLE: IDTHandle = IDTHandle::new(unsafe { &INTERRUPT_TABLE });
+
+
+static mut INTERRUPT_TABLE: IDTable = IDTable::empty();
+
+
+impl IDTable {
+    declare_constants!(
+        pub usize,
+        DIVISION_BY_ZERO = 0x0, "fault, no error";
+        DEBUG = 0x1, "trap or fault (depends on using), no error";
+        NOT_MASKABLE = 0x2, "not applicable, no error";
+        BREAKPOINT = 0x3, "trap, no error";
+        OVERFLOW = 0x4, "trap, no error";
+        BOUND = 0x5, "fault, no error";
+        INVALID_OPCODE = 0x6, "fault, no error";
+        DEVICE_NOT_AVAILABLE = 0x7, "fault, no error";
+        DOUBLE_FAULT = 0x8, "abort, always zero as error code";
+        COPROCESSOR_OVERRUN = 0x9, "abort but don't used, no error";
+        INVALID_TSS = 0xA, "fault, error contains segment selector \
+                            (check EXT flag to verify kind of error";
+        SEGMENT_NOT_PRESENT = 0xB, "fault, error contains segment selector";
+        STACK_FAULT = 0xC, "fault, error contains segment selector";
+        GENERAL_PROTECTION = 0xD, "fault, zero or many variants:\
+                                    operand of instruction, gate/tss selector,\
+                                    idt vector number";
+        PAGE_FAULT = 0xE, "fault, specific error format";
+        //other reserved
+    );
+    pub const fn empty() -> Self {
+        let mut entries: [GateDescriptor; MAX_INTERRUPTS_COUNT] = [GateDescriptor::null(); MAX_INTERRUPTS_COUNT];
+        let lock = SpinLock::new();
+        IDTable { entries, lock }
+    }
+    ///the size of table in bytes
+    pub const fn byte_size(&self) -> usize {
+        self.entries.len() * mem::size_of::<GateDescriptor>()
+    }
+    pub fn set(&mut self, index: usize, descriptor: GateDescriptor) -> GateDescriptor {
+        debug_assert!(index < self.entries.len(), "Invalid index for IDTable");
+        let old: GateDescriptor;
+        self.lock.acquire();
+        old = self.entries[index];
+        self.entries[index] = descriptor;
+        self.lock.release();
+        old
+    }
+}
+
+
+extern "x86-interrupt" fn division_by_zero(from: &mut InterruptStackFrame) {}
+
+extern "x86-interrupt" fn page_fault_handler(frame: &mut InterruptStackFrame, error_code: usize) {}
+
+extern "x86-interrupt" fn default_naked_exception_handler(frame: &mut InterruptStackFrame) {}
+
+extern "x86-interrupt" fn default_error_exception_handler(frame: &mut InterruptStackFrame, error_code: usize) {}
 
 #[cfg(test)]
 mod tests {
@@ -139,8 +225,11 @@ mod tests {
     #[test]
     fn integrity_tests() {
         debug_assert!(
-            mem::size_of::<GateDescriptor<usize>>() == 10,
+            mem::size_of::<GateDescriptor>() == 8,
             "Invalid size of IDTEntry"
         );
+        let table = IDTable::empty();
+        assert_eq!(table.byte_size() <= u16::MAX as usize, true);
+        assert_eq!(mem::size_of::<IDTHandle>(), 6);
     }
 }
