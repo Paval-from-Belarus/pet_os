@@ -7,7 +7,7 @@ pub use paging::{PagingProperties, ToPhysicalAddress, ToVirtualAddress};
 
 use crate::bitflags;
 use crate::memory::allocators::PageList;
-use crate::memory::paging::{CaptureAllocator, PageMarker};
+use crate::memory::paging::{CaptureAllocator, DirEntry, PageMarker, RefTable};
 pub use atomics::AtomicCell;
 
 pub type PhysicalAddress = usize;
@@ -50,6 +50,9 @@ pub fn stack_size() -> usize {
     return unsafe { paging::KERNEL_STACK_SIZE };
 }
 
+pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
+pub type DeallocHandler = fn(PhysicalAddress);
+
 /// What is a PageLayout table? PageLayout table is solid array (table) of PageRec in memory
 pub struct MemoryLayoutRec {
     ///offset of data segment
@@ -65,7 +68,7 @@ pub struct MemoryLayoutRec {
     stack_pages: PageList,
     flags: MemoryMappingFlag,
     //Write | NoPrivilege
-    marker: PageMarker,
+    marker: PageMarker<AllocHandler, DeallocHandler>,
 }
 
 pub struct Page;
@@ -81,21 +84,23 @@ pub struct PageRec {
 ///Without them, it's impossible
 pub fn init_kernel_space(
     allocator: CaptureAllocator,
-    mut marker: PageMarker,
+    dir_table: RefTable<DirEntry>,
 ) -> (PageAllocator, MemoryLayoutRec) {
-    let (allocator, heap_offset) =
-        PageAllocator::new(allocator, &mut marker, paging::get_heap_initial_offset());
-    let layout = MemoryLayoutRec {
-        heap_offset,
-        stack_offset: 0, //what about stack
-        last_page_index: 0,
-        heap_pages: PageList::empty(),
-        stack_pages: PageList::empty(),
-        flags: KERNEL_LAYOUT_FLAGS,
-        marker,
-    };
-    return (allocator, layout);
+    // let (allocator, heap_offset) =
+    //     PageAllocator::new(allocator, &mut marker, paging::get_heap_initial_offset());
+    // let layout = MemoryLayoutRec {
+    //     heap_offset,
+    //     stack_offset: 0, //what about stack
+    //     last_page_index: 0,
+    //     heap_pages: PageList::empty(),
+    //     stack_pages: PageList::empty(),
+    //     flags: KERNEL_LAYOUT_FLAGS,
+    //     marker,
+    // };
+    // return (allocator, layout);
+    todo!()
 }
+
 const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
     MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::WRITE_THROUGH);
 

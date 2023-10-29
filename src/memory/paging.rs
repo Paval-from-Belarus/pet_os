@@ -1,12 +1,7 @@
-use core::{hint, intrinsics, mem, ptr, slice};
-use core::cell::{Cell, Ref, RefCell, SyncUnsafeCell};
+use core::{mem, ptr, slice};
 use core::fmt::Pointer;
-use core::intrinsics::{likely, unreachable};
-use core::slice::Iter;
-use static_assertions::const_assert;
-
+use core::intrinsics::{unreachable};
 use crate::{bitflags, declare_constants};
-
 use crate::memory::{KERNEL_LAYOUT_FLAGS, MemoryMappingFlag, Page, PhysicalAddress, VirtualAddress};
 use crate::memory::atomics::SpinLock;
 
@@ -33,6 +28,8 @@ declare_constants!(
     usize,
     DIRECTORY_ENTRIES_COUNT = 1024;
     TABLE_ENTRIES_COUNT = 1024;
+    DIRECTORY_PAGES_COUNT = 1;
+    TABLE_PAGES_COUNT = 1;
 );
 #[deprecated]
 pub fn get_heap_initial_offset() -> VirtualAddress {
@@ -116,12 +113,12 @@ impl RefTableEntry for TableEntry {
 }
 
 impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
-    pub const fn wrap(entries: *mut T, size: usize) -> Self {
+    pub fn wrap(entries: *mut T, size: usize) -> Self {
         debug_assert!(!entries.is_null(), "Impossible to create PageDirectory from null pointer");
         Self { entries, size }
     }
     //the table will be initialized with default values
-    pub const fn with_default_values(entries: *mut T, size: usize) -> Self {
+    pub fn with_default_values(entries: *mut T, size: usize) -> Self {
         let table = RefTable::wrap(entries, size);
         table.as_mut_slice()
             .iter_mut()
@@ -132,15 +129,23 @@ impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
         if index >= self.size {
             return None;
         }
-        let pointer: *mut T = unsafe { self.entries.add(index) };
-        unsafe { Some(&*pointer) }
+        unsafe { Some(self.get_unchecked(index)) }
+    }
+    pub unsafe fn get_unchecked(&self, index: usize) -> &T {
+        debug_assert!(index < self.size);
+        let pointer: *mut T = self.entries.add(index);
+        &*pointer
     }
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         if index >= self.size {
             return None;
         }
-        let pointer: *mut T = unsafe { self.entries.add(index) };
-        unsafe { Some(&mut *pointer) }
+        unsafe { Some(self.get_mut_unchecked(index)) }
+    }
+    pub unsafe fn get_mut_unchecked(&mut self, index: usize) -> &mut T {
+        debug_assert!(index < self.size);
+        let pointer: *mut T = self.entries.add(index);
+        &mut *pointer
     }
     pub fn as_slice(&self) -> &[T] {
         unsafe { slice::from_raw_parts(self.entries, self.size) }
@@ -159,7 +164,7 @@ impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
 }
 
 impl RefTable<TableEntry> {
-    pub const fn wrap_page_table(entry: DirEntry) -> Option<Self> {
+    pub fn wrap_page_table(entry: DirEntry) -> Option<Self> {
         let table_offset = entry.get_table_offset();
         if table_offset == VirtualAddress::NULL {
             return None;
@@ -264,8 +269,8 @@ bitflags!(
 );
 
 impl PagingProperties {
-    pub fn page_marker(&self) -> PageMarker {
-        PageMarker::wrap(self.directory)
+    pub fn page_directory(&self) -> RefTable<DirEntry> {
+        RefTable::wrap(self.directory, DIRECTORY_ENTRIES_COUNT)
     }
     pub fn allocator(&self) -> CaptureAllocator {
         let captures: &mut [CaptureMemRec] =
@@ -273,26 +278,28 @@ impl PagingProperties {
         CaptureAllocator::new(captures)
     }
     //not used
-    fn get_captured_pages(marker: &mut PageMarker) -> usize {
-        let captured_pages: usize = marker
-            .entries()
-            .iter()
-            .filter(|entry| entry.is_present())
-            .map(|entry| -> usize {
-                let optional_table_entries = entry.get_table_entries();
-                if let Some(table_entries) = optional_table_entries {
-                    let live_page_cnt: usize = table_entries
-                        .iter()
-                        .filter(|entry| entry.is_present())
-                        .count();
-                    return live_page_cnt
-                        + Page::upper_bound(TABLE_ENTRIES_COUNT * TableEntry::BYTE_SIZE);
-                } else {
-                    unsafe { intrinsics::unreachable(); }
-                }
-            })
-            .sum();
-        return captured_pages;
+    #[deprecated]
+    fn get_captured_pages() -> usize {
+        // let captured_pages: usize = marker
+        //     .entries()
+        //     .iter()
+        //     .filter(|entry| entry.is_present())
+        //     .map(|entry| -> usize {
+        //         let optional_table_entries = entry.get_table_entries();
+        //         if let Some(table_entries) = optional_table_entries {
+        //             let live_page_cnt: usize = table_entries
+        //                 .iter()
+        //                 .filter(|entry| entry.is_present())
+        //                 .count();
+        //             return live_page_cnt
+        //                 + Page::upper_bound(TABLE_ENTRIES_COUNT * TableEntry::BYTE_SIZE);
+        //         } else {
+        //             unsafe { intrinsics::unreachable(); }
+        //         }
+        //     })
+        //     .sum();
+        // return captured_pages;
+        todo!()
     }
 }
 
@@ -384,7 +391,7 @@ impl DirEntry {
     pub fn set_flags(&mut self, flags: DirEntryFlag) {
         self.entry = (self.entry & DirEntry::ADDRESS_MASK) | flags.value();
     }
-    pub fn get_flags(&self) -> DirEntryFlag {
+    pub const fn get_flags(&self) -> DirEntryFlag {
         DirEntryFlag(self.entry & !DirEntry::ADDRESS_MASK)
     }
     pub fn is_present(&self) -> bool {
@@ -467,8 +474,15 @@ impl<T, S> PageMarker<T, S> where
     pub fn wrap(directory: RefTable<DirEntry>, alloc_handler: T, dealloc_handler: S) -> Self {
         Self { directory, alloc_handler, dealloc_handler }
     }
+    fn alloc_pages(&mut self, page_count: usize) -> Option<PhysicalAddress> {
+        (self.alloc_handler)(page_count)
+    }
+    fn dealloc_page(&mut self, offset: PhysicalAddress) {
+        (self.dealloc_handler)(offset)
+    }
+    #[deprecated]
     fn entries(&mut self) -> &mut [DirEntry] {
-        return unsafe { core::slice::from_raw_parts_mut(self.dir_entries, DIRECTORY_ENTRIES_COUNT) };
+        self.directory.as_mut_slice()
     }
     fn get_page_entry(
         &mut self,
@@ -505,35 +519,35 @@ impl<T, S> PageMarker<T, S> where
     }
     //physical address automatically align to page (for potential performance increase)
     //TableEntryFlag::PRESENT is used automatically in best case (if even passed flag doesn't holds present flag -> it will holds PRESENT)
-    #[deprecated]
-    pub fn mark_page(
-        &mut self,
-        physical_address: PhysicalAddress,
-        virtual_address: VirtualAddress,
-        page_flags: TableEntryFlag,
-    ) -> Result<(), PageMarkerError> {
-        let physical_address: PhysicalAddress = Page::upper_bound(physical_address);
-        let dir_entry_index = table_index!(virtual_address);
-        let table_entry_index = entry_index!(virtual_address);
-        let dir_entry = unsafe { self.entries().get_unchecked_mut(dir_entry_index) };
-        if !dir_entry.is_present() {
-            return Err(PageMarkerError::EmptyDirEntry);
-        }
-        let option_entries = dir_entry.get_table_entries();
-        if let Some(table_entries) = option_entries {
-            let entry = unsafe { table_entries.get_unchecked_mut(table_entry_index) };
-            if !entry.is_present() {
-                return Err(PageMarkerError::InvalidTableAddress);
-            }
-            entry.set(
-                physical_address,
-                TableEntryFlag(page_flags.0 | TableEntryFlag::PRESENT),
-            );
-        } else {
-            return Err(PageMarkerError::EmptyDirEntry);
-        }
-        return Ok(());
-    }
+    // #[deprecated]
+    // pub fn mark_page(
+    //     &mut self,
+    //     physical_address: PhysicalAddress,
+    //     virtual_address: VirtualAddress,
+    //     page_flags: TableEntryFlag,
+    // ) -> Result<(), PageMarkerError> {
+    //     let physical_address: PhysicalAddress = Page::upper_bound(physical_address);
+    //     let dir_entry_index = table_index!(virtual_address);
+    //     let table_entry_index = entry_index!(virtual_address);
+    //     let dir_entry = unsafe { self.entries().get_unchecked_mut(dir_entry_index) };
+    //     if !dir_entry.is_present() {
+    //         return Err(PageMarkerError::EmptyDirEntry);
+    //     }
+    //     let option_entries = dir_entry.get_table_entries();
+    //     if let Some(table_entries) = option_entries {
+    //         let entry = unsafe { table_entries.get_unchecked_mut(table_entry_index) };
+    //         if !entry.is_present() {
+    //             return Err(PageMarkerError::InvalidTableAddress);
+    //         }
+    //         entry.set(
+    //             physical_address,
+    //             TableEntryFlag(page_flags.0 | TableEntryFlag::PRESENT),
+    //         );
+    //     } else {
+    //         return Err(PageMarkerError::EmptyDirEntry);
+    //     }
+    //     return Ok(());
+    // }
 
     fn mark_dir_entry(&mut self, virtual_offset: VirtualAddress, flags: DirEntryFlag) {
         let dir_entry = unsafe {
@@ -578,36 +592,31 @@ impl<T, S> PageMarker<T, S> where
         for _ in 0..map_region.page_count {
             let table_index = table_index!(addressable_offset);
             let entry_index = entry_index!(addressable_offset);
-            let option_dir_entry = self.directory.get_mut(table_index);
-            match option_dir_entry {
-                Some(dir_entry) => {
-                    RefTable::wrap_page_table(dir_entry.clone());
-                }
-                None => {
-                    if !can_allocate {
-                        unreachable()
-                        //truly, we should panic
+            let dir_entry = self.directory.get_mut_unchecked(table_index);
+            let mut page_table = {
+                let page_table_option = RefTable::wrap_page_table(dir_entry.clone());
+                dir_entry.set_flags(flags.as_directory_flag());
+                match page_table_option {
+                    None => {
+                        if !can_allocate {
+                            unreachable()
+                            //truly, we should panic
+                        }
+                        let option_table_offset = self.alloc_pages(TABLE_PAGES_COUNT);
+                        if let Some(table_offset) = option_table_offset {
+                            RefTable::<TableEntry>::with_default_values(table_offset as *mut TableEntry, TABLE_ENTRIES_COUNT)
+                        } else {
+                            return Err(PageMarkerError::OutOfMemory);
+                        }
                     }
-                    let option_table_offset = self.alloc_handler(1);
+                    Some(page_table) => page_table
                 }
-            }
-            let result_entries = self.get_page_entry(virtual_offset);
-            match result_entries {
-                Ok(table_entry) => {
-                    if table_entry.is_present() {
-                        table_entry.set(physical_offset, flags.as_table_flag());
-                        self.mark_dir_entry(virtual_offset, flags.as_directory_flag());
-                    } else {
-                        //impossible to acquire already used MemoryRange
-                        return Err(PageMarkerError::CapturedMemoryRange);
-                    }
-                }
-                Err(error_code) => {
-                    return Err(error_code);
-                }
-            }
-            virtual_offset += Page::SIZE;
-            physical_offset += Page::SIZE;
+            };
+            let mut table_entry = page_table.get_mut_unchecked(entry_index);
+            table_entry.set_page_offset(memory_offset);
+            table_entry.set_flags(flags.as_table_flag());
+            addressable_offset += Page::SIZE;
+            memory_offset += Page::SIZE;
         }
         return Ok(());
     }
@@ -616,22 +625,12 @@ impl<T, S> PageMarker<T, S> where
         for _ in 0..page_count {
             let table_index = table_index!(addressable_offset);
             let entry_index = entry_index!(addressable_offset);
-            let option_dir_entry = self.directory.get(table_index);
-            let option_page_table = match option_dir_entry {
-                Some(dir_entry) => {
-                    RefTable::wrap_page_table(dir_entry.clone())
-                }
-                None => unsafe { unreachable() }
-            };
-            if let Some(page_table) = option_page_table {
-                let option_table_entry = page_table.get_mut(entry_index);
-                match option_table_entry {
-                    Some(table_entry) => {
-                        self.dealloc_handler(table_entry.get_page_offset());
-                        table_entry.clear();
-                    }
-                    None => unsafe { unreachable() }
-                }
+            let dir_entry = unsafe { self.directory.get_unchecked(table_index) };
+            let option_page_table = RefTable::wrap_page_table(dir_entry.clone());
+            if let Some(mut page_table) = option_page_table {
+                let mut table_entry = unsafe { page_table.get_mut_unchecked(entry_index) };
+                table_entry.clear();
+                self.dealloc_page(table_entry.get_page_offset());
             }
             addressable_offset += Page::SIZE;
         }
@@ -641,23 +640,20 @@ impl<T, S> PageMarker<T, S> where
         addressable_offset = virtual_offset;
         for _ in 0..page_count {
             let table_index = table_index!(addressable_offset);
-            let option_dir_entry = self.directory.get_mut(table_index);
-            if let Some(dir_entry) = option_dir_entry {
-                self.dealloc_handler(dir_entry.get_table_offset().as_physical());
-                dir_entry.clear();
-            } else {
-                unsafe { unreachable() };
-            }
+            let dir_entry = unsafe { self.directory.get_mut_unchecked(table_index) };
+            let page_offset = dir_entry.get_table_offset().as_physical();
+            dir_entry.clear();
+            self.dealloc_page(page_offset);
         }
     }
     pub fn new(
-        &self,
+        &mut self,
         alloc_handler: T,
         dealloc_handler: S) -> Result<PageMarker<T, S>, PageMarkerError>
         where
             T: FnMut(usize) -> Option<PhysicalAddress>,
             S: FnMut(PhysicalAddress) {
-        let option_directory_offset: Option<PhysicalAddress> = self.alloc_handler(1);
+        let option_directory_offset: Option<PhysicalAddress> = self.alloc_pages(DIRECTORY_PAGES_COUNT);
         let mut marker: PageMarker<T, S>;
         if let Some(directory_offset) = option_directory_offset {
             let directory = RefTable::<DirEntry>::with_default_values(directory_offset as *mut DirEntry, DIRECTORY_ENTRIES_COUNT);

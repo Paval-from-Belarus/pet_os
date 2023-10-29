@@ -219,7 +219,7 @@ extern "x86-interrupt" fn division_by_zero(from: &mut InterruptStackFrame) {}
 
 extern "x86-interrupt" fn page_fault_handler(frame: &mut InterruptStackFrame, error_code: usize) {
     let fault_code = PageFaultError::wrap(error_code);
-    fault_code.and_with_mask(PageFaultError::CAUSE_MASK)
+    let code = fault_code.contains_with_mask(PageFaultError::CAUSE_MASK, PageFaultError::MODE_MASK);
 
 }
 

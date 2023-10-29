@@ -15,7 +15,6 @@ compile_error!("Operation system is suitable for Intel i686");
 
 #[cfg(test)]
 extern crate static_assertions;
-extern crate alloc;
 
 #[cfg(not(test))]
 #[allow(dead_code)]
@@ -72,9 +71,9 @@ pub unsafe extern "C" fn main() {
     // pub unsafe extern "C" fn main(values: *const u8) {
     unsafe {
         let allocator = (*properties).allocator();
-        let mut marker = (*properties).page_marker();
+        let dir_table = (*properties).page_directory();
         // memory::init_kernel_space(allocator, marker)
-        let _page_allocator = PageAllocator::new(allocator, &mut marker, 0);
+        memory::init_kernel_space(allocator, dir_table);
     };
     interrupts::init();
     // ALLOCATOR.configure(allocator, layout);

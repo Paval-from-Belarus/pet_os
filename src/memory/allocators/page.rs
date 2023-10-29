@@ -1,5 +1,5 @@
 use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError};
-use crate::memory::{MemoryMappingFlag, MemoryLayoutRec, PageRec, PhysicalAddress, VirtualAddress};
+use crate::memory::{MemoryMappingFlag, MemoryLayoutRec, PageRec, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler};
 
 use crate::memory::allocators::mapper_list::PageList;
 use core::{mem, ptr};
@@ -41,11 +41,13 @@ const LIST_ACCESS_FLAG: MemoryMappingFlag = MemoryMappingFlag(MemoryMappingFlag:
 
 impl PageAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
-    pub fn new(
+    pub fn new<T, S>(
         mut allocator: CaptureAllocator,
-        marker: &mut PageMarker,
+        marker: &mut PageMarker<T, S>,
         heap_offset: VirtualAddress,
-    ) -> (PageAllocator, VirtualAddress) {
+    ) -> (PageAllocator, VirtualAddress)
+        where T: FnMut(usize) -> Option<PhysicalAddress>, //allocate specific count of physical pages
+              S: FnMut(PhysicalAddress) {
         let free_mem_size = allocator.free_memory();
         let rec_cnt = free_mem_size / mem::size_of::<PageRec>();
         let entries_mem_size = rec_cnt * mem::size_of::<PageRec>();
@@ -54,17 +56,17 @@ impl PageAllocator {
             None => stop_execution(),
             Some(memory_offset) => memory_offset,
         };
-        if marker
-            .map_user_range(
-                heap_offset,
-                entries_start_offset,
-                entries_mem_size,
-                LIST_ACCESS_FLAG,
-            )
-            .is_err()
-        {
-            stop_execution(); //mark_range result holds error code, but we can do nothing with such error_code
-        }
+        // if marker
+        //     .map_user_range(
+        //         heap_offset,
+        //         entries_start_offset,
+        //         entries_mem_size,
+        //         LIST_ACCESS_FLAG,
+        //     )
+        //     .is_err()
+        // {
+        //     stop_execution(); //mark_range result holds error code, but we can do nothing with such error_code
+        // }
         let last_entry = ptr::null_mut();
 
         // let mut last_entry = ptr::null_mut();
@@ -156,10 +158,10 @@ impl PageAllocator {
         // return result;
     }
     fn mark_pages(
-        _marker: &mut PageMarker,
+        marker: &mut PageMarker<AllocHandler, DeallocHandler>,
         start_offset: VirtualAddress,
-        _pages: &PageList,
-        _flags: MemoryMappingFlag,
+        pages: &PageList,
+        flags: MemoryMappingFlag,
     ) -> Result<(), PageMarkerError> {
         let _offset = start_offset;
         // for page_rec in pages.iter() {

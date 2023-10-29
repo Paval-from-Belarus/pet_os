@@ -1,12 +1,16 @@
-use crate::memory::PageRec;
-use core::{ptr};
+use crate::memory::{AtomicCell, PageRec};
+use core::{mem, ptr};
 use core::array::TryFromSliceError;
+use core::cell::Ref;
+use core::fmt::Formatter;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::slice::IterMut;
 use pc_keyboard::KeyCode::P;
+use static_assertions::const_assert;
+use crate::memory::atomics::SpinLock;
 
 pub enum ZoneType {
     Usable,
@@ -19,42 +23,67 @@ pub struct MemoryMapper {
     //array of PageRec
 }
 
+///the access to node is not thread-safe. It's obligatory to upper lever to ensure that all is properly synchronized
+#[repr(C)]
 pub struct QueueNode<T> {
     next: NonNull<QueueNode<T>>,
     prev: NonNull<QueueNode<T>>,
+    //consider to add spinlock
     data: T,
 }
 
-struct QueueHead<T> {
+#[repr(C)]
+pub struct LinkedQueue<T: Sized> {
+    first: NonNull<QueueNode<T>>,
+    last: NonNull<QueueNode<T>>,
     size: usize,
-    //the size of queue
-    data: PhantomData<T>,
-}
-
-impl<T> QueueHead<T> {
-    pub const fn new() -> Self {
-        QueueHead { size: 0, data: PhantomData::default() }
-    }
+    spin: SpinLock,
 }
 
 impl<T> QueueNode<T> {
-    pub const fn new(data: T, next: &mut QueueNode<T>, prev: &mut QueueNode<T>) -> Self {
+    pub fn new(data: T, next: &mut QueueNode<T>, prev: &mut QueueNode<T>) -> Self {
         QueueNode {
             next: NonNull::from(next),
             prev: NonNull::from(prev),
             data,
         }
     }
-    pub const unsafe fn new_unchecked(data: T, next: *mut QueueNode<T>, prev: *mut QueueNode<T>) -> Self {
+    #[deprecated]
+    pub unsafe fn new_unchecked(data: T, next: *mut QueueNode<T>, prev: *mut QueueNode<T>) -> Self {
         debug_assert!(!next.is_null() && !prev.is_null());
         QueueNode::new(data, &mut *next, &mut *prev)
     }
-    pub fn next(&self) -> &mut QueueNode<T> {
-        unsafe { self.next.as_mut() }
+    pub fn next(&self) -> NonNull<QueueNode<T>> {
+        self.next
     }
-    pub fn prev(&self) -> &mut QueueNode<T> {
-        unsafe { self.next.as_mut() }
+    pub fn prev(&self) -> NonNull<QueueNode<T>> {
+        self.prev
     }
+    fn set_next(&mut self, next: &mut QueueNode<T>) {
+        self.next = NonNull::from(next);
+    }
+    fn set_prev(&mut self, prev: &mut QueueNode<T>) {
+        self.prev = NonNull::from(prev);
+    }
+    pub fn relink(&mut self, next: &mut QueueNode<T>) {
+        debug_assert!(!is_self_linked(self), "Node cannot be linked with self");
+        //unlink old
+        let old_next = unsafe { self.next.as_mut() };
+        let old_prev = unsafe { self.prev.as_mut() };
+        old_next.prev = self.prev;
+        old_prev.next = self.next;
+        //link new
+        let prev = unsafe { next.prev.as_mut() };
+        self.prev = next.prev;
+        self.next = unsafe { NonNull::new_unchecked(next) };
+        let self_ptr = self as *mut QueueNode<T>;
+        next.prev = unsafe { NonNull::new_unchecked(self_ptr) };
+        prev.next = unsafe { NonNull::new_unchecked(self_ptr) };
+    }
+}
+
+pub fn is_self_linked<T>(node: &QueueNode<T>) -> bool {
+    ptr::eq(node.next.as_ptr(), node.prev.as_ptr()) && ptr::eq(node.next.as_ptr(), node)
 }
 
 impl<T> Deref for QueueNode<T> {
@@ -71,23 +100,57 @@ impl<T> DerefMut for QueueNode<T> {
     }
 }
 
-pub struct LinkedQueue<T: Sized> {
-    head: QueueNode<QueueHead<T>>,
-}
 
 impl<T: Sized> LinkedQueue<T> {
-    pub const fn new() -> Self {
-        let head = MaybeUninit::<QueueNode<QueueHead<T>>>::uninit();
-        let head_node = unsafe { QueueNode::new_unchecked(QueueHead::new(), head.as_mut_ptr(), head.as_mut_ptr()) };
-        unsafe { head.write(head_node) };
-        unsafe {
-            LinkedQueue { head: head.assume_init() }
+    pub unsafe fn empty() -> Self {
+        LinkedQueue {
+            spin: SpinLock::new(),
+            first: NonNull::dangling(),
+            last: NonNull::dangling(),
+            size: 0,
         }
     }
-    pub fn insert(&mut self, node: QueueNode<T>) {}
-    pub fn is_empty(&self) -> bool {
-        ptr::eq(&self.head, self.head.next())
+    pub unsafe fn self_link(&mut self) {
+        let self_ptr = self as *mut LinkedQueue<T> as *mut QueueNode<T>;
+        self.first = unsafe { NonNull::new_unchecked(self_ptr) };
+        self.last = unsafe { NonNull::new_unchecked(self_ptr) };
     }
+    pub unsafe fn write_empty(dest: *mut LinkedQueue<T>) {
+        let header_ptr = NonNull::new_unchecked(dest as *mut QueueNode<T>);
+        ptr::write(dest, LinkedQueue {
+            first: header_ptr,
+            last: header_ptr,
+            size: 0,
+            spin: SpinLock::new(),
+        });
+    }
+    pub fn is_empty(&self) -> bool {
+        let self_ptr = self as *const LinkedQueue<T> as *const QueueNode<T>;
+        unsafe { is_self_linked(&*self_ptr) }
+    }
+    pub fn size(&mut self) -> usize {
+        self.size
+    }
+    pub fn relink_first(&mut self, other: &mut LinkedQueue<T>) -> Result<NonNull<QueueNode<T>>, ()> {
+        self.spin.acquire();
+        if self.is_empty() {
+            self.spin.release();
+            return Err(());
+        }
+        other.spin.acquire();
+        // let first = self.first;
+        // unsafe { first.as_mut().relink() }
+        other.spin.release();
+        self.spin.release();
+        todo!()
+    }
+    pub fn relink_last(&mut self, other: &mut LinkedQueue<T>) -> Result<NonNull<QueueNode<T>>, ()> {
+        todo!()
+    }
+    pub fn insert_first(&mut self, node: NonNull<QueueNode<T>>) {
+
+    }
+    pub fn insert_last(&mut self, node: NonNull<QueueNode<T>>) {}
 }
 
 ///The sequence of free pages
@@ -139,6 +202,11 @@ impl DoubleEndedIterator for Iter {
     }
 }
 
+impl core::fmt::Display for Iter {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        todo!()
+    }
+}
 impl PageList {
     pub fn empty() -> PageList {
         PageList {
@@ -283,17 +351,23 @@ impl PageList {
 impl MemoryMapper {
     pub fn get_zone(_zone: ZoneType) {}
 }
+
 #[cfg(test)]
 mod tests {
     use alloc::boxed::Box;
+    use core::mem::MaybeUninit;
     use crate::memory::{PhysicalAddress, ToVirtualAddress};
     use crate::memory::allocators::mapper_list::LinkedQueue;
 
     #[test]
     fn import() {
-        let queue = LinkedQueue::<usize>::new();
+        let mut queue = unsafe { LinkedQueue::<usize>::empty() };
+        unsafe { queue.self_link() };
         assert!(queue.is_empty());
-        // let offset: PhysicalAddress = 0;
-        // assert_eq!(offset.as_virtual(), 0xC0_000_000);
+        let mut heap_queue_maybe = MaybeUninit::<LinkedQueue<usize>>::uninit();
+        unsafe { LinkedQueue::write_empty(heap_queue_maybe.as_mut_ptr()) }
+        let heap_queue = unsafe { heap_queue_maybe.assume_init() };
+        let is_empty = heap_queue.is_empty();
+        // assert!(heap_queue.is_empty());
     }
 }
