@@ -354,7 +354,6 @@ impl MemoryMapper {
 
 #[cfg(test)]
 mod tests {
-    use alloc::boxed::Box;
     use core::mem::MaybeUninit;
     use crate::memory::{PhysicalAddress, ToVirtualAddress};
     use crate::memory::allocators::mapper_list::LinkedQueue;

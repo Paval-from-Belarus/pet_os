@@ -678,7 +678,6 @@ impl<T, S> PageMarker<T, S> where
 
 #[cfg(test)]
 mod tests {
-    use alloc::boxed::Box;
     use crate::memory::{PhysicalAddress, ToVirtualAddress};
 
     #[test]
