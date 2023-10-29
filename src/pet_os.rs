@@ -8,12 +8,15 @@
 #![feature(const_trait_impl)]
 #![feature(abi_x86_interrupt)]
 #![feature(const_maybe_uninit_zeroed)]
+#![feature(allocator_api)]
 // #![feature(const_mut_refs)]
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
 
 #[cfg(test)]
 extern crate static_assertions;
+extern crate alloc;
+
 #[cfg(not(test))]
 #[allow(dead_code)]
 #[macro_use]

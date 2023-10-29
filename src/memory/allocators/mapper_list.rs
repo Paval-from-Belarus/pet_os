@@ -1,6 +1,12 @@
 use crate::memory::PageRec;
-use core::ptr;
+use core::{ptr};
+use core::array::TryFromSliceError;
+use core::marker::PhantomData;
+use core::mem::MaybeUninit;
+use core::ops::{Deref, DerefMut};
+use core::ptr::NonNull;
 use core::slice::IterMut;
+use pc_keyboard::KeyCode::P;
 
 pub enum ZoneType {
     Usable,
@@ -12,38 +18,78 @@ pub enum ZoneType {
 pub struct MemoryMapper {
     //array of PageRec
 }
-struct ListNode<T> {
-    next: *mut ListNode<T>,
-    prev: *mut ListNode<T>,
-    data: T
-}
-pub struct LinkedList<T> {
-    first: *mut ListNode<T>,
-    last: *mut ListNode<T>,
-    count: usize
-}
-impl <T> IntoIterator for LinkedList<T> {
-    type Item = T;
-    type IntoIter = ListNode<T>;
 
-    fn into_iter(self) -> Self::IntoIter {
-        todo!()
+pub struct QueueNode<T> {
+    next: NonNull<QueueNode<T>>,
+    prev: NonNull<QueueNode<T>>,
+    data: T,
+}
+
+struct QueueHead<T> {
+    size: usize,
+    //the size of queue
+    data: PhantomData<T>,
+}
+
+impl<T> QueueHead<T> {
+    pub const fn new() -> Self {
+        QueueHead { size: 0, data: PhantomData::default() }
     }
 }
-impl <T> Iterator for ListNode<T> {
-    type Item = T;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.next;
-        if next.is_null() {
-            return None;
+impl<T> QueueNode<T> {
+    pub const fn new(data: T, next: &mut QueueNode<T>, prev: &mut QueueNode<T>) -> Self {
+        QueueNode {
+            next: NonNull::from(next),
+            prev: NonNull::from(prev),
+            data,
         }
-        let option = next.and_then(|rec| rec.next_ref());
-        self.front_pivot = option.map(|rec| rec as &PageRec);
-        return next;
-        todo!()
+    }
+    pub const unsafe fn new_unchecked(data: T, next: *mut QueueNode<T>, prev: *mut QueueNode<T>) -> Self {
+        debug_assert!(!next.is_null() && !prev.is_null());
+        QueueNode::new(data, &mut *next, &mut *prev)
+    }
+    pub fn next(&self) -> &mut QueueNode<T> {
+        unsafe { self.next.as_mut() }
+    }
+    pub fn prev(&self) -> &mut QueueNode<T> {
+        unsafe { self.next.as_mut() }
     }
 }
+
+impl<T> Deref for QueueNode<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T> DerefMut for QueueNode<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+pub struct LinkedQueue<T: Sized> {
+    head: QueueNode<QueueHead<T>>,
+}
+
+impl<T: Sized> LinkedQueue<T> {
+    pub const fn new() -> Self {
+        let head = MaybeUninit::<QueueNode<QueueHead<T>>>::uninit();
+        let head_node = unsafe { QueueNode::new_unchecked(QueueHead::new(), head.as_mut_ptr(), head.as_mut_ptr()) };
+        unsafe { head.write(head_node) };
+        unsafe {
+            LinkedQueue { head: head.assume_init() }
+        }
+    }
+    pub fn insert(&mut self, node: QueueNode<T>) {}
+    pub fn is_empty(&self) -> bool {
+        ptr::eq(&self.head, self.head.next())
+    }
+}
+
 ///The sequence of free pages
 ///Simply, it's a header of pages
 pub struct PageList {
@@ -83,6 +129,7 @@ impl Iterator for Iter {
         return next;
     }
 }
+
 impl DoubleEndedIterator for Iter {
     fn next_back(&mut self) -> Option<Self::Item> {
         let prev = self.back_pivot;
@@ -235,4 +282,18 @@ impl PageList {
 
 impl MemoryMapper {
     pub fn get_zone(_zone: ZoneType) {}
+}
+#[cfg(test)]
+mod tests {
+    use alloc::boxed::Box;
+    use crate::memory::{PhysicalAddress, ToVirtualAddress};
+    use crate::memory::allocators::mapper_list::LinkedQueue;
+
+    #[test]
+    fn import() {
+        let queue = LinkedQueue::<usize>::new();
+        assert!(queue.is_empty());
+        // let offset: PhysicalAddress = 0;
+        // assert_eq!(offset.as_virtual(), 0xC0_000_000);
+    }
 }

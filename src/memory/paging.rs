@@ -52,16 +52,16 @@ pub fn get_kernel_physical_offset() -> usize {
     unsafe { KERNEL_PHYSICAL_OFFSET }
 }
 
-pub fn get_kernel_mapping_region() -> & mut 'static MemoryMappingRegion {
-let page_list_size = 42; //replace with valid value
-let kernel_size = get_kernel_binary_size() + page_list_size;
-let kernel_region = MemoryMappingRegion {
-virtual_offset: 0,
-physical_offset: 0,
-page_count: 0,
-next: ptr::null_mut(),
-};
-todo ! ()
+pub fn get_kernel_mapping_region() -> &'static mut MemoryMappingRegion {
+    let page_list_size = 42; //replace with valid value
+    let kernel_size = get_kernel_binary_size() + page_list_size;
+    let kernel_region = MemoryMappingRegion {
+        virtual_offset: 0,
+        physical_offset: 0,
+        page_count: 0,
+        next: ptr::null_mut(),
+    };
+    todo!()
 }
 
 pub trait ToPhysicalAddress {
@@ -682,6 +682,7 @@ impl<T, S> PageMarker<T, S> where
 
 #[cfg(test)]
 mod tests {
+    use alloc::boxed::Box;
     use crate::memory::{PhysicalAddress, ToVirtualAddress};
 
     #[test]
