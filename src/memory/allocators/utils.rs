@@ -2,7 +2,7 @@ use core::alloc::{GlobalAlloc, Layout};
 
 use core::ptr;
 
-use crate::memory::{MemRangeFlag, MemoryLayoutRec, PageAllocator, VirtualAddress};
+use crate::memory::{MemoryMappingFlag, MemoryLayoutRec, PageAllocator, VirtualAddress};
 
 //The main assumption is that KernelAllocator is thread-safe class
 //That is each method invocation is atomic
@@ -31,7 +31,7 @@ impl UtilsAllocator {
         }
     }
     pub fn configure(&self, _allocator: PageAllocator, _layout: MemoryLayoutRec) {
-        let _flags = MemRangeFlag::WRITABLE | MemRangeFlag::WRITE_THROUGH;
+        let _flags = MemoryMappingFlag::WRITABLE | MemoryMappingFlag::WRITE_THROUGH;
         // let kernel_layout: MemoryLayoutRec = MemoryLayoutRec {
         //     heap_offset: 0,
         //     stack_offset: 0,

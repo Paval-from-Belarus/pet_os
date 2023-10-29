@@ -12,7 +12,38 @@ pub enum ZoneType {
 pub struct MemoryMapper {
     //array of PageRec
 }
+struct ListNode<T> {
+    next: *mut ListNode<T>,
+    prev: *mut ListNode<T>,
+    data: T
+}
+pub struct LinkedList<T> {
+    first: *mut ListNode<T>,
+    last: *mut ListNode<T>,
+    count: usize
+}
+impl <T> IntoIterator for LinkedList<T> {
+    type Item = T;
+    type IntoIter = ListNode<T>;
 
+    fn into_iter(self) -> Self::IntoIter {
+        todo!()
+    }
+}
+impl <T> Iterator for ListNode<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.next;
+        if next.is_null() {
+            return None;
+        }
+        let option = next.and_then(|rec| rec.next_ref());
+        self.front_pivot = option.map(|rec| rec as &PageRec);
+        return next;
+        todo!()
+    }
+}
 ///The sequence of free pages
 ///Simply, it's a header of pages
 pub struct PageList {

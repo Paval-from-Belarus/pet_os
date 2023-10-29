@@ -20,8 +20,15 @@ macro_rules! bitflags {
          $(
             $vis const $name: $t = $value;
         )*
+            const BITS_COUNT: usize = core::mem::size_of::<$t>() * 8;
             pub const fn wrap(value: $t) -> Self {
                 Self(value)
+         }
+           pub const fn value(&self) -> $t {
+             self.0
+         }
+            pub const fn and_with_mask(&self, mask: $t, flag: $t) -> bool {
+             self.0 & mask == flag
          }
             pub const fn contains(&self, bit: $t) -> bool {
              self.0 & bit == bit
@@ -48,6 +55,10 @@ impl<T> ZeroedMemory<T> {
     pub const fn init() -> Self {
         unsafe { core::mem::MaybeUninit::<ZeroedMemory<T>>::zeroed().assume_init() }
     }
+}
+
+pub fn unreachable() -> ! {
+    unsafe { core::intrinsics::unreachable() }
 }
 #[macro_export]
 macro_rules! unwrap_err_unchecked {

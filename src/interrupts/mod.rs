@@ -1,8 +1,9 @@
-use crate::memory::{MemRangeFlag, SegmentSelector, VirtualAddress};
+use crate::memory::{MemoryMappingFlag, SegmentSelector, VirtualAddress};
 use core::{mem, ptr};
 use core::arch::asm;
 use core::ops::ControlFlow::Break;
 use core::sync::atomic::{AtomicBool, Ordering};
+use bitfield::bitfield;
 use crate::{bitflags, declare_constants};
 use crate::memory::atomics::SpinLock;
 
@@ -16,7 +17,6 @@ pub struct InterruptStackFrame {
     esp: usize,
     ss: usize,
 }
-
 
 pub type NakedExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFrame);
 pub type ErrorExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFrame, usize);
@@ -35,10 +35,16 @@ bitflags!(
     pub PageFaultError(usize),
     NOT_PRESENT = 0b0,
     LEVEL_PROTECTION = 0b1,
+    CAUSE_MASK = 0b1,
+
     READ_FAULT = 0b00,
     WRITE_FAULT = 0b10,
+    READ_WRITE_MASK = 0b10,
+
     SUPER_MODE = 0b000,
     USER_MODE = 0b100,
+    MODE_MASK = 0b100,
+
     RESERVED_BIT_CAUSE = 0b1000,
     FETCH_CAUSE = 0b10000 //the cause is instruction fetch from page
 );
@@ -211,7 +217,11 @@ impl IDTable {
 
 extern "x86-interrupt" fn division_by_zero(from: &mut InterruptStackFrame) {}
 
-extern "x86-interrupt" fn page_fault_handler(frame: &mut InterruptStackFrame, error_code: usize) {}
+extern "x86-interrupt" fn page_fault_handler(frame: &mut InterruptStackFrame, error_code: usize) {
+    let fault_code = PageFaultError::wrap(error_code);
+    fault_code.and_with_mask(PageFaultError::CAUSE_MASK)
+
+}
 
 extern "x86-interrupt" fn default_naked_exception_handler(frame: &mut InterruptStackFrame) {}
 
@@ -221,6 +231,7 @@ extern "x86-interrupt" fn default_error_exception_handler(frame: &mut InterruptS
 mod tests {
     use super::*;
     use core::mem;
+    use core::ops::{Shl, Shr};
 
     #[test]
     fn integrity_tests() {

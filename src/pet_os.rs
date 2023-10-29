@@ -27,6 +27,7 @@ mod utils;
 
 
 use memory::PagingProperties;
+//the minimal amount of memory is 16 MiB
 // #[cfg(not(test))]
 // #[lang = "eh_personality"]
 // pub extern "C" fn eh_personality() {}

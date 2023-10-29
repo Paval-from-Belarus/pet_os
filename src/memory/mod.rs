@@ -31,7 +31,7 @@ impl Into<u16> for SegmentSelector {
 
 bitflags!(
     //something info about range???
-    pub MemRangeFlag(usize),
+    pub MemoryMappingFlag(usize),
     ACCESSED = 0b100_000,
     CACHE_DISABLED = 0b10_000,
     WRITE_THROUGH = 0b1000,
@@ -63,7 +63,7 @@ pub struct MemoryLayoutRec {
     last_page_index: usize,
     heap_pages: PageList,
     stack_pages: PageList,
-    flags: MemRangeFlag,
+    flags: MemoryMappingFlag,
     //Write | NoPrivilege
     marker: PageMarker,
 }
@@ -96,9 +96,8 @@ pub fn init_kernel_space(
     };
     return (allocator, layout);
 }
-
-const KERNEL_LAYOUT_FLAGS: MemRangeFlag =
-    MemRangeFlag(MemRangeFlag::WRITABLE | MemRangeFlag::WRITE_THROUGH);
+const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
+    MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::WRITE_THROUGH);
 
 //todo! carefully check in mutlti threaded environment
 impl Page {

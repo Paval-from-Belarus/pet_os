@@ -1,5 +1,5 @@
 use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError};
-use crate::memory::{MemRangeFlag, MemoryLayoutRec, PageRec, PhysicalAddress, VirtualAddress};
+use crate::memory::{MemoryMappingFlag, MemoryLayoutRec, PageRec, PhysicalAddress, VirtualAddress};
 
 use crate::memory::allocators::mapper_list::PageList;
 use core::{mem, ptr};
@@ -37,7 +37,7 @@ pub enum AllocationError {
 //     //     marker: (),
 //     // }
 // }
-const LIST_ACCESS_FLAG: MemRangeFlag = MemRangeFlag(MemRangeFlag::PRESENT | MemRangeFlag::WRITABLE);
+const LIST_ACCESS_FLAG: MemoryMappingFlag = MemoryMappingFlag(MemoryMappingFlag::PRESENT | MemoryMappingFlag::WRITABLE);
 
 impl PageAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
@@ -55,7 +55,7 @@ impl PageAllocator {
             Some(memory_offset) => memory_offset,
         };
         if marker
-            .mark_range(
+            .map_user_range(
                 heap_offset,
                 entries_start_offset,
                 entries_mem_size,
@@ -159,7 +159,7 @@ impl PageAllocator {
         _marker: &mut PageMarker,
         start_offset: VirtualAddress,
         _pages: &PageList,
-        _flags: MemRangeFlag,
+        _flags: MemoryMappingFlag,
     ) -> Result<(), PageMarkerError> {
         let _offset = start_offset;
         // for page_rec in pages.iter() {
