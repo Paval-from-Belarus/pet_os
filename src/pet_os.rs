@@ -26,28 +26,11 @@ mod memory;
 #[allow(dead_code)]
 mod utils;
 
-
 use memory::PagingProperties;
-//the minimal amount of memory is 16 MiB
-// #[cfg(not(test))]
-// #[lang = "eh_personality"]
-// pub extern "C" fn eh_personality() {}
-// #[cfg(not(test))]
-// #[macro_use]
-// extern crate static_assertions;
-// extern crate bitfield;
-// extern crate bitflags;
-// extern crate alloc;
-//
-// use core::arch::asm;
 
-//
-// use memory::{PagingProperties, UtilsAllocator};
-//
-// static ALLOCATOR: UtilsAllocator = UtilsAllocator::empty();
 #[cfg(not(test))]
 #[panic_handler]
-pub fn panic(info: &PanicInfo) -> ! {
+pub fn panic(info: &core::panic::PanicInfo) -> ! {
     log!("kernel panics={}", info);
     stop_execution();
 }
@@ -55,10 +38,12 @@ pub fn panic(info: &PanicInfo) -> ! {
 pub fn stop_execution() -> ! {
     unsafe {
         asm!("hlt");
-        intrinsics::unreachable();
+        core::intrinsics::unreachable();
     }
 }
 
+use core::arch::asm;
+use utils::logging;
 #[no_mangle]
 #[allow(dead_code)]
 pub unsafe extern "C" fn main() {
@@ -71,8 +56,7 @@ pub unsafe extern "C" fn main() {
     unsafe {
         let allocator = (*properties).allocator();
         let dir_table = (*properties).page_directory();
-        // memory::init_kernel_space(allocator, marker)
-        // memory::init_kernel_space(allocator, dir_table);
+        memory::init_kernel_space(allocator, dir_table);
     };
     interrupts::init();
 
@@ -108,29 +92,3 @@ pub unsafe extern "C" fn main() {
     // "hlt"
     // )
 }
-
-use crate::memory::PageAllocator;
-use core::arch::asm;
-use core::{hint, intrinsics, ptr, slice};
-use core::panic::PanicInfo;
-use crate::utils::logging;
-// use crate::memory::PagingProperties;
-// use crate::memory::PageRecFlag;
-
-//
-// #[cfg(not(test))]
-// #[lang = "eh_personality"]
-// pub extern "C" fn eh_personality() {}
-//
-// #[cfg(not(test))]
-// #[lang = "panic_impl"]
-// #[panic_handler]
-// #[no_mangle]
-// pub unsafe extern "C" fn panic_impl(pi: &PanicInfo) -> ! {
-//     asm! {
-//     "hlt"
-//     }
-//     unreachable!()
-// }
-
-// //

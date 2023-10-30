@@ -119,7 +119,7 @@ impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
     }
     //the table will be initialized with default values
     pub fn with_default_values(entries: *mut T, size: usize) -> Self {
-        let table = RefTable::wrap(entries, size);
+        let mut table = RefTable::wrap(entries, size);
         table.as_mut_slice()
             .iter_mut()
             .for_each(RefTableEntry::clear);

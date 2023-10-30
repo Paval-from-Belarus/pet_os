@@ -40,13 +40,15 @@ TARGET_SPEC := $(SCRIPTS_PATH)/target.json
 FILE_SYSTEM_BUILD_SCRIPT := $(SCRIPTS_PATH)/FileSystem.xml
 CARGO_FLAGS := -Z build-std=core,compiler_builtins
 CARGO_FLAGS += -Z build-std-features=compiler-builtins-mem
-CARGO_FLAGS += --target $(TARGET_SPEC)
+CARGO_FLAGS += --target=$(TARGET_SPEC)
 .PHONY: all image clean kernel entry loader layout debug unlock-debug PHONY
 all: test image
 clean:
 	rm -rf target/
 test:
 	$(CARGO) test --target=i686-unknown-linux-gnu
+fix:
+	$(CARGO) fix $(CARGO_FLAGS)
 run: image unlock-image
 	$(BOCHS_RUN)
 debug: image unlock-image
@@ -64,7 +66,7 @@ rebuild-kernel:
 	@make kernel
 kernel: $(TARGET_KERNEL_PATH)/kernel.o
 $(TARGET_KERNEL_PATH)/kernel.o: src $(LD_SCRIPT) $(TARGET_SPEC) $(TARGET_KERNEL_PATH)/entry.o
-	$(CARGO) build $(CARGO_FLAGS) --target=$(TARGET_SPEC) --release
+	$(CARGO) build $(CARGO_FLAGS) --release
 	@cp --preserve $(TARGET_LIB_PATH)/libpet_os.a $(TARGET_KERNEL_PATH)/kernel.a
 	$(LD) $(LD_FLAGS) -o $@ $(TARGET_KERNEL_PATH)/entry.o $(TARGET_KERNEL_PATH)/kernel.a
 entry: $(TARGET_KERNEL_PATH)/entry.o

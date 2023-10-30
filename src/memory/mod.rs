@@ -5,7 +5,7 @@ mod paging;
 pub use allocators::PageAllocator;
 pub use paging::{PagingProperties, ToPhysicalAddress, ToVirtualAddress};
 
-use crate::bitflags;
+use crate::{bitflags, panic};
 use crate::memory::allocators::PageList;
 use crate::memory::paging::{CaptureAllocator, DirEntry, PageMarker, RefTable};
 pub use atomics::AtomicCell;
@@ -86,6 +86,10 @@ pub fn init_kernel_space(
     allocator: CaptureAllocator,
     dir_table: RefTable<DirEntry>,
 ) -> (PageAllocator, MemoryLayoutRec) {
+    // let marker = PageMarker::wrap(dir_table,
+    //                               |page_count| allocator.alloc(0, page_count),
+    //                               |free_page| unreachable!());
+
     // let (allocator, heap_offset) =
     //     PageAllocator::new(allocator, &mut marker, paging::get_heap_initial_offset());
     // let layout = MemoryLayoutRec {
