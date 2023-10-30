@@ -1,4 +1,5 @@
 use volatile::Volatile;
+
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -20,53 +21,81 @@ pub enum Color {
     Yellow = 14,
     White = 15,
 }
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-struct ColorCode(u8);
+struct ColorAttribute(u8);
 
-impl ColorCode {
-    fn new(foreground: Color, background: Color) -> ColorCode {
-        ColorCode((background as u8) << 4 | (foreground as u8))
+impl ColorAttribute {
+    const fn new(foreground: Color, background: Color) -> ColorAttribute {
+        ColorAttribute((background as u8) << 4 | (foreground as u8))
     }
 }
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 struct ScreenChar {
-    ascii_character: u8,
-    color_code: ColorCode,
+    letter: u8,
+    attribute: ColorAttribute,
 }
 
-const BUFFER_HEIGHT: usize = 25;
-const BUFFER_WIDTH: usize = 80;
+const SCREEN_HEIGHT: usize = 25;
+const SCREEN_WIDTH: usize = 80;
+declare_constants!(
+    ColorAttribute,
+    DEFAULT_COLOR_ATTRIBUTE = ColorAttribute::new(Color::White, Color::Black)
+);
 
 #[repr(transparent)]
-struct Buffer {
-    chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
+struct MemoryBuffer {
+    chars: [[Volatile<ScreenChar>; SCREEN_WIDTH]; SCREEN_HEIGHT],
+}
+
+pub struct VgaWriter {
+    screen_width: u16,
+    screen_height: u16,
+    color: ColorAttribute,
+    cursor_offset: u16,
+    mode_offset: PhysicalAddress, //the memory offset in current video mode
+}
+
+impl VgaWriter {
+    pub const fn default() -> Self {
+        VgaWriter {
+            screen_width: SCREEN_WIDTH as u16,
+            screen_height: SCREEN_HEIGHT as u16,
+            color: DEFAULT_COLOR_ATTRIBUTE,
+            cursor_offset: 0,
+            mode_offset: 0,
+        }
+    }
+    pub fn write_byte(&mut self, byte: u8) {}
 }
 
 pub struct Writer {
-    column_position: usize,
-    color_code: ColorCode,
-    buffer: &'static mut Buffer,
+    column: usize,
+    color_code: ColorAttribute,
+    buffer: &'static mut MemoryBuffer,
 }
+
 impl Writer {
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
             byte => {
-                if self.column_position >= BUFFER_WIDTH {
+                if self.column >= SCREEN_WIDTH {
                     self.new_line();
                 }
 
-                let row = BUFFER_HEIGHT - 1;
-                let col = self.column_position;
+                let row = SCREEN_HEIGHT - 1;
+                let col = self.column;
 
                 let color_code = self.color_code;
                 self.buffer.chars[row][col].write(ScreenChar {
-                    ascii_character: byte,
-                    color_code,
+                    letter: byte,
+                    attribute: color_code,
                 });
-                self.column_position += 1;
+                self.column += 1;
             }
         }
     }
@@ -78,48 +107,48 @@ impl Writer {
                 // not part of printable ASCII range
                 _ => self.write_byte(0xfe),
             }
-
         }
     }
     fn clear_row(&mut self, row: usize) {
         let blank = ScreenChar {
-            ascii_character: b' ',
-            color_code: self.color_code,
+            letter: b' ',
+            attribute: self.color_code,
         };
-        for col in 0..BUFFER_WIDTH {
+        for col in 0..SCREEN_WIDTH {
             self.buffer.chars[row][col].write(blank);
         }
     }
-    fn new_line(&mut self) {/* TODO */}
+    fn new_line(&mut self) { /* TODO */ }
 }
-use lazy_static::lazy_static;
-use spin::Mutex;
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => ($crate::utils::vga::_print(format_args!($($arg)*)));
-}
-
-#[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
-}
-
-#[doc(hidden)]
-pub fn _print(args: fmt::Arguments) {
-    use core::fmt::Write;
-    WRITER.lock().write_fmt(args).unwrap();
-}
-lazy_static! {
-    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-        column_position: 0,
-        color_code: ColorCode::new(Color::Yellow, Color::Black),
-        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
-    });
-}
+// #[macro_export]
+// macro_rules! print {
+//     ($($arg:tt)*) => ($crate::utils::vga::_print(format_args!($($arg)*)));
+// }
+//
+// #[macro_export]
+// macro_rules! println {
+//     () => ($crate::print!("\n"));
+//     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+// }
+//
+// #[doc(hidden)]
+// pub fn _print(args: fmt::Arguments) {
+//     use core::fmt::Write;
+//     let _ = WRITER.lock().write_fmt(args);
+// }
+// lazy_static! {
+//     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
+//         column_position: 0,
+//         color_code: ColorCode::new(Color::Yellow, Color::Black),
+//         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+//     });
+// }
 
 
 use core::fmt;
+use crate::declare_constants;
+use crate::memory::PhysicalAddress;
+
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(s);
@@ -127,12 +156,12 @@ impl fmt::Write for Writer {
     }
 }
 
-pub fn print_something() {
+fn print_something() {
     // use core::fmt::Write;
     let mut writer = Writer {
-        column_position: 0,
-        color_code: ColorCode::new(Color::Yellow, Color::Black),
-        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+        column: 0,
+        color_code: ColorAttribute::new(Color::Yellow, Color::Black),
+        buffer: unsafe { &mut *(0xb8000 as *mut MemoryBuffer) },
     };
 
     writer.write_byte(b'H');

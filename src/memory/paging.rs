@@ -88,7 +88,7 @@ unsafe impl<T: Sized + Copy + Clone> Send for RefTable<T> {}
 
 unsafe impl<T: Sized + Copy + Clone> Sync for RefTable<T> {}
 
-trait RefTableEntry {
+pub trait RefTableEntry {
     fn empty() -> Self;
     fn clear(&mut self);
 }
@@ -150,7 +150,7 @@ impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
     pub fn as_slice(&self) -> &[T] {
         unsafe { slice::from_raw_parts(self.entries, self.size) }
     }
-    pub fn as_mut_slice(&self) -> &mut [T] {
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.entries, self.size) }
     }
     pub fn set(&mut self, index: usize, entry: T) -> Result<(), CommonError> {

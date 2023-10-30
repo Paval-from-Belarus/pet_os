@@ -1,4 +1,6 @@
-pub mod vga;
+mod vga;
+pub mod logging;
+pub mod io;
 #[macro_export]
 macro_rules! bitflags {
     ($vis:vis $s:ident($t:ty), $($name:ident = $value:expr),* $(,)?) => {
@@ -45,7 +47,6 @@ macro_rules! declare_constants {
         )*
     };
 }
-
 
 pub struct ZeroedMemory<T> {
     value: T,

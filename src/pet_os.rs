@@ -14,6 +14,7 @@
 compile_error!("Operation system is suitable for Intel i686");
 #[cfg(test)]
 extern crate static_assertions;
+
 #[cfg(not(test))]
 #[allow(dead_code)]
 #[macro_use]
@@ -46,18 +47,18 @@ use memory::PagingProperties;
 // static ALLOCATOR: UtilsAllocator = UtilsAllocator::empty();
 #[cfg(not(test))]
 #[panic_handler]
-pub fn panic(_info: &PanicInfo) -> ! {
+pub fn panic(info: &PanicInfo) -> ! {
+    log!("kernel panics={}", info);
     stop_execution();
 }
 
 pub fn stop_execution() -> ! {
     unsafe {
         asm!("hlt");
+        intrinsics::unreachable();
     }
-    unsafe { intrinsics::unreachable() };
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 #[allow(dead_code)]
 pub unsafe extern "C" fn main() {
@@ -66,9 +67,7 @@ pub unsafe extern "C" fn main() {
     "mov {}, eax",
     out(reg) properties
     );
-    utils::vga::print_something();
-    asm!("hlt");
-    // pub unsafe extern "C" fn main(values: *const u8) {
+    logging::init();
     unsafe {
         let allocator = (*properties).allocator();
         let dir_table = (*properties).page_directory();
@@ -114,6 +113,7 @@ use crate::memory::PageAllocator;
 use core::arch::asm;
 use core::{hint, intrinsics, ptr, slice};
 use core::panic::PanicInfo;
+use crate::utils::logging;
 // use crate::memory::PagingProperties;
 // use crate::memory::PageRecFlag;
 

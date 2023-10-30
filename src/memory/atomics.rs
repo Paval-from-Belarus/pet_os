@@ -1,4 +1,5 @@
 use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::Ordering::Acquire;
 
 pub struct AtomicCell<T> {
     // value: UnsafeCell<T>,
@@ -20,9 +21,10 @@ impl<T: Clone + Copy> AtomicCell<T> {
     pub fn replace(&mut self, value: T) -> T {
         let old = self.value;
         self.value = value;
-        return old;
+        old
     }
 }
+
 #[repr(transparent)]
 pub struct SpinLock {
     lock: AtomicBool,
@@ -32,19 +34,15 @@ impl SpinLock {
     pub const fn new() -> Self {
         SpinLock { lock: AtomicBool::new(false) }
     }
-    pub fn acquire(&mut self) {
+    pub fn acquire(&self) {
         loop {
-            let is_acquired = self.lock.compare_exchange(
-                false,
-                true,
-                Ordering::Acquire,
-                Ordering::Relaxed);
-            if is_acquired.is_ok() {
+            let is_acquired = !self.lock.swap(true, Acquire);
+            if is_acquired {
                 break;
             }
         }
     }
-    pub fn release(&mut self) {
+    pub fn release(&self) {
         self.lock.store(false, Ordering::Release);
     }
 }

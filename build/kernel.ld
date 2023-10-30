@@ -9,6 +9,7 @@ SECTIONS
 	/* Link the kernel at this address: "." means the current address */
         /* Must be equal to KERNLINK */
 	. = (KERNEL_PHYSICAL_OFFSET + KERNEL_VIRTUAL_OFFSET);
+	PROVIDE(START_OFFSET = .);
 	.text : AT(KERNEL_PHYSICAL_OFFSET) {
 	    *(.init_text)
 		*(.text .stub .text.* .gnu.linkonce.t.*)
@@ -42,10 +43,10 @@ SECTIONS
 	}
 	. = ALIGN(PAGE_SIZE);
 	.heap : { . = . + SIZEOF(.bss); }
-	PROVIDE(end = .);
+	PROVIDE(END_OFFSET = .);
 	/DISCARD/ : {
     		*(.eh_frame .note.GNU-stack)
     }
-	KERNEL_SIZE = SIZEOF(.text) + SIZEOF(.rodata) + SIZEOF(.data) + (end - edata);
+	KERNEL_SIZE = END_OFFSET - START_OFFSET;
 
 }
