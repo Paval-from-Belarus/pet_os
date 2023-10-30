@@ -1,8 +1,9 @@
-use core::sync::atomic::AtomicBool;
+pub mod vga;
 #[macro_export]
 macro_rules! bitflags {
     ($vis:vis $s:ident($t:ty), $($name:ident = $value:expr),* $(,)?) => {
         #[derive(Clone, Copy)]
+        #[repr(transparent)]
         $vis struct $s($t);
 
         impl From<$t> for $s {
@@ -10,7 +11,6 @@ macro_rules! bitflags {
                 $s(item)
             }
         }
-
         impl Into<$t> for $s {
             fn into(self) -> $t {
                 self.0

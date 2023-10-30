@@ -12,10 +12,8 @@
 // #![feature(const_mut_refs)]
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
-
 #[cfg(test)]
 extern crate static_assertions;
-
 #[cfg(not(test))]
 #[allow(dead_code)]
 #[macro_use]
@@ -64,18 +62,21 @@ pub fn stop_execution() -> ! {
 #[allow(dead_code)]
 pub unsafe extern "C" fn main() {
     let properties: *const PagingProperties;
-    asm! {
+    asm!(
     "mov {}, eax",
     out(reg) properties
-    };
+    );
+    utils::vga::print_something();
+    asm!("hlt");
     // pub unsafe extern "C" fn main(values: *const u8) {
     unsafe {
         let allocator = (*properties).allocator();
         let dir_table = (*properties).page_directory();
         // memory::init_kernel_space(allocator, marker)
-        memory::init_kernel_space(allocator, dir_table);
+        // memory::init_kernel_space(allocator, dir_table);
     };
     interrupts::init();
+
     // ALLOCATOR.configure(allocator, layout);
 
     // let ranges = unsafe {

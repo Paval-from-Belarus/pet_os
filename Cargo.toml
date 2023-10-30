@@ -9,6 +9,12 @@ path = "src/pet_os.rs"
 #[dependencies]
 #compiler_builtins = { version = "0.1.101", features = ["mem"] }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.release]
+lto = "fat"
+panic = "abort"
+incremental = true
+codegen-units = 1
+opt-level = 's'
 [dependencies]
 failure = {version = "0.1", features = ["failure_derive"], default-features = false}
 static_assertions = "1.1.0"
@@ -16,6 +22,8 @@ volatile = "0.2.6"#don't remove such dependency
 lazy_static = { version = "1.2.0", features = ["spin_no_std"] }
 bitfield = "0.14.0"
 pc-keyboard = "0.7.0"
+spin = "0.5.2"
+
 #bitflags = "2.3.3"
 ##alloca = "0.3.4"
 #impl_ops = "0.1.1"

@@ -1,9 +1,6 @@
 use crate::memory::{MemoryMappingFlag, SegmentSelector, VirtualAddress};
 use core::{mem, ptr};
 use core::arch::asm;
-use core::ops::ControlFlow::Break;
-use core::sync::atomic::{AtomicBool, Ordering};
-use bitfield::bitfield;
 use crate::{bitflags, declare_constants};
 use crate::memory::atomics::SpinLock;
 
@@ -165,11 +162,10 @@ impl IDTHandle {
     }
 }
 
+#[no_mangle]
 static INTERRUPT_TABLE_HANDLE: IDTHandle = IDTHandle::new(unsafe { &INTERRUPT_TABLE });
-
-
+#[no_mangle]
 static mut INTERRUPT_TABLE: IDTable = IDTable::empty();
-
 
 impl IDTable {
     declare_constants!(
@@ -220,7 +216,6 @@ extern "x86-interrupt" fn division_by_zero(from: &mut InterruptStackFrame) {}
 extern "x86-interrupt" fn page_fault_handler(frame: &mut InterruptStackFrame, error_code: usize) {
     let fault_code = PageFaultError::wrap(error_code);
     let code = fault_code.contains_with_mask(PageFaultError::CAUSE_MASK, PageFaultError::MODE_MASK);
-
 }
 
 extern "x86-interrupt" fn default_naked_exception_handler(frame: &mut InterruptStackFrame) {}

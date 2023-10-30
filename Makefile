@@ -27,7 +27,8 @@ STRIP := strip
 OBJDUMP := objdump
 RM := rm -f
 MAKE := make
-BOCHS = build/bochs-debug.sh
+BOCHS_DBG = build/bochs-debug.sh
+BOCHS_RUN = build/bochs-run.sh
 #configuration properties
 LD_SCRIPT = $(SCRIPTS_PATH)/kernel.ld
 LD_FLAGS := -n --gc-sections
@@ -39,15 +40,18 @@ TARGET_SPEC := $(SCRIPTS_PATH)/target.json
 FILE_SYSTEM_BUILD_SCRIPT := $(SCRIPTS_PATH)/FileSystem.xml
 CARGO_FLAGS := -Z build-std=core,compiler_builtins
 CARGO_FLAGS += -Z build-std-features=compiler-builtins-mem
+CARGO_FLAGS += --target $(TARGET_SPEC)
 .PHONY: all image clean kernel entry loader layout debug unlock-debug PHONY
 all: test image
 clean:
 	rm -rf target/
 test:
 	$(CARGO) test --target=i686-unknown-linux-gnu
-debug: image unlock-debug
-	$(BOCHS)
-unlock-debug:
+run: image unlock-image
+	$(BOCHS_RUN)
+debug: image unlock-image
+	$(BOCHS_DBG)
+unlock-image:
 	$(RM) $(TARGET_IMAGES_PATH)/*.lock
 image: $(TARGET_IMAGE)
 $(TARGET_IMAGE): $(ASM_CONFIG_FILE) $(TARGET_KERNEL_PATH)/kernel.o

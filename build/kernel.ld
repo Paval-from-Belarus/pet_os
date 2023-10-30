@@ -14,7 +14,7 @@ SECTIONS
 		*(.text .stub .text.* .gnu.linkonce.t.*)
 	}
 
-    . = ALIGN(0x1000);
+    . = ALIGN(PAGE_SIZE);
 	.rodata : {
 	    PROVIDE(etext = .);	/* Define the 'etext' symbol to this value */
 		*(.rodata .rodata.* .gnu.linkonce.r.*)
@@ -30,21 +30,22 @@ SECTIONS
 	 * read-only rodata section between text and data. */
 
 	/* The data segment */
-	. = ALIGN(0x1000);
-	.data ALIGN(PAGE_SIZE): {
+	. = ALIGN(PAGE_SIZE);
+	.data : {
 	    PROVIDE(data = .);
 		*(.data)
 	}
-    . = ALIGN(0x1000);
-	.bss ALIGN(PAGE_SIZE): {
+    . = ALIGN(PAGE_SIZE);
+	.bss : {
 	    PROVIDE(edata = .);
 		*(.bss)
 	}
-
+	. = ALIGN(PAGE_SIZE);
+	.heap : { . = . + SIZEOF(.bss); }
 	PROVIDE(end = .);
 	/DISCARD/ : {
     		*(.eh_frame .note.GNU-stack)
     }
-	KERNEL_SIZE = SIZEOF(.text) + SIZEOF(.rodata) + SIZEOF(.data) + SIZEOF(.bss);
+	KERNEL_SIZE = SIZEOF(.text) + SIZEOF(.rodata) + SIZEOF(.data) + (end - edata);
 
 }

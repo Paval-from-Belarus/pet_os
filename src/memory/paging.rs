@@ -1,5 +1,4 @@
 use core::{mem, ptr, slice};
-use core::fmt::Pointer;
 use core::intrinsics::{unreachable};
 use crate::{bitflags, declare_constants};
 use crate::memory::{KERNEL_LAYOUT_FLAGS, MemoryMappingFlag, Page, PhysicalAddress, VirtualAddress};
@@ -15,6 +14,7 @@ extern "C" {
     pub(crate) static KERNEL_STACK_SIZE: usize;
 }
 
+#[derive(Copy, Clone)]
 pub struct MemoryMappingRegion {
     //used to copy
     virtual_offset: VirtualAddress,
@@ -34,7 +34,7 @@ declare_constants!(
 #[deprecated]
 pub fn get_heap_initial_offset() -> VirtualAddress {
     //runtime solve
-    todo!()
+    0
 }
 
 pub fn get_kernel_binary_size() -> usize {
@@ -52,13 +52,13 @@ pub fn get_kernel_physical_offset() -> usize {
 pub fn get_kernel_mapping_region() -> &'static mut MemoryMappingRegion {
     let page_list_size = 42; //replace with valid value
     let kernel_size = get_kernel_binary_size() + page_list_size;
-    let kernel_region = MemoryMappingRegion {
+    let mut kernel_region = MemoryMappingRegion {
         virtual_offset: 0,
         physical_offset: 0,
         page_count: 0,
         next: ptr::null_mut(),
     };
-    todo!()
+    unsafe { &mut *(ptr::null_mut() as *mut MemoryMappingRegion) }
 }
 
 pub trait ToPhysicalAddress {
@@ -299,7 +299,7 @@ impl PagingProperties {
         //     })
         //     .sum();
         // return captured_pages;
-        todo!()
+        0
     }
 }
 

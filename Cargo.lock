@@ -52,6 +52,7 @@ dependencies = [
  "failure",
  "lazy_static",
  "pc-keyboard",
+ "spin",
  "static_assertions",
  "volatile",
 ]

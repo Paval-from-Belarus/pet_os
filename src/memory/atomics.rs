@@ -23,7 +23,7 @@ impl<T: Clone + Copy> AtomicCell<T> {
         return old;
     }
 }
-
+#[repr(transparent)]
 pub struct SpinLock {
     lock: AtomicBool,
 }
