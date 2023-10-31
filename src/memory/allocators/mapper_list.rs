@@ -1,5 +1,6 @@
 use crate::memory::{PageRec};
-use core::{ ptr};
+use core::{ptr};
+use core::intrinsics::{unchecked_sub, unreachable};
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::{NonNull};
@@ -23,19 +24,20 @@ pub struct ListNode<'a, T: 'a> {
     next: NonNull<ListNode<'a, T>>,
     prev: NonNull<ListNode<'a, T>>,
     //consider to add spinlock
-    data: T,
     marker: PhantomData<&'a T>,
+    data: T,
 }
 
-#[repr(C)]
-pub struct InfiniteLinkedList<'a, T: Sized> {
-    first: NonNull<ListNode<'a, T>>,
-    last: NonNull<ListNode<'a, T>>,
-    size: usize,
-    spin: SpinLock,
-}
-
-impl<'a, T> ListNode<'a, T> {
+impl<'a, T: 'a> ListNode<'a, T> {
+    //without pointers
+    pub unsafe fn wrap_data(data: T) -> ListNode<'a, T> {
+        ListNode {
+            next: NonNull::dangling(),
+            prev: NonNull::dangling(),
+            marker: PhantomData,
+            data,
+        }
+    }
     pub fn new(data: T, next: &mut ListNode<'a, T>, prev: &mut ListNode<'a, T>) -> Self {
         ListNode {
             next: NonNull::from(next),
@@ -43,6 +45,12 @@ impl<'a, T> ListNode<'a, T> {
             data,
             marker: PhantomData,
         }
+    }
+    pub fn data(&'a self) -> &'a T{
+        &self.data
+    }
+    pub fn data_mut(&'a mut self) -> &'a mut T {
+        &mut self.data
     }
     #[deprecated]
     pub unsafe fn new_unchecked(data: T, next: *mut ListNode<'a, T>, prev: *mut ListNode<'a, T>) -> Self {
@@ -67,19 +75,33 @@ impl<'a, T> ListNode<'a, T> {
     fn set_prev(&mut self, prev: &'a mut ListNode<T>) {
         self.prev = NonNull::from(prev);
     }
+    //save old links
     pub fn relink(&mut self, new_next: &mut ListNode<'a, T>) {
         //unlink old
         let old_next = unsafe { self.next.as_mut() };
         let old_prev = unsafe { self.prev.as_mut() };
         old_next.prev = self.prev;
         old_prev.next = self.next;
+        //self-link because node cannot be in illegal state
+        unsafe { self.self_link() };
         //link new
+        let self_ptr = self as *mut ListNode<T>;
+        if ptr::eq(new_next, self_ptr) {
+            return; //already done with self_link method
+        }
         let prev = unsafe { new_next.prev.as_mut() };
         self.prev = new_next.prev;
         self.next = unsafe { NonNull::new_unchecked(new_next) };
-        let self_ptr = self as *mut ListNode<T>;
         new_next.prev = unsafe { NonNull::new_unchecked(self_ptr) };
         prev.next = unsafe { NonNull::new_unchecked(self_ptr) };
+    }
+    //unsafe because can lead to memory leaks
+    pub unsafe fn self_link(&mut self) {
+        let self_ptr = self as *mut ListNode<T>;
+        unsafe {
+            self.next = NonNull::new_unchecked(self_ptr);
+            self.prev = NonNull::new_unchecked(self_ptr);
+        }
     }
 }
 
@@ -102,8 +124,16 @@ impl<T> DerefMut for ListNode<'_, T> {
 }
 
 
-impl<T: Sized> InfiniteLinkedList<'_, T> {
-    pub fn empty() -> Self {
+#[repr(C)]
+pub struct InfiniteLinkedList<'a, T: Sized> {
+    first: NonNull<ListNode<'a, T>>,
+    last: NonNull<ListNode<'a, T>>,
+    size: usize,
+    spin: SpinLock,
+}
+
+impl<'a, T: Sized> InfiniteLinkedList<'a, T> {
+    pub fn empty() -> InfiniteLinkedList<'a, T> {
         InfiniteLinkedList {
             spin: SpinLock::new(),
             first: NonNull::dangling(),
@@ -120,17 +150,38 @@ impl<T: Sized> InfiniteLinkedList<'_, T> {
             spin: SpinLock::new(),
         });
     }
-    pub unsafe fn iter(&self) -> ListIterator<T> {
-        ListIterator::new(self.first, &self.spin)
+    //this method remove links from node
+    pub unsafe fn wrap_node(mut raw_node: NonNull<ListNode<'a, T>>) -> InfiniteLinkedList<'a, T> {
+        unsafe {
+            let node = raw_node.as_mut();
+            node.set_next(raw_node.as_mut());
+            node.set_prev(raw_node.as_mut());
+        }
+        InfiniteLinkedList {
+            first: raw_node,
+            last: raw_node,
+            size: 1,
+            spin: SpinLock::new(),
+        }
     }
-
+    pub unsafe fn iter(&self) -> ListIterator<T> {
+        debug_assert!(!self.is_empty());
+        ListIterator::new(&self)
+    }
+    pub unsafe fn iter_mut(&'a mut self) -> MutListIterator<'a, T> {
+        debug_assert!(!self.is_empty());
+        MutListIterator::new(self)
+    }
+    pub unsafe fn iter_with_limit(&'a mut self) {
+        todo!()
+    }
     pub fn is_empty(&self) -> bool {
         self.size == 0
     }
     pub fn size(&mut self) -> usize {
         self.size
     }
-    pub fn relink_first(&mut self, other: &mut InfiniteLinkedList<T>) -> Result<NonNull<ListNode<T>>, ()> {
+    pub fn relink_first(&mut self, other: &mut InfiniteLinkedList<'a, T>) -> Result<NonNull<ListNode<'a, T>>, ()> {
         self.spin.acquire();
         if self.is_empty() {
             self.spin.release();
@@ -143,30 +194,70 @@ impl<T: Sized> InfiniteLinkedList<'_, T> {
         self.spin.release();
         todo!()
     }
-    pub fn relink_last(&mut self, other: &mut InfiniteLinkedList<T>) -> Result<NonNull<ListNode<T>>, ()> {
+    pub fn relink_last(&mut self, _other: &mut InfiniteLinkedList<'a, T>) -> Result<NonNull<ListNode<'a, T>>, ()> {
         todo!()
     }
-    pub fn push_back(&mut self, node: NonNull<ListNode<T>>) {}
-    pub fn push_front(&mut self, node: NonNull<ListNode<T>>) {}
+    pub fn push_back(&mut self, _node: NonNull<ListNode<'a, T>>) {}
+    pub fn push_front(&mut self, _node: NonNull<ListNode<'a, T>>) {}
+    //the method is used by iterator to unlinked element
+    unsafe fn unlink_node(&mut self, node: NonNull<ListNode<'a, T>>) {
+        debug_assert!(!self.is_empty(), "Impossible to unlink from empty list");
+        self.size -= 1; //the size of non empty list is always greater then zero
+        if self.is_empty() {
+            self.first = NonNull::dangling();
+            self.last = NonNull::dangling();
+            return;
+        }
+        //relink header, because node by self has no relation with header
+        //it's legal to use other values from node, because list holds not single element
+        //in case of non single element, no node is self-linked
+        if ptr::eq(self.first.as_ptr(), node.as_ptr()) {
+            self.first = unsafe { node.as_ref().next };
+            // return //because other case is impossible
+        }
+        if ptr::eq(self.last.as_ptr(), node.as_ptr()) {
+            self.last = unsafe { node.as_ref().prev };
+        }
+    }
 }
 
 pub struct ListIterator<'a, T> {
-    next: &'a ListNode<'a, T>,
-    prev: &'a ListNode<'a, T>,
+    next: NonNull<ListNode<'a, T>>,
+    prev: NonNull<ListNode<'a, T>>,
+    //the next value to be emitted by forward iterator
+    is_empty: bool,
     list_lock: &'a SpinLock,
 }
 
 impl<'a, T> ListIterator<'a, T> {
-    pub fn new(first: NonNull<ListNode<'a, T>>, list_lock: &'a SpinLock) -> ListIterator<'a, T> {
-        let next = unsafe { first.as_ref() };
+    pub fn new(list: &'a InfiniteLinkedList<'a, T>) -> ListIterator<'a, T> {
+        let list_lock = &list.spin;
         list_lock.acquire();
-        ListIterator { list_lock, next, prev: next.prev() }
+        let iterator = if list.is_empty() {
+            list_lock.release();
+            ListIterator {
+                next: NonNull::dangling(),
+                prev: NonNull::dangling(),
+                is_empty: true,
+                list_lock,
+            }
+        } else {
+            ListIterator {
+                next: list.first,
+                prev: list.last,
+                is_empty: false,
+                list_lock,
+            }
+        };
+        iterator
     }
 }
 
 impl<'a, T> Drop for ListIterator<'a, T> {
     fn drop(&mut self) {
-        self.list_lock.release();
+        if !self.is_empty {
+            self.list_lock.release();
+        }
     }
 }
 
@@ -175,54 +266,107 @@ impl<'a, T> Iterator for ListIterator<'a, T> {
     type Item = &'a ListNode<'a, T>;
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let next = Some(self.next);
-        self.prev = self.next;
-        self.next = self.next.next();
-        next
+        if self.is_empty {
+            return None;
+        }
+        let current = unsafe { self.next.as_ref() };
+        self.next = current.next;
+        Some(current)
     }
 }
 
 impl<'a, T> DoubleEndedIterator for ListIterator<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        let prev = Some(self.prev);
-        self.next = self.prev;
-        self.prev = self.prev.prev();
-        prev
+        if self.is_empty {
+            return None;
+        }
+        let current = unsafe { self.prev.as_ref() };
+        self.prev = current.prev;
+        Some(current)
     }
 }
 
+//this iterator always acquire control under the collection
+//please, consider doesn't keep such iterator alive
 pub struct MutListIterator<'a, T> {
-    next: &'a mut ListNode<'a, T>,
-    prev: &'a mut ListNode<'a, T>,
-    list_lock: &'a SpinLock,
-    empty: bool,
+    next: NonNull<ListNode<'a, T>>,
+    prev: NonNull<ListNode<'a, T>>,
+    //the iterator acquire ownership under list
+    parent: &'a mut InfiniteLinkedList<'a, T>,
+    last_watched: Option<NonNull<ListNode<'a, T>>>,
 }
 
 impl<'a, T> MutListIterator<'a, T> {
-    pub fn new(mut first: NonNull<ListNode<'a, T>>, list_lock: &'a  SpinLock) -> MutListIterator<'a, T> {
-        let next = unsafe { first.as_mut() };
-        let prev = unsafe { next.prev.as_mut() };
-        list_lock.acquire();
-        MutListIterator { empty: true, list_lock, next, prev }
+    fn new(parent: &'a mut InfiniteLinkedList<'a, T>) -> MutListIterator<'a, T> {
+        parent.spin.acquire();
+        MutListIterator {
+            next: parent.first,
+            prev: parent.last,
+            last_watched: None,
+            parent,
+        }
     }
     ///Such as iterator is lazy primitive, this method unlink previously watched element
-    pub fn unlink(&mut self) -> Option<InfiniteLinkedList<'a, T>> {
-        if self.empty {
-            return None;//we cannot construct list with no value
-        }
-        let mut list = InfiniteLinkedList::empty();
-
-        Some(list)
+    pub fn unlink_watched(&mut self) -> Option<NonNull<ListNode<'a, T>>> {
+        return match self.last_watched {
+            None => None, //last watched mean that parent is empty or no next/back_next method is invoked
+            Some(mut watched) => unsafe {
+                self.parent.unlink_node(watched);
+                let free_node = watched.as_mut();
+                if self.parent.is_empty() {
+                    //the check of emptiness is always performs with with parent
+                    //access to next, prev is forbidden
+                    self.next = NonNull::dangling();
+                    self.prev = NonNull::dangling();
+                    free_node.self_link();
+                } else {
+                    //the self.next and self.prev are already holds valid
+                    free_node.relink(watched.as_mut());
+                }
+                self.last_watched = None;
+                Some(watched)
+            }
+        };
     }
-    pub unsafe fn unlink_unchecked(self) -> InfiniteLinkedList<'a, T> {
-        todo!()
+    pub unsafe fn unlink_watched_unchecked(&mut self) -> NonNull<ListNode<'a, T>> {
+        debug_assert!(self.last_watched.is_some());
+        return match self.unlink_watched() {
+            None => unreachable!("unlink unwatched failed"),
+            Some(last_watched) => last_watched
+        };
     }
 }
 
 impl<T> Drop for MutListIterator<'_, T> {
     fn drop(&mut self) {
-        self.list_lock.release();
+        self.parent.spin.release();
+    }
+}
+
+impl<'a, T> Iterator for MutListIterator<'a, T> {
+    type Item = &'a mut ListNode<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.parent.is_empty() {
+            return None;
+        }
+        self.last_watched = Some(self.next);
+        let current = unsafe { self.next.as_mut() };
+        self.next = current.next;
+        Some(current)
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for MutListIterator<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.parent.is_empty() {
+            return None;
+        }
+        self.last_watched = Some(self.prev);
+        let current = unsafe { self.prev.as_mut() };
+        self.prev = current.next;
+        Some(current)
     }
 }
 
@@ -435,6 +579,9 @@ mod tests {
         unsafe { InfiniteLinkedList::write_empty(heap_queue_maybe.as_mut_ptr()) }
         let heap_queue = unsafe { heap_queue_maybe.assume_init() };
         let is_empty = heap_queue.is_empty();
+        unsafe {
+            for node in queue.iter() {}
+        }
         // assert!(heap_queue.is_empty());
     }
 }

@@ -43,7 +43,7 @@ impl PageAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
     pub fn new<T, S>(
         mut allocator: CaptureAllocator,
-        marker: &mut PageMarker<T, S>,
+        _marker: &mut PageMarker<T, S>,
         heap_offset: VirtualAddress,
     ) -> (PageAllocator, VirtualAddress)
         where T: FnMut(usize) -> Option<PhysicalAddress>, //allocate specific count of physical pages
@@ -52,7 +52,7 @@ impl PageAllocator {
         let rec_cnt = free_mem_size / mem::size_of::<PageRec>();
         let entries_mem_size = rec_cnt * mem::size_of::<PageRec>();
         // let entries_start_offset = allocator.alloc(0, entries_mem_size).unwrap();
-        let entries_start_offset = match allocator.alloc(0, entries_mem_size) {
+        let _entries_start_offset = match allocator.alloc(0, entries_mem_size) {
             None => stop_execution(),
             Some(memory_offset) => memory_offset,
         };
@@ -158,10 +158,10 @@ impl PageAllocator {
         // return result;
     }
     fn mark_pages(
-        marker: &mut PageMarker<AllocHandler, DeallocHandler>,
+        _marker: &mut PageMarker<AllocHandler, DeallocHandler>,
         start_offset: VirtualAddress,
-        pages: &PageList,
-        flags: MemoryMappingFlag,
+        _pages: &PageList,
+        _flags: MemoryMappingFlag,
     ) -> Result<(), PageMarkerError> {
         let _offset = start_offset;
         // for page_rec in pages.iter() {

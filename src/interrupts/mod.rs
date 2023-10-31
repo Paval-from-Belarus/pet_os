@@ -1,5 +1,5 @@
-use crate::memory::{MemoryMappingFlag, SegmentSelector, VirtualAddress};
-use core::{mem, ptr};
+use crate::memory::{SegmentSelector, VirtualAddress};
+use core::{mem};
 use core::arch::asm;
 use crate::{bitflags, declare_constants};
 use crate::memory::atomics::SpinLock;
@@ -78,7 +78,7 @@ impl GateDescriptor {
     }
     pub fn with_error_handler(handler: ErrorExceptionHandler, selector: SegmentSelector, attributes: GateDescriptorFlag) -> Self {
         let handler_offset = handler as *const ErrorExceptionHandler as VirtualAddress;
-        let number = 12usize;
+        let _number = 12usize;
         GateDescriptor::new(handler_offset, selector, attributes)
     }
     pub const fn is_present(&self) -> bool {
@@ -191,7 +191,7 @@ impl IDTable {
         //other reserved
     );
     pub const fn empty() -> Self {
-        let mut entries: [GateDescriptor; MAX_INTERRUPTS_COUNT] = [GateDescriptor::null(); MAX_INTERRUPTS_COUNT];
+        let entries: [GateDescriptor; MAX_INTERRUPTS_COUNT] = [GateDescriptor::null(); MAX_INTERRUPTS_COUNT];
         let lock = SpinLock::new();
         IDTable { entries, lock }
     }
@@ -211,16 +211,16 @@ impl IDTable {
 }
 
 
-extern "x86-interrupt" fn division_by_zero(from: &mut InterruptStackFrame) {}
+extern "x86-interrupt" fn division_by_zero(_from: &mut InterruptStackFrame) {}
 
-extern "x86-interrupt" fn page_fault_handler(frame: &mut InterruptStackFrame, error_code: usize) {
+extern "x86-interrupt" fn page_fault_handler(_frame: &mut InterruptStackFrame, error_code: usize) {
     let fault_code = PageFaultError::wrap(error_code);
-    let code = fault_code.contains_with_mask(PageFaultError::CAUSE_MASK, PageFaultError::MODE_MASK);
+    let _code = fault_code.contains_with_mask(PageFaultError::CAUSE_MASK, PageFaultError::MODE_MASK);
 }
 
-extern "x86-interrupt" fn default_naked_exception_handler(frame: &mut InterruptStackFrame) {}
+extern "x86-interrupt" fn default_naked_exception_handler(_frame: &mut InterruptStackFrame) {}
 
-extern "x86-interrupt" fn default_error_exception_handler(frame: &mut InterruptStackFrame, error_code: usize) {}
+extern "x86-interrupt" fn default_error_exception_handler(_frame: &mut InterruptStackFrame, _error_code: usize) {}
 
 #[cfg(test)]
 mod tests {

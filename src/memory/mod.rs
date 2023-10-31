@@ -5,7 +5,7 @@ mod paging;
 pub use allocators::PageAllocator;
 pub use paging::{PagingProperties, ToPhysicalAddress, ToVirtualAddress};
 
-use crate::{bitflags, panic};
+use crate::{bitflags};
 use crate::memory::allocators::PageList;
 use crate::memory::paging::{CaptureAllocator, DirEntry, PageMarker, RefTable};
 pub use atomics::AtomicCell;
@@ -47,7 +47,7 @@ bitflags!(
     DEVICE = 0b01_00
 );
 pub fn stack_size() -> usize {
-    return unsafe { paging::KERNEL_STACK_SIZE };
+    unsafe { paging::KERNEL_STACK_SIZE }
 }
 
 pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
@@ -83,8 +83,8 @@ pub struct PageRec {
 ///Return crucial structures for kernel
 ///Without them, it's impossible
 pub fn init_kernel_space(
-    allocator: CaptureAllocator,
-    dir_table: RefTable<DirEntry>,
+    _allocator: CaptureAllocator,
+    _dir_table: RefTable<DirEntry>,
 ) -> (PageAllocator, MemoryLayoutRec) {
     // let marker = PageMarker::wrap(dir_table,
     //                               |page_count| allocator.alloc(0, page_count),

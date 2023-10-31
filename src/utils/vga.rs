@@ -69,7 +69,7 @@ impl VgaWriter {
             mode_offset: 0,
         }
     }
-    pub fn write_byte(&mut self, byte: u8) {}
+    pub fn write_byte(&mut self, _byte: u8) {}
 }
 
 pub struct Writer {

@@ -1,6 +1,6 @@
 use core::fmt;
 use core::fmt::Write;
-use crate::{declare_constants, stop_execution};
+use crate::{declare_constants};
 use crate::memory::atomics::SpinLock;
 use crate::utils::io;
 #[macro_export]

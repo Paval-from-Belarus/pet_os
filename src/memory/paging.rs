@@ -2,7 +2,7 @@ use core::{mem, ptr, slice};
 use core::intrinsics::{unreachable};
 use crate::{bitflags, declare_constants};
 use crate::memory::{KERNEL_LAYOUT_FLAGS, MemoryMappingFlag, Page, PhysicalAddress, VirtualAddress};
-use crate::memory::atomics::SpinLock;
+
 
 extern "C" {
     //Physical address where kernel is stored
@@ -51,8 +51,8 @@ pub fn get_kernel_physical_offset() -> usize {
 
 pub fn get_kernel_mapping_region() -> &'static mut MemoryMappingRegion {
     let page_list_size = 42; //replace with valid value
-    let kernel_size = get_kernel_binary_size() + page_list_size;
-    let mut kernel_region = MemoryMappingRegion {
+    let _kernel_size = get_kernel_binary_size() + page_list_size;
+    let _kernel_region = MemoryMappingRegion {
         virtual_offset: 0,
         physical_offset: 0,
         page_count: 0,
@@ -489,10 +489,10 @@ impl<T, S> PageMarker<T, S> where
         virtual_address: VirtualAddress,
     ) -> Result<&mut TableEntry, PageMarkerError> {
         let dir_entry_index = table_index!(virtual_address);
-        let table_entry_index = entry_index!(virtual_address);
+        let _table_entry_index = entry_index!(virtual_address);
         // let dir_entry = unsafe { self.entries().get_mut(dir_entry_index).unwrap_unchecked() };
         let entries = self.entries();
-        let dir_entry = entries.get_mut(dir_entry_index);
+        let _dir_entry = entries.get_mut(dir_entry_index);
         // if dir_entry.is_none() {
         //     stop_execution();
         // }
@@ -612,7 +612,7 @@ impl<T, S> PageMarker<T, S> where
                     Some(page_table) => page_table
                 }
             };
-            let mut table_entry = page_table.get_mut_unchecked(entry_index);
+            let table_entry = page_table.get_mut_unchecked(entry_index);
             table_entry.set_page_offset(memory_offset);
             table_entry.set_flags(flags.as_table_flag());
             addressable_offset += Page::SIZE;
@@ -628,7 +628,7 @@ impl<T, S> PageMarker<T, S> where
             let dir_entry = unsafe { self.directory.get_unchecked(table_index) };
             let option_page_table = RefTable::wrap_page_table(dir_entry.clone());
             if let Some(mut page_table) = option_page_table {
-                let mut table_entry = unsafe { page_table.get_mut_unchecked(entry_index) };
+                let table_entry = unsafe { page_table.get_mut_unchecked(entry_index) };
                 table_entry.clear();
                 self.dealloc_page(table_entry.get_page_offset());
             }
