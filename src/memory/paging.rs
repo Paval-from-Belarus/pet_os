@@ -1,7 +1,7 @@
 use core::{mem, ptr, slice};
 use core::intrinsics::{unreachable};
 use crate::{bitflags, declare_constants};
-use crate::memory::{KERNEL_LAYOUT_FLAGS, MemoryMappingFlag, Page, PhysicalAddress, VirtualAddress};
+use crate::memory::{KERNEL_LAYOUT_FLAGS, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, VirtualAddress};
 
 
 extern "C" {
@@ -14,14 +14,6 @@ extern "C" {
     pub(crate) static KERNEL_STACK_SIZE: usize;
 }
 
-#[derive(Copy, Clone)]
-pub struct MemoryMappingRegion {
-    //used to copy
-    virtual_offset: VirtualAddress,
-    physical_offset: PhysicalAddress,
-    page_count: usize,
-    next: *mut MemoryMappingRegion,
-}
 
 
 declare_constants!(
@@ -53,6 +45,7 @@ pub fn get_kernel_mapping_region() -> &'static mut MemoryMappingRegion {
     let page_list_size = 42; //replace with valid value
     let _kernel_size = get_kernel_binary_size() + page_list_size;
     let _kernel_region = MemoryMappingRegion {
+        flags: MemoryMappingFlag::from(MemoryMappingFlag::PRESENT),
         virtual_offset: 0,
         physical_offset: 0,
         page_count: 0,

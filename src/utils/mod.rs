@@ -1,6 +1,8 @@
 mod vga;
 pub mod logging;
 pub mod io;
+mod list;
+pub use list::LinkedList;
 #[macro_export]
 macro_rules! bitflags {
     ($vis:vis $s:ident($t:ty), $($name:ident = $value:expr),* $(,)?) => {

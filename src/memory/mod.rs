@@ -2,13 +2,16 @@ mod allocators;
 pub mod atomics;
 mod paging;
 
+
+use core::ptr::NonNull;
 pub use allocators::PageAllocator;
 pub use paging::{PagingProperties, ToPhysicalAddress, ToVirtualAddress};
 
+
 use crate::{bitflags};
-use crate::memory::allocators::PageList;
 use crate::memory::paging::{CaptureAllocator, DirEntry, PageMarker, RefTable};
 pub use atomics::AtomicCell;
+use crate::utils::LinkedList;
 
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
@@ -41,7 +44,7 @@ bitflags!(
     EMPTY = 0b0
 );
 bitflags!(
-    pub PageRecFlag(usize),
+    pub PageFlag(usize),
     PRESENT = 0b10,
     USABLE = 0b10_00,
     DEVICE = 0b01_00
@@ -54,7 +57,7 @@ pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
 pub type DeallocHandler = fn(PhysicalAddress);
 
 /// What is a PageLayout table? PageLayout table is solid array (table) of PageRec in memory
-pub struct MemoryLayoutRec {
+pub struct ProcessMemoryRec {
     ///offset of data segment
     ///It's redundant to store any information about last page ― it's can be easily calculated from heap_offset as:<br>
     ///<code> heap_offset % Page::SIZE </code> <br>
@@ -64,20 +67,40 @@ pub struct MemoryLayoutRec {
     //offset of stack memory -> used for erasing stack memory
     stack_offset: VirtualAddress,
     last_page_index: usize,
-    heap_pages: PageList,
-    stack_pages: PageList,
-    flags: MemoryMappingFlag,
     //Write | NoPrivilege
     marker: PageMarker<AllocHandler, DeallocHandler>,
 }
 
-pub struct Page;
+pub struct ProcessMemoryRegion {
+    parent: NonNull<ProcessMemoryRec>,
+    //inclusive
+    start: VirtualAddress,
+    //exclusive
+    end: VirtualAddress,
+}
 
-pub struct PageRec {
-    next: *mut PageRec,
-    prev: *mut PageRec,
-    flags: PageRecFlag,
+pub struct AddressSpace {
+    clean_pages: LinkedList<Page>,
+    dirty_pages: LinkedList<Page>,
+    locked_pages: LinkedList<Page>,
+    total_pages_count: usize,
+}
+
+#[derive(Copy, Clone)]
+pub struct MemoryMappingRegion {
+    flags: MemoryMappingFlag,
+    //used to copy
+    virtual_offset: VirtualAddress,
+    physical_offset: PhysicalAddress,
+    page_count: usize,
+    next: *mut MemoryMappingRegion,
+}
+
+#[repr(C)]
+pub struct Page {
+    flags: PageFlag,
     offset: PhysicalAddress, //it's easy to use in calculation
+    //spinlock?
 }
 
 ///Return crucial structures for kernel
@@ -85,7 +108,7 @@ pub struct PageRec {
 pub fn init_kernel_space(
     _allocator: CaptureAllocator,
     _dir_table: RefTable<DirEntry>,
-) -> (PageAllocator, MemoryLayoutRec) {
+) -> (PageAllocator, ProcessMemoryRec) {
     // let marker = PageMarker::wrap(dir_table,
     //                               |page_count| allocator.alloc(0, page_count),
     //                               |free_page| unreachable!());
@@ -108,53 +131,13 @@ pub fn init_kernel_space(
 const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
     MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::WRITE_THROUGH);
 
-//todo! carefully check in mutlti threaded environment
 impl Page {
+    //utility methods
     pub const SIZE: usize = 4096;
     pub const fn upper_bound(byte_size: usize) -> usize {
         return (byte_size + Page::SIZE - 1) / Page::SIZE;
     }
     pub const fn lower_bound(byte_size: usize) -> usize {
         return byte_size / Page::SIZE;
-    }
-}
-
-impl PageRec {
-    pub fn set_next(&mut self, next: *mut PageRec) {
-        self.next = next;
-    }
-    pub fn set_prev(&mut self, prev: *mut PageRec) {
-        self.prev = prev;
-    }
-    pub fn next_ref(&self) -> Option<&'static mut PageRec> {
-        let result;
-        unsafe {
-            if self.next.is_null() {
-                result = None;
-            } else {
-                result = Some(&mut *self.next);
-            }
-        }
-        return result;
-    }
-    pub fn prev_ref(&self) -> Option<&'static mut PageRec> {
-        let result;
-        unsafe {
-            if self.prev.is_null() {
-                result = None;
-            } else {
-                result = Some(&mut *self.prev);
-            }
-        }
-        return result;
-    }
-    pub fn next_ptr(&self) -> *mut PageRec {
-        self.next
-    }
-    pub fn prev_ptr(&self) -> *mut PageRec {
-        self.prev
-    }
-    pub fn read_only(page: &mut PageRec) -> &PageRec {
-        return page as &PageRec;
     }
 }

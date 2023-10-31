@@ -1,18 +1,18 @@
 use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError};
-use crate::memory::{MemoryMappingFlag, MemoryLayoutRec, PageRec, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler};
+use crate::memory::{MemoryMappingFlag, ProcessMemoryRec, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion};
 
-use crate::memory::allocators::mapper_list::PageList;
 use core::{mem, ptr};
 
 use crate::stop_execution;
+use crate::utils::LinkedList;
 
 ///It's a responsibility of caller class to maintain synchronized caller sequence
 ///It's really recommended to use SystemCallQueue to control the order of invocation
 ///All methods are thread-safe
 pub struct PageAllocator {
     //todo: replace with custom collection
-    memory_list: *mut PageRec,
-    free_pages: PageList,
+    memory_list: LinkedList<MemoryMappingRegion>,
+    free_pages: LinkedList<Page>,
     //all atomic operations should be atomic in system scope
     //it means that no thread switching will be enabled while atomic operations are not finished
 }
@@ -49,8 +49,8 @@ impl PageAllocator {
         where T: FnMut(usize) -> Option<PhysicalAddress>, //allocate specific count of physical pages
               S: FnMut(PhysicalAddress) {
         let free_mem_size = allocator.free_memory();
-        let rec_cnt = free_mem_size / mem::size_of::<PageRec>();
-        let entries_mem_size = rec_cnt * mem::size_of::<PageRec>();
+        let rec_cnt = free_mem_size / mem::size_of::<Page>();
+        let entries_mem_size = rec_cnt * mem::size_of::<Page>();
         // let entries_start_offset = allocator.alloc(0, entries_mem_size).unwrap();
         let _entries_start_offset = match allocator.alloc(0, entries_mem_size) {
             None => stop_execution(),
@@ -67,7 +67,7 @@ impl PageAllocator {
         // {
         //     stop_execution(); //mark_range result holds error code, but we can do nothing with such error_code
         // }
-        let last_entry = ptr::null_mut();
+        // let last_entry = ptr::null_mut();
 
         // let mut last_entry = ptr::null_mut();
         // let mut next_offset = heap_offset;
@@ -95,14 +95,14 @@ impl PageAllocator {
         // }
         return (
             PageAllocator {
-                memory_list: last_entry,
-                free_pages: PageList::empty(),
+                memory_list: LinkedList::empty(),
+                free_pages: LinkedList::empty(),
             },
             heap_offset + entries_mem_size,
         );
     }
-    unsafe fn store_entry(dest: VirtualAddress, info_rec: PageRec) -> *mut PageRec {
-        let entry_offset = dest as *mut PageRec;
+    unsafe fn store_entry(dest: VirtualAddress, info_rec: Page) -> *mut Page {
+        let entry_offset = dest as *mut Page;
         ptr::write(entry_offset, info_rec);
         return entry_offset;
     }
@@ -110,7 +110,7 @@ impl PageAllocator {
     //similar to UNIX (Linux) brk system call
     pub fn heap_alloc(
         &mut self,
-        _info_rec: &mut MemoryLayoutRec,
+        _info_rec: &mut ProcessMemoryRec,
         _request_offset: VirtualAddress,
     ) -> Result<(), AllocationError> {
         Ok(())
@@ -160,7 +160,7 @@ impl PageAllocator {
     fn mark_pages(
         _marker: &mut PageMarker<AllocHandler, DeallocHandler>,
         start_offset: VirtualAddress,
-        _pages: &PageList,
+        _pages: &LinkedList<Page>,
         _flags: MemoryMappingFlag,
     ) -> Result<(), PageMarkerError> {
         let _offset = start_offset;
@@ -174,10 +174,10 @@ impl PageAllocator {
         return Ok(());
     }
     //capture available pages in rec
-    fn capture_pages(&mut self, _page_cnt: usize) -> PageList {
-        PageList::empty()
+    fn capture_pages(&mut self, _page_cnt: usize) -> LinkedList<Page> {
+        LinkedList::empty()
     }
-    fn release_pages(&mut self, _pages: PageList) {}
+    fn release_pages(&mut self, _pages: LinkedList<Page>) {}
     pub fn alloc(&mut self, _page_cnt: usize) -> Option<PhysicalAddress> {
         None
     }
@@ -189,7 +189,7 @@ impl PageAllocator {
         Ok(())
     }
     //this function is used to captured required for allocation list of pages
-    fn get_page_rec_by_index(&mut self, _index: usize) -> Option<PageRec> {
+    fn get_page_rec_by_index(&mut self, _index: usize) -> Option<Page> {
         None
     }
 }
