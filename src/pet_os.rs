@@ -13,7 +13,9 @@
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
 #[cfg(test)]
+extern crate std;
 extern crate static_assertions;
+extern crate alloc;
 
 #[cfg(not(test))]
 #[allow(dead_code)]
@@ -46,6 +48,7 @@ use core::arch::asm;
 use utils::logging;
 #[no_mangle]
 #[allow(dead_code)]
+#[cfg(not(test))]
 pub unsafe extern "C" fn main() {
     let properties: *const PagingProperties;
     asm!(

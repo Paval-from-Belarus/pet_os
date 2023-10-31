@@ -46,7 +46,7 @@ all: test image
 clean:
 	rm -rf target/
 test:
-	$(CARGO) test --target=i686-unknown-linux-gnu
+	$(CARGO) test --target=i686-unknown-linux-gnu -- --show-output
 fix:
 	$(CARGO) fix $(CARGO_FLAGS)
 run: image unlock-image
