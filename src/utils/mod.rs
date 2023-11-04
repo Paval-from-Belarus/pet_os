@@ -1,8 +1,11 @@
 mod vga;
 pub mod logging;
 pub mod io;
-mod list;
-pub use list::LinkedList;
+mod doubly_linked_list;
+mod singly_linked_list;
+
+pub use doubly_linked_list::{LinkedList, ListNode};
+pub use singly_linked_list::{SimpleList, SimpleListNode};
 #[macro_export]
 macro_rules! bitflags {
     ($vis:vis $s:ident($t:ty), $($name:ident = $value:expr),* $(,)?) => {
@@ -13,11 +16,6 @@ macro_rules! bitflags {
         impl From<$t> for $s {
             fn from(item: $t) -> Self {
                 $s(item)
-            }
-        }
-        impl Into<$t> for $s {
-            fn into(self) -> $t {
-                self.0
             }
         }
         impl $s {

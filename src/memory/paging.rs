@@ -1,7 +1,7 @@
 use core::{mem, ptr, slice};
 use core::intrinsics::{unreachable};
 use crate::{bitflags, declare_constants};
-use crate::memory::{KERNEL_LAYOUT_FLAGS, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, VirtualAddress};
+use crate::memory::{KERNEL_LAYOUT_FLAGS, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
 
 
 extern "C" {
@@ -41,6 +41,10 @@ pub fn get_kernel_physical_offset() -> usize {
     unsafe { KERNEL_PHYSICAL_OFFSET }
 }
 
+pub fn get_kernel_page_offset() -> usize {
+    get_kernel_virtual_offset() + get_kernel_physical_offset()
+}
+
 pub fn get_kernel_mapping_region() -> &'static mut MemoryMappingRegion {
     let page_list_size = 42; //replace with valid value
     let _kernel_size = get_kernel_binary_size() + page_list_size;
@@ -52,15 +56,6 @@ pub fn get_kernel_mapping_region() -> &'static mut MemoryMappingRegion {
         next: ptr::null_mut(),
     };
     unsafe { &mut *(ptr::null_mut() as *mut MemoryMappingRegion) }
-}
-
-pub trait ToPhysicalAddress {
-    const NULL: usize = 0;
-    fn as_physical(&self) -> PhysicalAddress;
-}
-
-pub trait ToVirtualAddress {
-    fn as_virtual(&self) -> VirtualAddress;
 }
 
 /// The struct is simply used to transfer physical layout for page allcoator
@@ -226,13 +221,13 @@ pub struct CaptureAllocator {
     pivots: &'static mut [CaptureMemRec],
 }
 
-#[repr(C, packed)]
+#[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct DirEntry {
     entry: usize,
 }
 
-#[repr(C, packed)]
+#[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct TableEntry {
     entry: usize,
@@ -372,6 +367,12 @@ impl ToVirtualAddress for PhysicalAddress {
     }
 }
 
+//todo: replace DirEntry impl block with mask
+//There are three groups of macro:
+//1) none/present/bad (bad means present + accessed? but accessed is not used)
+//2) permissions (read/write/execute)
+//3) young/dirty (accessed and dirty)
+//Additional function: mapping page entry to page struct; mapping page struct to page entry; storing page entry (all this function accomplish PageMarker)
 impl DirEntry {
     const ADDRESS_MASK: usize = 0xFF_FF_FC_00;
     const BYTE_SIZE: usize = mem::size_of::<usize>();
@@ -671,6 +672,9 @@ impl<T, S> PageMarker<T, S> where
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+    extern crate alloc;
+
     use crate::memory::{PhysicalAddress, ToVirtualAddress};
 
     #[test]

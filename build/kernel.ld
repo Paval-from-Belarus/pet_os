@@ -4,6 +4,8 @@ KERNEL_PHYSICAL_OFFSET = 0x100000;
 KERNEL_VIRTUAL_OFFSET = 0xC0000000;
 KERNEL_STACK_SIZE = 4096;
 PAGE_SIZE = 0x1000;
+MAX_PHYSICAL_MEMORY_SIZE = 32 * 1024 * 1024;
+MEMORY_MAP_SIZE = MAX_PHYSICAL_MEMORY_SIZE / PAGE_SIZE;
 SECTIONS
 {
 	/* Link the kernel at this address: "." means the current address */
@@ -40,6 +42,8 @@ SECTIONS
 	.bss : {
 	    PROVIDE(edata = .);
 		*(.bss)
+		MEMORY_MAP = .;
+		. += MEMORY_MAP_SIZE * 16;
 	}
 	. = ALIGN(PAGE_SIZE);
 	.heap : { . = . + SIZEOF(.bss); }

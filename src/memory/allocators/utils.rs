@@ -2,7 +2,7 @@ use core::alloc::{GlobalAlloc, Layout};
 
 use core::ptr;
 
-use crate::memory::{MemoryMappingFlag, ProcessMemoryRec, PageAllocator, VirtualAddress};
+use crate::memory::{MemoryMappingFlag, ProcessMemoryHandle, PageAllocator, VirtualAddress};
 
 //The main assumption is that KernelAllocator is thread-safe class
 //That is each method invocation is atomic
@@ -10,7 +10,7 @@ use crate::memory::{MemoryMappingFlag, ProcessMemoryRec, PageAllocator, VirtualA
 ///This allocator is used in highly concurrent circumstances. Thus, each call should be legal
 pub struct UtilsAllocator {
     allocator: Option<PageAllocator>,
-    kernel_layout: Option<ProcessMemoryRec>,
+    kernel_layout: Option<ProcessMemoryHandle>,
 }
 //Unfortunately, but it's no possibility to prove compiler that code will access immutable SystemAllocator
 unsafe impl Sync for UtilsAllocator {}
@@ -30,7 +30,7 @@ impl UtilsAllocator {
             kernel_layout: None,
         }
     }
-    pub fn configure(&self, _allocator: PageAllocator, _layout: ProcessMemoryRec) {
+    pub fn configure(&self, _allocator: PageAllocator, _layout: ProcessMemoryHandle) {
         let _flags = MemoryMappingFlag::WRITABLE | MemoryMappingFlag::WRITE_THROUGH;
         // let kernel_layout: MemoryLayoutRec = MemoryLayoutRec {
         //     heap_offset: 0,

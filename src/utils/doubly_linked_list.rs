@@ -4,10 +4,6 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use crate::memory::atomics::SpinLock;
 
-pub enum ZoneType {
-    Usable,
-    Device,
-}
 
 #[repr(C)]
 pub struct ListNode<T> {
@@ -19,7 +15,7 @@ pub struct ListNode<T> {
 
 impl<T:> ListNode<T> {
     //without pointers
-    pub unsafe fn wrap_data(data: T) -> ListNode<T> {
+    pub const unsafe fn wrap_data(data: T) -> ListNode<T> {
         ListNode {
             next: NonNull::dangling(),
             prev: NonNull::dangling(),
@@ -423,11 +419,13 @@ impl<'a, T> DoubleEndedIterator for MutListIterator<'a, T> {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+    extern crate alloc;
     use alloc::vec;
     use core::ptr::NonNull;
     use std::println;
 
-    use crate::utils::list::{LinkedList, ListNode};
+    use crate::utils::doubly_linked_list::{LinkedList, ListNode};
 
     #[test]
     fn push_back_test() {

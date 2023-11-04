@@ -221,12 +221,12 @@ extern "x86-interrupt" fn page_fault_handler(_frame: &mut InterruptStackFrame, e
 extern "x86-interrupt" fn default_naked_exception_handler(_frame: &mut InterruptStackFrame) {}
 
 extern "x86-interrupt" fn default_error_exception_handler(_frame: &mut InterruptStackFrame, _error_code: usize) {}
-
 #[cfg(test)]
 mod tests {
+    extern crate std;
+    extern crate alloc;
+
     use super::*;
-    use core::mem;
-    use core::ops::{Shl, Shr};
 
     #[test]
     fn integrity_tests() {
