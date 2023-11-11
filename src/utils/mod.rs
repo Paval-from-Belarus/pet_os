@@ -4,6 +4,7 @@ pub mod io;
 mod doubly_linked_list;
 mod singly_linked_list;
 
+use core::cmp;
 pub use doubly_linked_list::{LinkedList, ListNode};
 pub use singly_linked_list::{SimpleList, SimpleListNode};
 #[macro_export]
@@ -52,9 +53,23 @@ pub struct ZeroedMemory<T> {
     value: T,
 }
 
+#[derive(Clone, Copy)]
+pub struct MinMax<T: Sized + Ord> {
+    min: T,
+    max: T,
+}
+
 impl<T> ZeroedMemory<T> {
     pub const fn init() -> Self {
         unsafe { core::mem::MaybeUninit::<ZeroedMemory<T>>::zeroed().assume_init() }
+    }
+}
+
+pub fn min_max<T: Sized + Ord>(first: T, second: T) -> MinMax<T> {
+    if first.le(&second) {
+        MinMax { min: first, max: second }
+    } else {
+        MinMax { min: second, max: first }
     }
 }
 

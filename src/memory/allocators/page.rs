@@ -1,17 +1,17 @@
 use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError};
-use crate::memory::{MemoryMappingFlag, ProcessMemoryHandle, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion};
+use crate::memory::{MemoryMappingFlag, ProcessMemoryHandle, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion, ToPhysicalAddress, PageFlag};
 
 use core::{mem, ptr};
+use core::ptr::{drop_in_place, NonNull};
 
-use crate::stop_execution;
-use crate::utils::LinkedList;
+use crate::{log, stop_execution};
+use crate::memory::paging::table::{DirEntry, RefTable};
+use crate::utils::{LinkedList, ListNode};
 
 ///It's a responsibility of caller class to maintain synchronized caller sequence
 ///It's really recommended to use SystemCallQueue to control the order of invocation
 ///All methods are thread-safe
 pub struct PageAllocator {
-    //todo: replace with custom collection
-    memory_list: LinkedList<MemoryMappingRegion>,
     free_pages: LinkedList<Page>,
     //all atomic operations should be atomic in system scope
     //it means that no thread switching will be enabled while atomic operations are not finished
@@ -41,70 +41,28 @@ const LIST_ACCESS_FLAG: MemoryMappingFlag = MemoryMappingFlag(MemoryMappingFlag:
 
 impl PageAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
-    pub fn new<T, S>(
-        mut allocator: CaptureAllocator,
-        _marker: &mut PageMarker<T, S>,
-        heap_offset: VirtualAddress,
-    ) -> (PageAllocator, VirtualAddress)
-        where T: FnMut(usize) -> Option<PhysicalAddress>, //allocate specific count of physical pages
-              S: FnMut(PhysicalAddress) {
-        let free_mem_size = allocator.free_memory();
-        let rec_cnt = free_mem_size / mem::size_of::<Page>();
-        let entries_mem_size = rec_cnt * mem::size_of::<Page>();
-        // let entries_start_offset = allocator.alloc(0, entries_mem_size).unwrap();
-        let _entries_start_offset = match allocator.alloc(0, entries_mem_size) {
-            None => stop_execution(),
-            Some(memory_offset) => memory_offset,
-        };
-        // if marker
-        //     .map_user_range(
-        //         heap_offset,
-        //         entries_start_offset,
-        //         entries_mem_size,
-        //         LIST_ACCESS_FLAG,
-        //     )
-        //     .is_err()
-        // {
-        //     stop_execution(); //mark_range result holds error code, but we can do nothing with such error_code
-        // }
-        // let last_entry = ptr::null_mut();
-
-        // let mut last_entry = ptr::null_mut();
-        // let mut next_offset = heap_offset;
-        // for pivot in allocator.as_pivots().iter() {
-        //     let mut rest_size = pivot.get_free_pages_cnt() * Page::SIZE;
-        //     let mut physical_offset = pivot.get_memory_offset();
-        //     while rest_size >= Page::SIZE {
-        //         let info_rec = PageRec {
-        //             prev: last_entry,
-        //             next: ptr::null_mut(),
-        //             offset: physical_offset,
-        //             flags: PageRecFlag(PageRecFlag::PRESENT | PageRecFlag::USABLE),
-        //         };
-        //         unsafe {
-        //             let next_entry = PageAllocator::store_entry(next_offset, info_rec);
-        //             if !last_entry.is_null() {
-        //                 (&mut *last_entry).set_next(next_entry);
-        //             }
-        //             last_entry = next_entry;
-        //         }
-        //         next_offset += mem::size_of::<PageRec>();
-        //         rest_size -= mem::size_of::<PageRec>();
-        //         physical_offset += Page::SIZE;
-        //     }
-        // }
-        return (
-            PageAllocator {
-                memory_list: LinkedList::empty(),
-                free_pages: LinkedList::empty(),
-            },
-            heap_offset + entries_mem_size,
-        );
+    pub const fn new(free_pages: LinkedList<Page>) -> Self {
+        Self { free_pages }
     }
-    unsafe fn store_entry(dest: VirtualAddress, info_rec: Page) -> *mut Page {
-        let entry_offset = dest as *mut Page;
-        ptr::write(entry_offset, info_rec);
-        return entry_offset;
+    pub fn dealloc_page(&mut self, offset: PhysicalAddress) {
+        unsafe {
+            let mut node = ListNode::<Page>::wrap_page(offset);
+            node.as_mut().release();
+            self.free_pages.push_back(node);
+        }
+    }
+    //allocate continuous memory region
+    pub fn alloc_pages(&mut self, page_count: usize) -> Option<PhysicalAddress> {
+        assert_eq!(page_count, 1, "Failed to allocate more then 1 page");
+        let option_node = self.free_pages.remove_first();
+        match option_node {
+            None => None,
+            Some(mut page_node) => {
+                let page = unsafe { page_node.as_mut() };
+                page.acquire();
+                Some(page.as_physical())
+            }
+        }
     }
     //current version of kernel disallow to manage page caching policies
     //similar to UNIX (Linux) brk system call
@@ -178,16 +136,6 @@ impl PageAllocator {
         LinkedList::empty()
     }
     fn release_pages(&mut self, _pages: LinkedList<Page>) {}
-    pub fn alloc(&mut self, _page_cnt: usize) -> Option<PhysicalAddress> {
-        None
-    }
-    pub fn dealoc(
-        &mut self,
-        _offset: PhysicalAddress,
-        _page_cnt: usize,
-    ) -> Result<(), AllocationError> {
-        Ok(())
-    }
     //this function is used to captured required for allocation list of pages
     fn get_page_rec_by_index(&mut self, _index: usize) -> Option<Page> {
         None

@@ -128,7 +128,7 @@ pub struct LinkedList<T: Sized> {
     first: NonNull<ListNode<T>>,
     last: NonNull<ListNode<T>>,
     size: usize,
-    //todo: consider to add spinlock externally
+    //todo: consider to remove spin lock from list (as redundant case of synchronization)
     spin: SpinLock,
 }
 
@@ -178,8 +178,17 @@ impl<T: Sized> LinkedList<T> {
     pub fn is_empty(&self) -> bool {
         self.size == 0
     }
+    #[deprecated]
     pub fn size(&self) -> usize {
         self.size
+    }
+    pub fn remove_first(&mut self) -> Option<NonNull<ListNode<T>>> {
+        if self.is_empty() {
+            return None;
+        }
+        let first = self.first;
+        unsafe { self.unlink_node(first) };
+        Some(first)
     }
     pub unsafe fn push_all(&mut self, other: LinkedList<T>) {
         todo!()
@@ -421,6 +430,7 @@ impl<'a, T> DoubleEndedIterator for MutListIterator<'a, T> {
 mod tests {
     extern crate std;
     extern crate alloc;
+
     use alloc::vec;
     use core::ptr::NonNull;
     use std::println;
@@ -545,5 +555,21 @@ mod tests {
             assert_eq!(iter.unlink_watched(), None);
         }
         assert_eq!(list.size(), 2);
+    }
+
+    #[test]
+    fn removing_test() {
+        let mut list = LinkedList::<usize>::empty();
+        unsafe {
+            let nodes =
+                vec!(ListNode::wrap_data(12),
+                     ListNode::wrap_data(13));
+            for node in nodes.iter() {
+                list.push_back(NonNull::from(node));
+            }
+            assert_eq!(&12, list.remove_first().unwrap().as_mut().data());
+            assert_eq!(&13, list.remove_first().unwrap().as_mut().data());
+            assert_eq!(None, list.remove_first());
+        }
     }
 }

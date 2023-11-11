@@ -9,6 +9,8 @@
 #![feature(abi_x86_interrupt)]
 #![feature(const_maybe_uninit_zeroed)]
 #![feature(allocator_api)]
+#![feature(pointer_byte_offsets)]
+#![feature(ptr_sub_ptr)]
 // #![feature(const_mut_refs)]
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
@@ -56,7 +58,8 @@ pub unsafe extern "C" fn main() {
     unsafe {
         let allocator = (*properties).allocator();
         let dir_table = (*properties).page_directory();
-        memory::init_kernel_space(allocator, dir_table);
+        let heap_offset = (*properties).heap_offset();
+        memory::init_kernel_space(allocator, dir_table, heap_offset);
     };
     interrupts::init();
 

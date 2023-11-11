@@ -3,17 +3,20 @@ pub mod atomics;
 mod paging;
 
 
-use core::mem;
-use core::mem::MaybeUninit;
-use core::ptr::NonNull;
+use core::ptr::{NonNull, null_mut};
 use core::ops::Range;
 pub use allocators::PageAllocator;
-pub use paging::{PagingProperties};
+pub use paging::PagingProperties;
 
 
-use crate::{bitflags, declare_constants};
-use crate::memory::paging::{CaptureAllocator, DirEntry, PageMarker, RefTable};
+use crate::{bitflags, declare_constants, log, memory};
+use crate::memory::paging::{CaptureAllocator, PageMarker, UnmapParamsFlag};
 pub use atomics::AtomicCell;
+use core::{mem, ptr};
+
+use static_assertions::assert_eq_size;
+use paging::table::{DirEntry, RefTable};
+use crate::memory::atomics::{SpinLock, SpinLockLazyCell};
 use crate::utils::{LinkedList, ListNode, SimpleList};
 
 pub enum ZoneType {
@@ -30,8 +33,30 @@ pub trait ToVirtualAddress {
     fn as_virtual(&self) -> VirtualAddress;
 }
 
+extern "C" {
+    //Physical address where kernel is stored
+    static KERNEL_PHYSICAL_OFFSET: usize;
+    //compile-time info about effective size of kernel
+    static KERNEL_SIZE: usize;
+    //offset after which memory is free to use
+    static KERNEL_VIRTUAL_OFFSET: usize;
+    static KERNEL_STACK_SIZE: usize;
+}
+
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
+
+impl ToPhysicalAddress for VirtualAddress {
+    fn as_physical(&self) -> PhysicalAddress {
+        return unsafe { self - KERNEL_VIRTUAL_OFFSET };
+    }
+}
+
+impl ToVirtualAddress for PhysicalAddress {
+    fn as_virtual(&self) -> VirtualAddress {
+        return unsafe { self + KERNEL_VIRTUAL_OFFSET };
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct SegmentSelector(u16);
@@ -48,6 +73,58 @@ impl From<SegmentSelector> for u16 {
     fn from(value: SegmentSelector) -> Self {
         value.0
     }
+}
+
+static mut PHYSICAL_ALLOCATOR: SpinLockLazyCell<PageAllocator> = SpinLockLazyCell::empty();
+
+///Return crucial structures for kernel
+///Without them, it's impossible
+pub fn init_kernel_space(
+    mut allocator: CaptureAllocator,
+    directory: RefTable<DirEntry>,
+    heap_offset: VirtualAddress,
+) {
+    let free_pages = collect_free_pages(&mut allocator);
+    let allocator = PageAllocator::new(free_pages);
+    unsafe { PHYSICAL_ALLOCATOR.set(allocator) };
+    let mut marker = PageMarker::wrap(directory, alloc_physical_pages, dealloc_page);
+    let higher_addresses_start = kernel_physical_offset();
+    let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
+    let unmap_flags = UnmapParamsFlag::from(UnmapParamsFlag::TABLES | UnmapParamsFlag::PAGES);
+    //the higher addesses are fully mapped by the kernel
+    marker.unmap_range(higher_addresses_start, boot_mapping_pages, unmap_flags);
+}
+
+fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
+    let mut allocator = unsafe { PHYSICAL_ALLOCATOR.get() };
+    allocator.alloc_pages(page_count)
+}
+
+fn dealloc_page(offset: PhysicalAddress) {
+    let mut allocator = unsafe { PHYSICAL_ALLOCATOR.get() };
+    allocator.dealloc_page(offset);
+}
+
+fn collect_free_pages(allocator: &mut CaptureAllocator) -> LinkedList<Page> {
+    let mut free_pages = LinkedList::<Page>::empty();
+    for pivot in allocator.as_pivots() {
+        let mut mem_offset = pivot.mem_offset();
+        for _ in 0..pivot.free_pages_count() {
+            unsafe {
+                let node = ListNode::<Page>::wrap_page(mem_offset);
+                free_pages.push_back(node);
+            }
+            mem_offset += Page::SIZE;
+        }
+    }
+    free_pages
+}
+
+///Collect identity mapping pages and remove from RefTable
+///By this way, RefTable will holds only entries on kernel space
+fn collect_identity_mapping_pages(table: &mut RefTable<DirEntry>) -> LinkedList<Page> {
+    let entries = table.as_mut_slice();
+    todo!()
 }
 bitflags!(
     //something info about range???
@@ -78,9 +155,40 @@ bitflags!(
     SEQ_READ = 0x10,
     RAND_READ = 0x20,
 );
-pub fn stack_size() -> usize {
-    unsafe { paging::KERNEL_STACK_SIZE }
+
+pub fn kernel_binary_size() -> usize {
+    unsafe { KERNEL_SIZE }
 }
+
+pub fn kernel_page_size() -> usize {
+    Page::upper_bound(kernel_binary_size())
+}
+
+pub fn kernel_virtual_offset() -> usize {
+    unsafe { KERNEL_VIRTUAL_OFFSET }
+}
+
+pub fn kernel_physical_offset() -> usize {
+    unsafe { KERNEL_PHYSICAL_OFFSET }
+}
+
+pub fn stack_size() -> usize {
+    unsafe { KERNEL_STACK_SIZE }
+}
+
+pub fn get_kernel_mapping_region() -> &'static mut MemoryMappingRegion {
+    let page_list_size = 42; //replace with valid value
+    let _kernel_size = kernel_binary_size() + page_list_size;
+    let _kernel_region = MemoryMappingRegion {
+        flags: MemoryMappingFlag::from(MemoryMappingFlag::PRESENT),
+        virtual_offset: 0,
+        physical_offset: 0,
+        page_count: 0,
+        next: ptr::null_mut(),
+    };
+    unsafe { &mut *(ptr::null_mut() as *mut MemoryMappingRegion) }
+}
+
 
 pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
 pub type DeallocHandler = fn(PhysicalAddress);
@@ -102,7 +210,6 @@ pub struct ProcessMemoryHandle {
     marker: PageMarker<AllocHandler, DeallocHandler>,
     regions: SimpleList<MemoryRegion>,
     last_touched_region: Option<NonNull<MemoryRegion>>,
-    directory: NonNull<RefTable<DirEntry>>,
 }
 
 impl ProcessMemoryHandle {
@@ -182,37 +289,13 @@ pub struct Page {
     //when zero page should be free
     ref_count: usize,
 }
+assert_eq_size!(ListNode<Page>, [u8; 16]);
 
-///Return crucial structures for kernel
-///Without them, it's impossible
-pub fn init_kernel_space(
-    _allocator: CaptureAllocator,
-    _dir_table: RefTable<DirEntry>,
-) -> (PageAllocator, ProcessMemoryHandle) {
-    //walk throw free physical memory to create initial mem_map
-    //free identity map from global table and add to mem_map too
 
-    // let marker = PageMarker::wrap(dir_table,
-    //                               |page_count| allocator.alloc(0, page_count),
-    //                               |free_page| unreachable!());
-
-    // let (allocator, heap_offset) =
-    //     PageAllocator::new(allocator, &mut marker, paging::get_heap_initial_offset());
-    // let layout = MemoryLayoutRec {
-    //     heap_offset,
-    //     stack_offset: 0, //what about stack
-    //     last_page_index: 0,
-    //     heap_pages: PageList::empty(),
-    //     stack_pages: PageList::empty(),
-    //     flags: KERNEL_LAYOUT_FLAGS,
-    //     marker,
-    // };
-    // return (allocator, layout);
-    todo!()
-}
 
 const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
     MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::WRITE_THROUGH);
+//duplicates in kernel.ld script
 declare_constants!(
     pub usize,
     MAX_PHYSICAL_MEMORY_SIZE = 32 * 1024 * 1024;//bytes
@@ -223,36 +306,96 @@ pub struct MemoryMap {
     pages: [ListNode<Page>; MEMORY_MAP_SIZE],
 }
 
+
+#[cfg(not(test))]
 extern "C" {
     static mut MEMORY_MAP: MemoryMap;
 }
 
-impl ToPhysicalAddress for Page {
+fn mem_map_offset() -> *mut ListNode<Page> {
+    unsafe { ptr::from_mut(&mut MEMORY_MAP) as *mut u8 as *mut ListNode<Page> }
+}
+
+impl ToPhysicalAddress for ListNode<Page> {
+    //return which physical address is used for such
     fn as_physical(&self) -> PhysicalAddress {
-        paging::get_kernel_page_offset();
-        let mem_map_offset = unsafe {&MEMORY_MAP};
-        // self as *const Page
-        todo!()
+        let page_offset = ptr::from_ref(self);
+        let page_index = unsafe { page_offset.sub_ptr(mem_map_offset()) };
+        page_index << Page::SHIFT
+    }
+}
+
+impl ListNode<Page> {
+    pub unsafe fn wrap_page(offset: PhysicalAddress) -> NonNull<ListNode<Page>> {
+        let page_index: usize = offset >> Page::SHIFT;
+        let page_offset = unsafe { mem_map_offset().add(page_index) };
+        unsafe { NonNull::new_unchecked(page_offset) }
     }
 }
 
 impl Page {
     declare_constants!(
         pub usize,
-        OFFSET = 12, "the offset of page";
-        SIZE = 1 << Page::OFFSET, "the size in bytes of page";
+        SHIFT = 12, "the offset of page";
+        SIZE = 1 << Page::SHIFT, "the size in bytes of page";
     );
+    pub fn flags(&self) -> PageFlag {
+        self.flags
+    }
+    pub fn set_flags(&mut self, flags: PageFlag) {
+        self.flags = flags;
+    }
+
     pub const fn empty() -> Self {
         Self {
             flags: PageFlag::wrap(PageFlag::UNUSED),
             ref_count: 0,
         }
     }
+    pub fn acquire(&mut self) {
+        self.ref_count += 1;
+    }
+    pub fn release(&mut self) {
+        self.ref_count -= 1;
+    }
+    pub const fn is_used(&self) -> bool {
+        self.ref_count > 0
+    }
     //utility methods
     pub const fn upper_bound(byte_size: usize) -> usize {
-        return (byte_size + Page::SIZE - 1) / Page::SIZE;
+        (byte_size + Page::SIZE - 1) / Page::SIZE
     }
     pub const fn lower_bound(byte_size: usize) -> usize {
-        return byte_size / Page::SIZE;
+        byte_size / Page::SIZE
+    }
+}
+
+#[cfg(test)]
+impl MemoryMap {
+    pub const fn empty() -> Self {
+        const NODE: ListNode<Page> = unsafe { ListNode::wrap_data(Page::empty()) };
+        let pages: [ListNode<Page>; MEMORY_MAP_SIZE] = [NODE; MEMORY_MAP_SIZE];
+        Self { pages }
+    }
+}
+
+#[cfg(test)]
+static mut MEMORY_MAP: MemoryMap = MemoryMap::empty();
+
+#[cfg(test)]
+mod tests {
+    use core::mem;
+    use core::mem::MaybeUninit;
+    use crate::memory::{MEMORY_MAP, MemoryMap, Page, PhysicalAddress, ToPhysicalAddress, VirtualAddress};
+    use crate::utils::ListNode;
+
+    #[test]
+    fn check_page_conversation() {
+        let mem_map_virtual_offset: VirtualAddress = unsafe { &mut MEMORY_MAP as *mut MemoryMap as VirtualAddress };
+        let page_index = 42;
+        let page_virtual_offset = mem_map_virtual_offset + page_index * mem::size_of::<ListNode<Page>>();
+        let page = unsafe { ListNode::<Page>::wrap_page(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
+        assert_eq!(page.as_ptr() as VirtualAddress, page_virtual_offset);
+        assert_eq!(page_index << Page::SHIFT, unsafe { page.as_ref() }.as_physical());
     }
 }
