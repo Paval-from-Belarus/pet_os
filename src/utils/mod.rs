@@ -38,7 +38,7 @@ macro_rules! bitflags {
             pub const fn contains_with_mask(&self, mask: $t, flag: $t) -> bool {
              self.0 & mask == flag
          }
-            pub const fn and_with(&self, bit: $t) -> bool {
+            pub const fn test_with(&self, bit: $t) -> bool {
              self.0 & bit == bit
          }
         }

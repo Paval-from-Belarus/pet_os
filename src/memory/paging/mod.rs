@@ -359,7 +359,7 @@ impl<T, S> PageMarker<T, S> where
             }
             addressable_offset += Page::SIZE;
         }
-        if !params.contains(UnmapParamsFlag::TABLES) { //no needs to unmap page tables
+        if !params.test_with(UnmapParamsFlag::TABLES) { //no needs to unmap page tables
             return;
         }
         addressable_offset = virtual_offset;

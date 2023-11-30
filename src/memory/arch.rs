@@ -1,9 +1,7 @@
 use core::marker::PhantomData;
 use core::mem;
-use core::slice::range;
-use bitfield::BitMut;
-use pc_keyboard::KeyCode::D;
-use static_assertions::{assert_eq_size, const_assert_eq};
+use bitfield::Bit;
+use static_assertions::{assert_eq_size};
 use crate::{bitflags, declare_constants};
 use crate::memory::VirtualAddress;
 use crate::utils::Zeroed;
@@ -79,20 +77,21 @@ bitflags!(
     TASK = SystemType::RESERVED | 0b0101,
     INTERRUPT_16BIT = SystemType::RESERVED | 0b0110,
     TRAP_16BIT = SystemType::RESERVED | 0b0111,
+    TRAP_32BIT = SystemType::RESERVED | 0b1111,
     TSS_FREE_32BIT = SystemType::RESERVED | 0b1001,
     TSS_BUSY_32BIT = SystemType::RESERVED | 0b1011,
     CALL_32BIT = SystemType::RESERVED | 0b1100,
     INTERRUPT = SystemType::RESERVED |0b1110,
     INTERRUPT_32BIT = SystemType::RESERVED | 0b1111
 );
-trait DescriptorType {
+pub trait DescriptorType {
     fn bits(&self) -> u8;
 }
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct DescriptorFlags<T: DescriptorType> {
-    flags: u8,
+    value: u8,
     _marker: PhantomData<T>,
 }
 
@@ -100,37 +99,38 @@ impl<T: DescriptorType> DescriptorFlags<T> {
     pub fn new(present: bool, ring: PrivilegeLevel, descriptor_type: T) -> Self {
         let present_bit = u8::from(present);
         Self {
-            flags: (present_bit << 7) | (ring.bits() << 5) | descriptor_type.bits(),
+            value: (present_bit << 7) | (ring.bits() << 5) | descriptor_type.bits(),
             _marker: PhantomData,
         }
     }
+    #[deprecated]
     pub const fn without_type(present: bool, ring: PrivilegeLevel) -> Self {
         let present_bit: u8 = if present { 1 } else { 0 };
         Self {
-            flags: (present_bit << 7) | ring.bits() << 5,
+            value: (present_bit << 7) | ring.bits() << 5,
             _marker: PhantomData,
         }
     }
     pub const fn is_present(&self) -> bool {
-        (self.flags >> 1) & 1 == 1
+        (self.value >> 1) & 1 == 1
     }
     pub const fn ring(&self) -> PrivilegeLevel {
-        PrivilegeLevel::wrap(self.flags >> 6)
+        PrivilegeLevel::wrap(self.value >> 6)
     }
-    pub const fn set_present(&mut self, present: bool) {
+    pub fn set_present(&mut self, present: bool) {
         let present_bit = if present { 1 } else { 0 };
-        self.flags = (self.flags & 0x7F) | (present_bit << 7);
+        self.value = (self.value & 0x7F) | (present_bit << 7);
     }
-    pub const fn set_ring(&mut self, ring: PrivilegeLevel) {
+    pub fn set_ring(&mut self, ring: PrivilegeLevel) {
         let bits = ring.bits();
-        self.flags = (self.flags & 0x9F) | (bits << 5);
+        self.value = (self.value & 0x9F) | (bits << 5);
     }
-    ///Is better to create new Descriptor instead of update existing to prevent possible issues with flags
-    ///Consider to remove such method
-    pub const fn set_type(&mut self, descriptor_type: T) {
-        self.flags = (self.flags & 0xE0) | descriptor_type.bits();
+    //it's forbidden to modify stat by anyone
+    fn set_type(&mut self, descriptor_type: T) {
+        self.value = (self.value & 0xE0) | descriptor_type.bits();
     }
 }
+
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -185,6 +185,66 @@ impl MemoryDescriptor {
     pub const fn null() -> Self {
         unsafe { mem::MaybeUninit::zeroed().assume_init() }
     }
+    #[inline]
+    pub fn update(&mut self, memory_type: MemoryType) {
+        self.flags.set_type(memory_type);
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct TaskStateDescriptor {
+    lower_limit: u16,
+    lower_base: u16,
+    middle_base: u8,
+    pub flags: DescriptorFlags<SystemType>,
+    specific: u8,
+    upper_base: u8,
+}
+assert_eq_size!(TaskStateDescriptor, [u32; 2]);
+impl TaskStateDescriptor {
+    pub fn default(base: VirtualAddress, limit: usize) -> Self {
+        let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
+        let system_type = SystemType::wrap(SystemType::TSS_FREE_32BIT);
+        let flags = DescriptorFlags::new(false, ring, system_type);
+        let mut instance = TaskStateDescriptor::null();
+        instance.set_base(base);
+        instance.set_limit(limit);
+        instance.set_granularity(false);
+        Self {
+            flags,
+            ..instance
+        }
+    }
+    pub const fn null() -> Self {
+        unsafe { mem::MaybeUninit::zeroed().assume_init() }
+    }
+    pub fn set_base(&mut self, base: VirtualAddress) {
+        self.lower_base = (base & 0xFFFF) as u16;
+        self.middle_base = ((base >> 16) & 0xFF) as u8;
+        self.upper_base = ((base >> 24) & 0xFF) as u8;
+    }
+    pub fn set_limit(&mut self, limit: usize) {
+        self.lower_limit = (limit & 0xFFFF) as u16;
+        self.specific = (self.specific & 0xF0) | ((limit >> 16) & 0xFF) as u8;
+    }
+    ///The current implementation supports only 32-bit tasks
+    #[deprecated]
+    pub fn set_busy(&mut self, busy: bool) {
+        let system_type = if busy {
+            SystemType::TSS_BUSY_32BIT
+        } else {
+            SystemType::TSS_FREE_32BIT
+        };
+        self.flags.set_type(SystemType::wrap(system_type));
+    }
+    pub fn is_busy(&self) -> bool {
+        self.flags.value.bit(1)
+    }
+    ///when granularity bit is set then limit field should have limit field >= 67h
+    pub fn set_granularity(&mut self, bit: bool) {
+        self.specific = (self.specific & 0x7F) | u8::from(bit) << 7;
+    }
 }
 
 #[repr(C)]
@@ -198,7 +258,7 @@ pub struct TaskGate {
 }
 assert_eq_size!(TaskGate, [u32; 2]);
 impl TaskGate {
-    pub const fn default(task: SegmentSelector) -> Self {
+    pub fn default(task: SegmentSelector) -> Self {
         let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
         let task_type = SystemType::wrap(SystemType::TASK);
         let flags = DescriptorFlags::new(false, ring, task_type);
@@ -227,7 +287,7 @@ assert_eq_size!(InterruptGate, [u32; 2]);
 
 impl InterruptGate {
     /// The default interrupt gate is kernel ring and not present
-    pub const fn default(handler_offset: VirtualAddress, selector: SegmentSelector, flags: SystemType) -> InterruptGate {
+    pub fn default(handler_offset: VirtualAddress, selector: SegmentSelector, flags: SystemType) -> InterruptGate {
         let lower_offset = (handler_offset & 0xFFFF) as u16;
         let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
         let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);

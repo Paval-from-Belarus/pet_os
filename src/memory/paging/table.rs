@@ -138,23 +138,23 @@ impl DirEntry {
     const ADDRESS_MASK: usize = 0xFF_FF_FC_00;
     const BYTE_SIZE: usize = mem::size_of::<usize>();
     pub fn new(table_offset: VirtualAddress, flags: DirEntryFlag) -> DirEntry {
-        let entry: usize = table_offset.as_physical() | flags.value();
+        let entry: usize = table_offset.as_physical() | flags.bits();
         DirEntry { entry }
     }
     //This is impossible to change offset to PageTable
     //The first reason ― it's a problem how to access memory
     pub fn set_flags(&mut self, flags: DirEntryFlag) {
-        self.entry = (self.entry & DirEntry::ADDRESS_MASK) | flags.value();
+        self.entry = (self.entry & DirEntry::ADDRESS_MASK) | flags.bits();
     }
     pub const fn get_flags(&self) -> DirEntryFlag {
         DirEntryFlag(self.entry & !DirEntry::ADDRESS_MASK)
     }
     pub fn is_present(&self) -> bool {
-        self.get_flags().contains(DirEntryFlag::PRESENT)
+        self.get_flags().test_with(DirEntryFlag::PRESENT)
     }
     pub fn set_table_offset(&mut self, table_offset: VirtualAddress) {
         let flags = self.get_flags();
-        self.entry = (table_offset.as_physical() & DirEntry::ADDRESS_MASK) | flags.value();
+        self.entry = (table_offset.as_physical() & DirEntry::ADDRESS_MASK) | flags.bits();
     }
     pub fn get_table_offset(&self) -> VirtualAddress {
         (self.entry & DirEntry::ADDRESS_MASK).as_virtual()
@@ -167,14 +167,14 @@ impl TableEntry {
     //TableEntry is fully mutable
     //Page and flags should be change per time for entry consistent
     pub fn new(page_offset: PhysicalAddress, flags: TableEntryFlag) -> TableEntry {
-        let entry = (page_offset & TableEntry::ADDRESS_MASK) | flags.value();
+        let entry = (page_offset & TableEntry::ADDRESS_MASK) | flags.bits();
         TableEntry { entry }
     }
     pub fn set_flags(&mut self, flags: TableEntryFlag) {
-        self.entry = (self.entry & TableEntry::ADDRESS_MASK) | flags.value();
+        self.entry = (self.entry & TableEntry::ADDRESS_MASK) | flags.bits();
     }
     pub fn set_page_offset(&mut self, offset: PhysicalAddress) {
-        self.entry = (offset & TableEntry::ADDRESS_MASK) | self.get_flags().value();
+        self.entry = (offset & TableEntry::ADDRESS_MASK) | self.get_flags().bits();
     }
     pub fn get_flags(&self) -> TableEntryFlag {
         TableEntryFlag(self.entry & !TableEntry::ADDRESS_MASK)
@@ -183,7 +183,7 @@ impl TableEntry {
         self.entry & TableEntry::ADDRESS_MASK
     }
     pub fn is_present(&self) -> bool {
-        self.get_flags().contains(TableEntryFlag::PRESENT)
+        self.get_flags().test_with(TableEntryFlag::PRESENT)
     }
 }
 

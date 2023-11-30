@@ -1,5 +1,5 @@
-use crate::{bitflags, declare_constants};
-use crate::interrupts::InterruptGate;
+use core::mem::MaybeUninit;
+use crate::{bitflags};
 use crate::memory::{AddressSpace, SegmentSelector, VirtualAddress};
 use crate::utils::Zeroed;
 
@@ -20,6 +20,7 @@ pub struct SysContext {
     ds: u16,
     es: u16,
 }
+
 #[cfg(target_arch = "x86")]
 #[repr(C)]
 pub struct TaskState {
@@ -58,13 +59,14 @@ pub struct TaskState {
     ldt: SegmentSelector,
     reserved_11: Zeroed<u16>,
     debug_flag: u16,
-    io_map_address: u16
-
+    io_map_address: u16,
 }
 
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct TssDescriptor(InterruptGate);
+impl TaskState {
+    pub const fn null() -> Self {
+        unsafe { MaybeUninit::zeroed().assume_init() }
+    }
+}
 
 pub struct TaskHandle {
     info: ThreadInfo,
@@ -74,6 +76,7 @@ pub struct TaskHandle {
     address: AddressSpace,
     files: FileHandle,
 }
+
 pub struct ThreadInfo {}
 
 pub struct FileHandle {}

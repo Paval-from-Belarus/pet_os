@@ -1,6 +1,6 @@
 mod object;
 
-use crate::memory::{InterruptGate, SegmentSelector, SystemGateFlags, SystemType, VirtualAddress};
+use crate::memory::{InterruptGate, SegmentSelector, SystemType, VirtualAddress};
 use core::{mem};
 use core::arch::asm;
 use crate::{bitflags, declare_constants};
@@ -38,31 +38,38 @@ bitflags!(
     FETCH_CAUSE = 0b10000 //the cause is instruction fetch from page
 );
 impl InterruptGate {
-    pub fn with_naked_handler(handler: NakedExceptionHandler, selector: SegmentSelector, attributes: SystemGateFlags) -> Self {
+    pub fn with_naked_handler(handler: NakedExceptionHandler, selector: SegmentSelector, attributes: SystemType) -> Self {
         let handler_offset = handler as *const NakedExceptionHandler as VirtualAddress;
-        InterruptGate::default(handler_offset, selector, attributes)
+        let mut instance = InterruptGate::default(handler_offset, selector, attributes);
+        instance.flags.set_present(true);
+        instance
     }
-    pub fn with_error_handler(handler: ErrorExceptionHandler, selector: SegmentSelector, attributes: SystemGateFlags) -> Self {
+    pub fn with_error_handler(handler: ErrorExceptionHandler, selector: SegmentSelector, attributes: SystemType) -> Self {
         let handler_offset = handler as *const ErrorExceptionHandler as VirtualAddress;
         let _number = 12usize;
-        InterruptGate::default(handler_offset, selector, attributes)
+        let mut instance = InterruptGate::default(handler_offset, selector, attributes);
+        instance.flags.set_present(true);
+        instance
     }
 }
 
 const MAX_INTERRUPTS_COUNT: usize = 256;
-pub const INTERRUPT_FLAG: GateDescriptorFlag = GateDescriptorFlag::wrap(GateDescriptorFlag::INTERRUPT_32BIT | GateDescriptorFlag::PRESENT);
-pub const TRAP_FLAG: GateDescriptorFlag = GateDescriptorFlag::wrap(GateDescriptorFlag::TRAP_32BIT | GateDescriptorFlag::PRESENT);
+declare_constants!(
+    pub SystemType,
+    INTERRUPT = SystemType::wrap(SystemType::INTERRUPT_32BIT);
+    TRAP = SystemType::wrap(SystemType::TRAP_32BIT)
+);
 
 pub fn init() {
     let table = unsafe { &mut INTERRUPT_TABLE };
     let naked_descriptor = InterruptGate::with_naked_handler(
         default_naked_exception_handler,
         SegmentSelector::CODE,
-        INTERRUPT_FLAG);
+        INTERRUPT);
     let error_descriptor = InterruptGate::with_error_handler(
         default_error_exception_handler,
         SegmentSelector::CODE,
-        INTERRUPT_FLAG);
+        INTERRUPT);
     table.set(IDTable::DIVISION_BY_ZERO, naked_descriptor);
     table.set(IDTable::DEBUG, naked_descriptor);
     table.set(IDTable::NOT_MASKABLE, naked_descriptor);
@@ -79,7 +86,7 @@ pub fn init() {
     table.set(IDTable::GENERAL_PROTECTION, error_descriptor);
     table.set(
         IDTable::PAGE_FAULT,
-        InterruptGate::with_error_handler(page_fault_handler, SegmentSelector::CODE, INTERRUPT_FLAG));
+        InterruptGate::with_error_handler(page_fault_handler, SegmentSelector::CODE, INTERRUPT));
     unsafe {
         asm!(
         "mov eax, {}",
