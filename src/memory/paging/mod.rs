@@ -62,7 +62,12 @@ impl GDTTable {
 }
 
 pub struct GDTEntry {
-    entry: usize,
+    low_segment_limit: u16,
+    low_base_address: u16,
+    middle_base_address: u8,
+    first_flag: u8,
+    second_flag: u8,
+    high_base_address: u8
 }
 
 #[repr(C, packed)]

@@ -15,6 +15,7 @@
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
 extern crate static_assertions;
+
 #[cfg(not(test))]
 #[allow(dead_code)]
 #[macro_use]
@@ -25,6 +26,7 @@ mod interrupts;
 mod memory;
 #[allow(dead_code)]
 mod utils;
+mod drivers;
 
 use memory::PagingProperties;
 
@@ -32,14 +34,7 @@ use memory::PagingProperties;
 #[panic_handler]
 pub fn panic(info: &core::panic::PanicInfo) -> ! {
     log!("kernel panics={}", info);
-    stop_execution();
-}
-
-pub fn stop_execution() -> ! {
-    unsafe {
-        asm!("hlt");
-        core::intrinsics::unreachable();
-    }
+    unsafe { asm!("hlt", options(noreturn)) }
 }
 
 use core::arch::asm;

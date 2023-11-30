@@ -1,23 +1,25 @@
 mod allocators;
-pub mod atomics;
 mod paging;
+mod process;
+mod arch;
 
 
-use core::ptr::{NonNull, null_mut};
-use core::ops::Range;
+use core::ptr::{NonNull};
+use core::ops::{Range, RangeBounds};
 pub use allocators::PageAllocator;
 pub use paging::PagingProperties;
+pub use arch::*;
 
-
-use crate::{bitflags, declare_constants, log, memory};
+use crate::{bitflags, declare_constants};
 use crate::memory::paging::{CaptureAllocator, PageMarker, UnmapParamsFlag};
-pub use atomics::AtomicCell;
 use core::{mem, ptr};
+use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 
 use static_assertions::assert_eq_size;
 use paging::table::{DirEntry, RefTable};
-use crate::memory::atomics::{SpinLock, SpinLockLazyCell};
-use crate::utils::{LinkedList, ListNode, SimpleList};
+use crate::utils::atomics::{SpinLockLazyCell};
+use crate::utils::{LinkedList, ListNode, SimpleList, Zeroed};
 
 pub enum ZoneType {
     Usable,
@@ -48,32 +50,16 @@ pub type VirtualAddress = usize;
 
 impl ToPhysicalAddress for VirtualAddress {
     fn as_physical(&self) -> PhysicalAddress {
-        return unsafe { self - KERNEL_VIRTUAL_OFFSET };
+        unsafe { self - KERNEL_VIRTUAL_OFFSET }
     }
 }
 
 impl ToVirtualAddress for PhysicalAddress {
     fn as_virtual(&self) -> VirtualAddress {
-        return unsafe { self + KERNEL_VIRTUAL_OFFSET };
+        unsafe { self + KERNEL_VIRTUAL_OFFSET }
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct SegmentSelector(u16);
-
-impl SegmentSelector {
-    pub const CODE: SegmentSelector = SegmentSelector(0x08);
-    pub const DATA: SegmentSelector = SegmentSelector(0x10);
-    pub const STACK: SegmentSelector = SegmentSelector(0x10);
-    pub const NULL: SegmentSelector = SegmentSelector(0);
-}
-
-
-impl From<SegmentSelector> for u16 {
-    fn from(value: SegmentSelector) -> Self {
-        value.0
-    }
-}
 
 static mut PHYSICAL_ALLOCATOR: SpinLockLazyCell<PageAllocator> = SpinLockLazyCell::empty();
 
@@ -118,13 +104,6 @@ fn collect_free_pages(allocator: &mut CaptureAllocator) -> LinkedList<Page> {
         }
     }
     free_pages
-}
-
-///Collect identity mapping pages and remove from RefTable
-///By this way, RefTable will holds only entries on kernel space
-fn collect_identity_mapping_pages(table: &mut RefTable<DirEntry>) -> LinkedList<Page> {
-    let entries = table.as_mut_slice();
-    todo!()
 }
 bitflags!(
     //something info about range???
@@ -189,11 +168,17 @@ pub fn get_kernel_mapping_region() -> &'static mut MemoryMappingRegion {
     unsafe { &mut *(ptr::null_mut() as *mut MemoryMappingRegion) }
 }
 
+///performs mapping of physical memory of IO device to virtual space
+pub fn io_remap(offset: PhysicalAddress, size: usize) -> VirtualAddress {
+    //create new MemoryRegion and add to corresponding ProcessHandle
+    todo!()
+}
+
 
 pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
 pub type DeallocHandler = fn(PhysicalAddress);
 
-/// What is a PageLayout table? PageLayout table is solid array (table) of PageRec in memory
+///Alternative to linux mm_struct
 pub struct ProcessMemoryHandle {
     ///offset of data segment
     ///It's redundant to store any information about last page ― it's can be easily calculated from heap_offset as:<br>
@@ -226,10 +211,24 @@ impl ProcessMemoryHandle {
                 return Some(NonNull::from(region));
             }
         }
-        return None;
-    }
-    pub fn find_prev_region(&mut self, address: VirtualAddress) -> Option<NonNull<MemoryRegion>> {
         None
+    }
+    pub fn find_unmapped_region(&mut self, offset: VirtualAddress, length: usize, flags: MemoryRegionFlag) -> Option<VirtualAddress> {
+        None
+    }
+    pub fn add_region(&mut self, region: NonNull<MemoryRegion>) {}
+    pub fn find_prev_region(&mut self, address: VirtualAddress) -> Option<NonNull<MemoryRegion>> {
+        let mut prev_region = None;
+        for region in self.regions.iter() {
+            if region.range.contains(&address) {
+                break;
+            }
+            //update prev region each time while region is not found
+            if region.range.end < address {
+                prev_region = Some(NonNull::from(region));
+            }
+        }
+        prev_region
     }
     pub fn find_intersect_region(&mut self, range: Range<VirtualAddress>) -> Option<NonNull<MemoryRegion>> {
         let option_region = self.find_region(range.start);
@@ -257,11 +256,15 @@ impl MemoryRegion {
     }
     ///invoked when MemoryRegion is removed from address space
     pub fn close() {}
+    //it's simple callback to find page during page_fault_exception
     pub fn no_page(&mut self) -> NonNull<Page> {
         todo!()
     }
     pub fn populate(&mut self) -> usize {
         0
+    }
+    pub fn expand(&mut self) {
+        todo!()
     }
 }
 
@@ -271,6 +274,9 @@ pub struct AddressSpace {
     locked_pages: LinkedList<Page>,
     total_pages_count: usize,
 }
+
+
+
 
 #[derive(Copy, Clone)]
 pub struct MemoryMappingRegion {
@@ -331,7 +337,12 @@ impl ListNode<Page> {
         let page_offset = unsafe { mem_map_offset().add(page_index) };
         unsafe { NonNull::new_unchecked(page_offset) }
     }
+    pub fn copy_ref(&mut self) -> NonNull<ListNode<Page>> {
+        self.ref_count += 1;
+        NonNull::from(self)
+    }
 }
+
 
 impl Page {
     declare_constants!(

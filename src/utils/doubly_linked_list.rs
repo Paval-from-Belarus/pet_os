@@ -2,7 +2,7 @@ use core::ptr;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
-use crate::memory::atomics::SpinLock;
+use crate::utils::atomics::SpinLock;
 
 
 #[repr(C)]
@@ -127,6 +127,7 @@ impl<T> DerefMut for ListNode<T> {
 pub struct LinkedList<T: Sized> {
     first: NonNull<ListNode<T>>,
     last: NonNull<ListNode<T>>,
+    #[deprecated]
     size: usize,
     //todo: consider to remove spin lock from list (as redundant case of synchronization)
     spin: SpinLock,
@@ -151,11 +152,21 @@ impl<T: Sized> LinkedList<T> {
         });
     }
     //this method remove links from node
-    pub unsafe fn wrap_node(mut raw_node: NonNull<ListNode<T>>) -> LinkedList<T> {
+    pub unsafe fn with_node(mut raw_node: NonNull<ListNode<T>>) -> LinkedList<T> {
         raw_node.as_mut().self_link();
         LinkedList {
             first: raw_node,
             last: raw_node,
+            size: 1,
+            spin: SpinLock::new(),
+        }
+    }
+    pub unsafe fn wrap_node(node: NonNull<ListNode<T>>) -> LinkedList<T> {
+        let last = unsafe { node.as_ref().prev };
+        let first = node; //the node by self is first node in list
+        LinkedList {
+            first,
+            last,
             size: 1,
             spin: SpinLock::new(),
         }

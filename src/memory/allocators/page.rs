@@ -4,7 +4,6 @@ use crate::memory::{MemoryMappingFlag, ProcessMemoryHandle, Page, PhysicalAddres
 use core::{mem, ptr};
 use core::ptr::{drop_in_place, NonNull};
 
-use crate::{log, stop_execution};
 use crate::memory::paging::table::{DirEntry, RefTable};
 use crate::utils::{LinkedList, ListNode};
 

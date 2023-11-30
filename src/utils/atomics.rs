@@ -2,7 +2,6 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::sync::atomic::Ordering::Acquire;
-use crate::memory::ToPhysicalAddress;
 
 pub struct AtomicCell<T> {
     // value: UnsafeCell<T>,
