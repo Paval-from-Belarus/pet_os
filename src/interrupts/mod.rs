@@ -1,10 +1,14 @@
 mod object;
+mod system;
+mod pic;
 
-use crate::memory::{InterruptGate, SegmentSelector, SystemType, VirtualAddress};
+use crate::memory::{InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, VirtualAddress};
 use core::{mem};
 use core::arch::asm;
-use crate::{bitflags, declare_constants};
+use crate::{declare_constants};
+use crate::interrupts::object::InterruptObject;
 use crate::utils::atomics::SpinLock;
+use crate::utils::{io, SimpleList};
 
 #[allow(unused)]
 #[repr(C)] //the wrapper on real stack frame
@@ -12,6 +16,7 @@ pub struct InterruptStackFrame {
     ip: usize,
     cs: usize,
     flags: usize,
+
     //only for kernel-user mode switching
     esp: usize,
     ss: usize,
@@ -19,24 +24,45 @@ pub struct InterruptStackFrame {
 
 pub type NakedExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFrame);
 pub type ErrorExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFrame, usize);
+///the interrupt callback that return true if interrupt was handle (and no more handling is required)
+pub type Callback = fn(is_processed: bool, context: *mut ()) -> bool;
 
-bitflags!(
-    pub PageFaultError(usize),
-    NOT_PRESENT = 0b0,
-    LEVEL_PROTECTION = 0b1,
-    CAUSE_MASK = 0b1,
+pub struct CallbackInfo {
+    callback: Callback,
+    context: *mut (),
+}
 
-    READ_FAULT = 0b00,
-    WRITE_FAULT = 0b10,
-    READ_WRITE_MASK = 0b10,
+impl CallbackInfo {
+    pub fn new(callback: Callback, context: *mut ()) -> Self {
+        Self { callback, context }
+    }
+    #[inline]
+    pub const fn invoke(&self, is_dispatched: bool) -> bool {
+        let callback = self.callback;
+        callback(is_dispatched, self.context)
+    }
+}
 
-    SUPER_MODE = 0b000,
-    USER_MODE = 0b100,
-    MODE_MASK = 0b100,
-
-    RESERVED_BIT_CAUSE = 0b1000,
-    FETCH_CAUSE = 0b10000 //the cause is instruction fetch from page
+declare_constants!(
+    pub SystemType,
+    INTERRUPT = SystemType::wrap(SystemType::INTERRUPT_32BIT);
+    TRAP = SystemType::wrap(SystemType::TRAP_32BIT);
 );
+
+#[macro_export]
+macro_rules! naked_trap {
+    ($handler:ident) => ({
+        use $crate::interrupts::InterruptGate;
+        InterruptGate::with_naked_handler($handler, $crate::memory::SegmentSelector::CODE, $crate::interrupts::TRAP)
+    });
+}
+#[macro_export]
+macro_rules! error_trap {
+    ($handler: ident) => ({
+        use $crate::interrupts::InterruptGate;
+        InterruptGate::with_error_handler($handler, $crate::memory::SegmentSelector::CODE, $crate::interrupts::TRAP)
+    });
+}
 impl InterruptGate {
     pub fn with_naked_handler(handler: NakedExceptionHandler, selector: SegmentSelector, attributes: SystemType) -> Self {
         let handler_offset = handler as *const NakedExceptionHandler as VirtualAddress;
@@ -51,42 +77,83 @@ impl InterruptGate {
         instance.flags.set_present(true);
         instance
     }
+    pub fn syscall(handler: NakedExceptionHandler) -> Self {
+        let offset = handler as *const NakedExceptionHandler as VirtualAddress;
+        let mut instance = InterruptGate::default(offset, SegmentSelector::CODE, INTERRUPT);
+        instance.flags.set_present(true);
+        instance.flags.set_ring(PrivilegeLevel::wrap(PrivilegeLevel::USER));
+        instance
+    }
 }
 
 const MAX_INTERRUPTS_COUNT: usize = 256;
-declare_constants!(
-    pub SystemType,
-    INTERRUPT = SystemType::wrap(SystemType::INTERRUPT_32BIT);
-    TRAP = SystemType::wrap(SystemType::TRAP_32BIT)
-);
+
+///the method to registry InterruptObject
+pub fn registry(index: u8) {}
+
+
+extern "x86-interrupt" fn dispatch(frame: &mut InterruptStackFrame) {
+    unsafe { enter_kernel_trap() };
+
+    unsafe { leave_kernel_trap() };
+}
+
+extern "x86-interrupt" fn dispatch_with_error_code(frame: &mut InterruptStackFrame, error_code: usize) {
+    unsafe { enter_kernel_trap() };
+
+    unsafe { leave_kernel_trap() };
+}
+
+//t
+extern "x86-interrupt" fn dispatch_irq(frame: &mut InterruptStackFrame) {}
+
+//save all registers
+unsafe fn enter_kernel_trap() {
+    asm!(
+    "push es",
+    "push ds",
+    "push fs",
+    "push gs",
+    "pusha",
+    "push ax", //save ax from future changing
+    options(preserves_flags));
+
+    asm!(
+    "mov ds, ax",
+    "mov es, ax",
+    "pop ax",
+    in("ax") u16::from(SegmentSelector::DATA),//the data is already here?
+    options(preserves_flags));
+}
+
+unsafe fn leave_kernel_trap() {
+    asm!(
+    "popa",
+    "pop gs",
+    "pop fs",
+    "pop ds",
+    "pop es",
+    options(preserves_flags));
+}
+
+
+//Migration to APIC
+pub unsafe fn disable_pic() {
+    asm!(
+    "out 0xa1, al",
+    "out 0x21, al",
+    in("ax") 0xFF,
+    options(preserves_flags, nomem, nostack));
+}
 
 pub fn init() {
     let table = unsafe { &mut INTERRUPT_TABLE };
-    let naked_descriptor = InterruptGate::with_naked_handler(
-        default_naked_exception_handler,
-        SegmentSelector::CODE,
-        INTERRUPT);
-    let error_descriptor = InterruptGate::with_error_handler(
-        default_error_exception_handler,
-        SegmentSelector::CODE,
-        INTERRUPT);
-    table.set(IDTable::DIVISION_BY_ZERO, naked_descriptor);
-    table.set(IDTable::DEBUG, naked_descriptor);
-    table.set(IDTable::NOT_MASKABLE, naked_descriptor);
-    table.set(IDTable::BREAKPOINT, naked_descriptor);
-    table.set(IDTable::OVERFLOW, naked_descriptor);
-    table.set(IDTable::BOUND, naked_descriptor);
-    table.set(IDTable::INVALID_OPCODE, naked_descriptor);
-    table.set(IDTable::DEVICE_NOT_AVAILABLE, naked_descriptor);
-    table.set(IDTable::DOUBLE_FAULT, error_descriptor);
-    table.set(IDTable::COPROCESSOR_OVERRUN, naked_descriptor);
-    table.set(IDTable::INVALID_TSS, error_descriptor);
-    table.set(IDTable::SEGMENT_NOT_PRESENT, error_descriptor);
-    table.set(IDTable::STACK_FAULT, error_descriptor);
-    table.set(IDTable::GENERAL_PROTECTION, error_descriptor);
-    table.set(
-        IDTable::PAGE_FAULT,
-        InterruptGate::with_error_handler(page_fault_handler, SegmentSelector::CODE, INTERRUPT));
+    system::init_traps(table);
+    table.set(IDTable::SYSTEM_CALL, InterruptGate::syscall(system::syscall));
+    unsafe {
+        pic::remap(IDTable::IRQ_MASTER_OFFSET as u8,
+                   IDTable::IRQ_SLAVE_OFFSET as u8)
+    };
     unsafe {
         asm!(
         "mov eax, {}",
@@ -117,6 +184,8 @@ unsafe impl Sync for IDTHandle {}
 struct IDTable {
     entries: [InterruptGate; MAX_INTERRUPTS_COUNT],
     lock: SpinLock,
+    //the interrupt objects that should handle exceptions
+    // objects: SimpleList<InterruptObject>
 }
 
 unsafe impl Sync for IDTable {}
@@ -158,8 +227,32 @@ impl IDTable {
                                     operand of instruction, gate/tss selector,\
                                     idt vector number";
         PAGE_FAULT = 0xE, "fault, specific error format";
+        ALIGNMENT_CHECK = 0x11, "alignment check, with error";
+        //all others don't have error code
         SYSTEM_CALL = 0x80, "system call";
         //other reserved
+        TRAP_COUNT = 32, "The average count of exception reserved by Intel";
+        //The mapping of IRQ lines to IDT Table
+        //The master's interrupts
+        IRQ_MASTER_OFFSET = 33, "The first interrupt for master";
+        SYS_TIMER = 33, "Scheduler and company";
+        KEYBOARD = 34;
+        CASCADE_SLAVE = 35;
+        COM1 = 36;
+        COM2 = 37;
+        SOUND_CARD = 38;
+        FLOPPY = 39;
+        PRINTER = 40;
+        //The slave's interrupts
+        IRQ_SLAVE_OFFSET = 41, "The first interrupt for slave";
+        CLOCK = 41;
+        POWER = 42;
+        NETWORK_CARD = 43, "Can be configured to any SCSI or NIC";
+        // FREE = 44;
+        MOUSE = 45;
+        FLOAT_COPROC = 46;
+        PRIMARY_ATA = 47;
+        SECONDARY_ATA = 48;
     );
     pub const fn empty() -> Self {
         let entries: [InterruptGate; MAX_INTERRUPTS_COUNT] = [InterruptGate::null(); MAX_INTERRUPTS_COUNT];
@@ -181,17 +274,6 @@ impl IDTable {
     }
 }
 
-
-extern "x86-interrupt" fn division_by_zero(_from: &mut InterruptStackFrame) {}
-
-extern "x86-interrupt" fn page_fault_handler(_frame: &mut InterruptStackFrame, error_code: usize) {
-    let fault_code = PageFaultError::wrap(error_code);
-    let _code = fault_code.contains_with_mask(PageFaultError::CAUSE_MASK, PageFaultError::MODE_MASK);
-}
-
-extern "x86-interrupt" fn default_naked_exception_handler(_frame: &mut InterruptStackFrame) {}
-
-extern "x86-interrupt" fn default_error_exception_handler(_frame: &mut InterruptStackFrame, _error_code: usize) {}
 
 #[cfg(test)]
 mod tests {

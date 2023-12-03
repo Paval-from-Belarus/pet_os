@@ -9,14 +9,17 @@ pub struct SimpleListNode<T> {
 }
 
 impl<T> SimpleListNode<T> {
-    pub fn wrap_date(data: T) -> Self {
+    pub fn wrap_data(data: T) -> Self {
         Self {
             next: None,
             data,
         }
     }
-    pub fn set_next(&mut self, next: NonNull<SimpleListNode<T>>) {
-        self.next = Some(next);
+    pub fn set_next(&mut self, next: &mut SimpleListNode<T>) {
+        self.next = Some(NonNull::from(next));
+    }
+    pub fn remove_next(&mut self) {
+        self.next = None;
     }
 }
 
@@ -36,12 +39,14 @@ impl<T> DerefMut for SimpleListNode<T> {
 
 pub struct SimpleList<T: Sized> {
     first: Option<NonNull<SimpleListNode<T>>>,
+    tail: Option<NonNull<SimpleListNode<T>>>,
 }
 
 impl<T> SimpleList<T> {
     pub fn empty() -> Self {
         SimpleList {
-            first: None
+            first: None,
+            tail: None,
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -56,6 +61,18 @@ impl<T> SimpleList<T> {
     pub fn push_front(&mut self, mut node: NonNull<SimpleListNode<T>>) {
         unsafe { node.as_mut().next = self.first };
         self.first = Some(node);
+    }
+    ///it's responsibility of upper level to guarantee that data will live still the whole collection
+    pub fn push_back(&mut self, mut node: &mut SimpleListNode<T>) {
+        unsafe {
+            if let Some(old_tail) = self.tail.map(|tail| tail.as_mut()) {
+                old_tail.set_next(node);
+            } else {
+                debug_assert!(self.first.is_none(), "The empty last means empty first");
+                self.first = Some(NonNull::from(node));
+            }
+            self.tail = Some(NonNull::from(node));
+        }
     }
 }
 
@@ -115,13 +132,12 @@ impl<'a, T> Iterator for MutListIterator<'a, T> {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     extern crate std;
     extern crate alloc;
+
     #[test]
-    fn iteration_test() {
-
-    }
-
+    fn iteration_test() {}
 }

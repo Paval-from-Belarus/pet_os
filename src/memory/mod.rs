@@ -13,9 +13,7 @@ pub use arch::*;
 use crate::{bitflags, declare_constants};
 use crate::memory::paging::{CaptureAllocator, PageMarker, UnmapParamsFlag};
 use core::{mem, ptr};
-use core::marker::PhantomData;
 use core::mem::MaybeUninit;
-
 use static_assertions::assert_eq_size;
 use paging::table::{DirEntry, RefTable};
 use crate::utils::atomics::{SpinLockLazyCell};
@@ -62,7 +60,7 @@ impl ToVirtualAddress for PhysicalAddress {
 
 
 static mut PHYSICAL_ALLOCATOR: SpinLockLazyCell<PageAllocator> = SpinLockLazyCell::empty();
-
+// static mut SLAB_ALLOCATOR: SpinLockLazyCell<>
 ///Return crucial structures for kernel
 ///Without them, it's impossible
 pub fn init_kernel_space(
@@ -179,7 +177,7 @@ pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
 pub type DeallocHandler = fn(PhysicalAddress);
 
 ///Alternative to linux mm_struct
-pub struct ProcessMemoryHandle {
+pub struct ProcessMemory {
     ///offset of data segment
     ///It's redundant to store any information about last page ― it's can be easily calculated from heap_offset as:<br>
     ///<code> heap_offset % Page::SIZE </code> <br>
@@ -197,7 +195,7 @@ pub struct ProcessMemoryHandle {
     last_touched_region: Option<NonNull<MemoryRegion>>,
 }
 
-impl ProcessMemoryHandle {
+impl ProcessMemory {
     pub fn find_region(&mut self, address: VirtualAddress) -> Option<NonNull<MemoryRegion>> {
         if let Some(last_region) = self.last_touched_region {
             unsafe {
@@ -242,7 +240,7 @@ impl ProcessMemoryHandle {
 }
 
 pub struct MemoryRegion {
-    parent: NonNull<ProcessMemoryHandle>,
+    parent: NonNull<ProcessMemory>,
     range: Range<VirtualAddress>,
     permissions: MemoryRegionFlag,
 
@@ -273,8 +271,8 @@ pub struct AddressSpace {
     dirty_pages: LinkedList<Page>,
     locked_pages: LinkedList<Page>,
     total_pages_count: usize,
+    marker: PageMarker<AllocHandler, DeallocHandler>
 }
-
 
 
 
@@ -296,8 +294,11 @@ pub struct Page {
     ref_count: usize,
 }
 assert_eq_size!(ListNode<Page>, [u8; 16]);
-
-
+///the kernel method to allocate structure in kernel slab pool
+pub fn slab_alloc<T>() -> MaybeUninit<T> {
+    let size = mem::size_of::<T>();
+    todo!()
+}
 
 const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
     MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::WRITE_THROUGH);

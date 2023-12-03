@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use core::arch::asm;
+use crate::utils::io;
 #[macro_export]
 macro_rules! syscall {
     ($syscall_id:expr $(, eax: $eax:expr)? $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?) => {
@@ -9,6 +10,9 @@ macro_rules! syscall {
         $(println!("ecx: {}", $ecx);)?
         $(println!("edx: {}", $edx);)?
     };
+}
+pub unsafe fn wait() {
+    outb(0x80u16, 0); //writing to any unused operation to skip time
 }
 pub unsafe fn outb(port: u16, value: u8) {
     asm!(

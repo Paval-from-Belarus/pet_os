@@ -1,5 +1,5 @@
 use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError};
-use crate::memory::{MemoryMappingFlag, ProcessMemoryHandle, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion, ToPhysicalAddress, PageFlag};
+use crate::memory::{MemoryMappingFlag, ProcessMemory, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion, ToPhysicalAddress, PageFlag};
 
 use core::{mem, ptr};
 use core::ptr::{drop_in_place, NonNull};
@@ -67,7 +67,7 @@ impl PageAllocator {
     //similar to UNIX (Linux) brk system call
     pub fn heap_alloc(
         &mut self,
-        _info_rec: &mut ProcessMemoryHandle,
+        _info_rec: &mut ProcessMemory,
         _request_offset: VirtualAddress,
     ) -> Result<(), AllocationError> {
         Ok(())

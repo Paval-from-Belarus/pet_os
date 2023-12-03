@@ -1,13 +1,18 @@
+use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use crate::{bitflags};
-use crate::memory::{AddressSpace, SegmentSelector, VirtualAddress};
+use crate::{bitflags, interrupts};
+use crate::memory::{AddressSpace, ProcessMemory, SegmentSelector, VirtualAddress};
 use crate::utils::Zeroed;
 
 pub struct Context {}
 
-bitflags!(
-    pub ThreadStatus(usize),
-);
+pub enum ThreadStatus {
+    Active,
+    Stopped,
+    Delayed,
+    Killed,
+}
+
 #[repr(C)]
 pub struct TaskContext {}
 
@@ -68,15 +73,20 @@ impl TaskState {
     }
 }
 
-pub struct TaskHandle {
-    info: ThreadInfo,
+
+pub struct ThreadInfo {
     status: ThreadStatus,
-    kernel_stack_offset: VirtualAddress,
+    //the last offset of thread for kernel stack
+    kernel_stack: VirtualAddress,
+    //the unique identifier of thread
     id: usize,
-    address: AddressSpace,
+    //the working time of thread (usize::max if too much)
+    elapsed: usize,
+    //the process context for thread
+    process: UnsafeCell<ProcessMemory>,
     files: FileHandle,
 }
-
-pub struct ThreadInfo {}
-
+pub fn init_scheduler() {
+    interrupts::registry()
+}
 pub struct FileHandle {}
