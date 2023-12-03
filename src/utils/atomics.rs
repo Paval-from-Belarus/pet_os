@@ -1,3 +1,6 @@
+use core::cell::UnsafeCell;
+use core::fmt::Pointer;
+use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -51,27 +54,35 @@ impl SpinLock {
 
 pub struct SpinLockLazyCell<T> {
     lock: SpinLock,
-    data: Option<T>,
+    data: UnsafeCell<Option<T>>,
 }
+
+unsafe impl<T> Send for SpinLockLazyCell<T> {}
+
+unsafe impl<T> Sync for SpinLockLazyCell<T> {}
+
+///Own spinlock while exists
 
 pub struct SpinLockGuard<'a, T> {
     lock: &'a SpinLock,
     data: NonNull<T>,
+    _marker: PhantomData<T>,
 }
 
 impl<T> SpinLockLazyCell<T> {
     pub const fn empty() -> Self {
         Self {
             lock: SpinLock::new(),
-            data: None,
+            data: UnsafeCell::new(None),
         }
     }
     ///return true if data was placed
-    pub fn set(&mut self, value: T) -> bool {
+    pub fn set(&self, value: T) -> bool {
         let was_placed: bool;
         self.lock.acquire();
-        if self.data.is_none() {
-            self.data = Some(value);
+        let option = unsafe { &mut *self.data.get() };
+        if option.is_none() {
+            option.replace(value);
             was_placed = true;
         } else {
             was_placed = false;
@@ -80,31 +91,32 @@ impl<T> SpinLockLazyCell<T> {
         was_placed
     }
     pub fn get(&self) -> SpinLockGuard<'_, T> {
-        SpinLockGuard::new(self)
+        let data = unsafe { &mut *self.data.get() };
+        SpinLockGuard::new(data, &self.lock)
     }
 }
 
 impl<'a, T> SpinLockGuard<'a, T> {
-    pub fn new(parent: &'a SpinLockLazyCell<T>) -> SpinLockGuard<'a, T> {
-        let data_ref: &T;
-        let lock = &parent.lock;
+    pub fn new(data_option: &'a mut Option<T>, lock: &'a SpinLock) -> SpinLockGuard<'a, T> {
+        let pointer: NonNull<T>;
         loop {
             lock.acquire();
-            if let Some(data) = &parent.data {
-                data_ref = data;
+            if let Some(data) = data_option {
+                pointer = NonNull::from(data);
                 break;
             }
             lock.release();
         }
         Self {
             lock,
-            data: NonNull::from(data_ref),
+            data: NonNull::from(pointer),
+            _marker: PhantomData,
         }
     }
-    pub fn data(&self) -> &T {
+    fn data(&self) -> &T {
         unsafe { self.data.as_ref() }
     }
-    pub fn data_mut(&mut self) -> &mut T {
+    fn data_mut(&mut self) -> &mut T {
         unsafe { self.data.as_mut() }
     }
 }

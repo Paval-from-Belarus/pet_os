@@ -3,11 +3,14 @@ mod system;
 mod pic;
 
 use crate::memory::{InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, VirtualAddress};
-use core::{mem};
+use core::{mem, ptr};
 use core::arch::asm;
-use crate::{declare_constants};
+use core::ops::DerefMut;
+use crate::{declare_constants, memory};
+use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
-use crate::utils::atomics::SpinLock;
+use crate::interrupts::pic::PicLine;
+use crate::utils::atomics::{SpinLock, SpinLockLazyCell};
 use crate::utils::{io, SimpleList};
 
 #[allow(unused)]
@@ -28,21 +31,84 @@ pub type ErrorExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFr
 pub type Callback = fn(is_processed: bool, context: *mut ()) -> bool;
 
 pub struct CallbackInfo {
+    driver: Handle,
     callback: Callback,
     context: *mut (),
 }
 
 impl CallbackInfo {
-    pub fn new(callback: Callback, context: *mut ()) -> Self {
-        Self { callback, context }
+    pub const fn new(driver: Handle, callback: Callback, context: *mut ()) -> Self {
+        Self { driver, callback, context }
     }
     #[inline]
-    pub const fn invoke(&self, is_dispatched: bool) -> bool {
+    pub fn invoke(&self, is_dispatched: bool) -> bool {
         let callback = self.callback;
         callback(is_dispatched, self.context)
     }
 }
 
+pub struct IrqLine {
+    interrupt: u8,
+    //the index in InterruptTable
+    line: PicLine,
+}
+macro_rules! irq_line {
+    ($index: expr, $line: ident) => {
+        IrqLine {interrupt: $index, line: $crate::interrupts::pic::PicLine::$line}
+    };
+}
+impl From<PicLine> for IrqLine {
+    fn from(line: PicLine) -> Self {
+        use PicLine::*;
+        match line {
+            IRQ0 => IrqLine::SYS_TIMER,
+            IRQ1 => IrqLine::KEYBOARD,
+            IRQ2 => IrqLine::CASCADE_SLAVE,
+            IRQ3 => IrqLine::COM1,
+            IRQ4 => IrqLine::COM2,
+            IRQ5 => IrqLine::SOUND_CARD,
+            IRQ6 => IrqLine::FLOPPY,
+            IRQ7 => IrqLine::PRINTER,
+            IRQ8 => IrqLine::CLOCKS,
+            IRQ9 => IrqLine::POWER,
+            IRQ10 => IrqLine::NETWORK_CARD,
+            IRQ11 => IrqLine::UNUSED,
+            IRQ12 => IrqLine::MOUSE,
+            IRQ13 => IrqLine::FLOAT_COPROC,
+            IRQ14 => IrqLine::PRIMARY_ATA,
+            IRQ15 => IrqLine::SECONDARY_ATA
+        }
+    }
+}
+
+impl IrqLine {
+    declare_constants!(
+    pub IrqLine,
+    SYS_TIMER = irq_line!(33, IRQ0), "Scheduler and company";
+    KEYBOARD = irq_line!(34, IRQ1);
+    CASCADE_SLAVE = irq_line!(35, IRQ2);
+    COM1 = irq_line!(36, IRQ3);
+    COM2 = irq_line!(37, IRQ4);
+    SOUND_CARD = irq_line!(38, IRQ5);
+    FLOPPY = irq_line!(39, IRQ6);
+    PRINTER = irq_line!(40, IRQ7);
+    CLOCKS = irq_line!(41, IRQ8);
+    POWER = irq_line!(42, IRQ9);
+    NETWORK_CARD = irq_line!(43, IRQ10);
+    UNUSED = irq_line!(44, IRQ11);
+    MOUSE = irq_line!(45,  IRQ12);
+    FLOAT_COPROC = irq_line!(46, IRQ13);
+    PRIMARY_ATA = irq_line!(47, IRQ14);
+    SECONDARY_ATA = irq_line!(48, IRQ15);
+    );
+    declare_constants!(
+    pub usize,
+        //The mapping of IRQ lines to IDT Table
+    //The master's interrupts
+    IRQ_MASTER_OFFSET = 33, "The first interrupt for master";
+    IRQ_SLAVE_OFFSET = 41, "The first interrupt for slave"
+    );
+}
 declare_constants!(
     pub SystemType,
     INTERRUPT = SystemType::wrap(SystemType::INTERRUPT_32BIT);
@@ -89,23 +155,7 @@ impl InterruptGate {
 const MAX_INTERRUPTS_COUNT: usize = 256;
 
 ///the method to registry InterruptObject
-pub fn registry(index: u8) {}
-
-
-extern "x86-interrupt" fn dispatch(frame: &mut InterruptStackFrame) {
-    unsafe { enter_kernel_trap() };
-
-    unsafe { leave_kernel_trap() };
-}
-
-extern "x86-interrupt" fn dispatch_with_error_code(frame: &mut InterruptStackFrame, error_code: usize) {
-    unsafe { enter_kernel_trap() };
-
-    unsafe { leave_kernel_trap() };
-}
-
-//t
-extern "x86-interrupt" fn dispatch_irq(frame: &mut InterruptStackFrame) {}
+pub fn registry(handle: Handle, line: IrqLine, info: CallbackInfo) {}
 
 //save all registers
 unsafe fn enter_kernel_trap() {
@@ -137,23 +187,15 @@ unsafe fn leave_kernel_trap() {
 }
 
 
-//Migration to APIC
-pub unsafe fn disable_pic() {
-    asm!(
-    "out 0xa1, al",
-    "out 0x21, al",
-    in("ax") 0xFF,
-    options(preserves_flags, nomem, nostack));
-}
-
 pub fn init() {
     let table = unsafe { &mut INTERRUPT_TABLE };
     system::init_traps(table);
     table.set(IDTable::SYSTEM_CALL, InterruptGate::syscall(system::syscall));
     unsafe {
-        pic::remap(IDTable::IRQ_MASTER_OFFSET as u8,
-                   IDTable::IRQ_SLAVE_OFFSET as u8)
+        pic::remap(IrqLine::IRQ_MASTER_OFFSET as u8,
+                   IrqLine::IRQ_SLAVE_OFFSET as u8)
     };
+    init_interceptors(table);
     unsafe {
         asm!(
         "mov eax, {}",
@@ -162,6 +204,55 @@ pub fn init() {
         in(reg) &INTERRUPT_TABLE_HANDLE
         );
     }
+}
+
+#[no_mangle]
+static INTERCEPTORS: SpinLockLazyCell<[&'static InterruptObject; pic::LINES_COUNT]> = SpinLockLazyCell::empty();
+
+#[no_mangle]
+unsafe fn interceptor_stub(index: usize) {
+    let index: usize;
+    asm!(
+    "",
+    out("eax") index,
+    options(preserves_flags, nomem, nostack));
+    enter_kernel_trap();
+    let object = &mut INTERCEPTORS.get()[index];
+    object.dispatch();
+    leave_kernel_trap();
+}
+
+fn init_interceptors(table: &mut IDTable) {
+    let mut created_objects = system::init_irq(table);
+    for (index, object_option) in created_objects.iter_mut().enumerate() {
+        if object_option.is_none() {
+            let line =
+                PicLine::try_from(index as u8).expect("index cannot exceed array size");
+            let raw_object = memory::slab_alloc::<InterruptObject>();
+            let object = raw_object.write(InterruptObject::new(line));
+            *object_option = Some(object);
+        }
+    }
+    let interceptors = created_objects
+        .map(|object| object.expect("The object is already initialized"));
+    for (index, object) in interceptors.iter().enumerate() {
+        let irq_line = IrqLine::from(object.line());
+        let trap = unsafe { INTERCEPTOR_STUB_ARRAY[index] };
+        table.set(irq_line.interrupt as usize, naked_trap!(trap));
+    }
+    let _ = INTERCEPTORS.set(interceptors);
+}
+
+extern "C" {
+    static INTERCEPTOR_STUB_ARRAY: [NakedExceptionHandler; pic::LINES_COUNT];
+}
+//this function is invoked directly from interrupt stub
+
+
+const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::new(Handle::KERNEL, suppress_irq, ptr::null_mut());
+
+const fn suppress_irq(is_processed: bool, context: *mut ()) -> bool {
+    false
 }
 
 /// set custom interrupt handler
@@ -232,27 +323,6 @@ impl IDTable {
         SYSTEM_CALL = 0x80, "system call";
         //other reserved
         TRAP_COUNT = 32, "The average count of exception reserved by Intel";
-        //The mapping of IRQ lines to IDT Table
-        //The master's interrupts
-        IRQ_MASTER_OFFSET = 33, "The first interrupt for master";
-        SYS_TIMER = 33, "Scheduler and company";
-        KEYBOARD = 34;
-        CASCADE_SLAVE = 35;
-        COM1 = 36;
-        COM2 = 37;
-        SOUND_CARD = 38;
-        FLOPPY = 39;
-        PRINTER = 40;
-        //The slave's interrupts
-        IRQ_SLAVE_OFFSET = 41, "The first interrupt for slave";
-        CLOCK = 41;
-        POWER = 42;
-        NETWORK_CARD = 43, "Can be configured to any SCSI or NIC";
-        // FREE = 44;
-        MOUSE = 45;
-        FLOAT_COPROC = 46;
-        PRIMARY_ATA = 47;
-        SECONDARY_ATA = 48;
     );
     pub const fn empty() -> Self {
         let entries: [InterruptGate; MAX_INTERRUPTS_COUNT] = [InterruptGate::null(); MAX_INTERRUPTS_COUNT];
@@ -273,7 +343,6 @@ impl IDTable {
         old
     }
 }
-
 
 #[cfg(test)]
 mod tests {

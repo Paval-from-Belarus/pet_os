@@ -1,7 +1,11 @@
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
+use core::ptr;
 use crate::{bitflags, interrupts};
+use crate::drivers::Handle;
+use crate::interrupts::{CallbackInfo, IrqLine};
 use crate::memory::{AddressSpace, ProcessMemory, SegmentSelector, VirtualAddress};
+use crate::utils::atomics::SpinLockLazyCell;
 use crate::utils::Zeroed;
 
 pub struct Context {}
@@ -86,7 +90,18 @@ pub struct ThreadInfo {
     process: UnsafeCell<ProcessMemory>,
     files: FileHandle,
 }
+
+static THREAD_SCHEDULER: SpinLockLazyCell<ThreadScheduler> = SpinLockLazyCell::empty();
+
+pub struct ThreadScheduler {}
+
 pub fn init_scheduler() {
-    interrupts::registry()
+    let info = CallbackInfo::new(Handle::KERNEL, on_timer, ptr::null_mut());
+    interrupts::registry(Handle::KERNEL, IrqLine::SYS_TIMER, info);
 }
+
+fn on_timer(is_processed: bool, context: *mut ()) -> bool {
+    false
+}
+
 pub struct FileHandle {}

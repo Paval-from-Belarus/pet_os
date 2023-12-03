@@ -1,5 +1,5 @@
 use crate::{bitflags, error_trap, naked_trap};
-use crate::interrupts::{IDTable, InterruptStackFrame};
+use crate::interrupts::{IDTable, InterruptStackFrame, pic};
 use crate::interrupts::object::InterruptObject;
 use crate::utils::SimpleList;
 
@@ -44,8 +44,8 @@ pub fn init_traps(table: &mut IDTable) {
 }
 
 ///Init IRQ lines
-pub fn init_irq(table: &mut IDTable) -> SimpleList<InterruptObject> {
-    let list = SimpleList::empty();
+pub fn init_irq(table: &mut IDTable) -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
+    let list = SimpleList::<Option<&'static InterruptObject>>::empty();
     todo!()
 }
 

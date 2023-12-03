@@ -63,15 +63,16 @@ impl<T> SimpleList<T> {
         self.first = Some(node);
     }
     ///it's responsibility of upper level to guarantee that data will live still the whole collection
-    pub fn push_back(&mut self, mut node: &mut SimpleListNode<T>) {
+    pub fn push_back(&mut self, node: &mut SimpleListNode<T>) {
         unsafe {
-            if let Some(old_tail) = self.tail.map(|tail| tail.as_mut()) {
-                old_tail.set_next(node);
+            let mut node = NonNull::from(node);
+            if let Some(old_tail) = self.tail.map(|mut tail| tail.as_mut()) {
+                old_tail.set_next(node.as_mut());
             } else {
                 debug_assert!(self.first.is_none(), "The empty last means empty first");
-                self.first = Some(NonNull::from(node));
+                self.first = Some(node);
             }
-            self.tail = Some(NonNull::from(node));
+            self.tail = Some(node);
         }
     }
 }
@@ -116,6 +117,9 @@ impl<'a, T> MutListIterator<'a, T> {
             next: list.first,
             _marker: PhantomData,
         }
+    }
+    pub fn unlink_watched(&mut self) -> Option<&'a mut SimpleListNode<T>> {
+        todo!()
     }
 }
 

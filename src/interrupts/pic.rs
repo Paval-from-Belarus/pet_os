@@ -1,3 +1,5 @@
+use core::arch::asm;
+use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive, UnsafeFromPrimitive};
 use crate::declare_constants;
 use crate::utils::io;
 declare_constants!(
@@ -28,8 +30,34 @@ declare_constants!(
     LAST_MASTER_IRQ_LINE = 7, "The last irq line that should be dispatched by master";
     CHIP_LINE_COUNT = 8;
 );
-pub unsafe fn set_mask(mut line: u8) {
+declare_constants!(
+    pub usize,
+    LINES_COUNT = 16;
+);
+#[derive(IntoPrimitive, TryFromPrimitive, Debug, Copy, Clone)]
+#[repr(u8)]
+pub enum PicLine {
+    IRQ0,
+    IRQ1,
+    IRQ2,
+    IRQ3,
+    IRQ4,
+    IRQ5,
+    IRQ6,
+    IRQ7,
+    IRQ8,
+    IRQ9,
+    IRQ10,
+    IRQ11,
+    IRQ12,
+    IRQ13,
+    IRQ14,
+    IRQ15,
+}
+
+pub unsafe fn set_mask(pic_line: PicLine) {
     let port: u16;
+    let mut line = u8::from(pic_line);
     if line <= LAST_MASTER_IRQ_LINE {
         port = PIC1_DATA;
     } else {
@@ -39,9 +67,11 @@ pub unsafe fn set_mask(mut line: u8) {
     let value = io::inb(port) | (1 << line);
     io::outb(port, value);
 }
-pub unsafe fn clear_mask(mut line: u8) {
+
+pub unsafe fn clear_mask(pic_line: PicLine) {
     let port: u16;
     let value: u8;
+    let mut line = u8::from(pic_line);
     if line <= LAST_MASTER_IRQ_LINE {
         port = PIC1_DATA;
     } else {
@@ -51,6 +81,7 @@ pub unsafe fn clear_mask(mut line: u8) {
     value = io::inb(port) & !(1 << line);
     io::outb(port, value);
 }
+
 ///Remap pic master and slave interrupts to given ranges
 pub unsafe fn remap(master_offset: u8, slave_offset: u8) {
     use io::*;
@@ -77,9 +108,20 @@ pub unsafe fn remap(master_offset: u8, slave_offset: u8) {
     outb(PIC1_DATA, old_pic1);
     outb(PIC2_DATA, old_pic2);
 }
+
+//Migration to APIC
+pub unsafe fn disable() {
+    asm!(
+    "out 0xa1, al",
+    "out 0x21, al",
+    in("ax") 0xFF,
+    options(preserves_flags, nomem, nostack));
+}
+
 ///Send signal by irq line that interrupt is processed
-pub fn complete(irq: u8) {
-    if irq >= 8 {
+pub fn complete(pic_line: PicLine) {
+    let line = u8::from(pic_line);
+    if line >= 8 {
         unsafe { io::outb(PIC2_COMMAND, PIC_FINALIZE) };
     }
     unsafe { io::outb(PIC2_COMMAND, PIC_FINALIZE) }

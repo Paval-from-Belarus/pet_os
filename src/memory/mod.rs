@@ -11,7 +11,7 @@ pub use paging::PagingProperties;
 pub use arch::*;
 
 use crate::{bitflags, declare_constants};
-use crate::memory::paging::{CaptureAllocator, PageMarker, UnmapParamsFlag};
+use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError, UnmapParamsFlag};
 use core::{mem, ptr};
 use core::mem::MaybeUninit;
 use static_assertions::assert_eq_size;
@@ -60,6 +60,7 @@ impl ToVirtualAddress for PhysicalAddress {
 
 
 static mut PHYSICAL_ALLOCATOR: SpinLockLazyCell<PageAllocator> = SpinLockLazyCell::empty();
+
 // static mut SLAB_ALLOCATOR: SpinLockLazyCell<>
 ///Return crucial structures for kernel
 ///Without them, it's impossible
@@ -271,9 +272,8 @@ pub struct AddressSpace {
     dirty_pages: LinkedList<Page>,
     locked_pages: LinkedList<Page>,
     total_pages_count: usize,
-    marker: PageMarker<AllocHandler, DeallocHandler>
+    marker: PageMarker<AllocHandler, DeallocHandler>,
 }
-
 
 
 #[derive(Copy, Clone)]
@@ -295,8 +295,12 @@ pub struct Page {
 }
 assert_eq_size!(ListNode<Page>, [u8; 16]);
 ///the kernel method to allocate structure in kernel slab pool
-pub fn slab_alloc<T>() -> MaybeUninit<T> {
+pub fn slab_alloc<T>() -> &'static mut MaybeUninit<T> {
     let size = mem::size_of::<T>();
+    todo!()
+}
+
+pub fn slab_dealloc<T>(pointer: &mut T) {
     todo!()
 }
 

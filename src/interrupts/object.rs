@@ -1,29 +1,77 @@
-use core::ptr::NonNull;
-use crate::interrupts::{Callback, CallbackInfo, enter_kernel_trap, leave_kernel_trap};
+use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
+
+
+use crate::interrupts::{CallbackInfo, pic};
 use crate::{log, memory};
+use crate::drivers::Handle;
+use crate::interrupts::pic::{PicLine};
 use crate::utils::{SimpleList, SimpleListNode};
+use crate::utils::atomics::{SpinLock};
 
 ///The manager struct that handle all request for given interrupt.
 pub struct InterruptObject {
-    callbacks: SimpleList<CallbackInfo>,
-    id: usize,//the interrupt number
+    callbacks: UnsafeCell<SimpleList<CallbackInfo>>,
+    //the interrupt number
+    line: PicLine,
+    lock: SpinLock,
 }
 
+unsafe impl Sync for InterruptObject {}
+
+unsafe impl Send for InterruptObject {}
+
 impl InterruptObject {
+    //the raw initial value to initialize static
+    pub const unsafe fn default() -> Self {
+        MaybeUninit::zeroed().assume_init()
+    }
+    pub fn new(line: PicLine) -> Self {
+        let callbacks = UnsafeCell::new(SimpleList::empty());
+        let lock = SpinLock::new();
+        Self { callbacks, line, lock }
+    }
     pub fn dispatch(&self) {
         let mut is_dispatched = false;
-        for callback in self.callbacks.iter() {
+        self.lock.acquire();
+        let callbacks = unsafe { &*self.callbacks.get() };
+        for callback in callbacks.iter() {
             is_dispatched |= callback.invoke(is_dispatched);//if first is already dispatch the interrupt then other can only check
         }
+        self.lock.release();
         if !is_dispatched {
-            log!("int {} is not dispatched", self.id);
+            //todo: replace with system message
+            log!("int {:?} is not dispatched", self.line);
+            //if no one complete request simply suppress irq
+            pic::complete(self.line);
         }
     }
     //the registration is appending callback to the end of sequence
-    pub fn registry(&mut self, stack_info: CallbackInfo) {
+    //to remove consider to add DriverHandle
+    pub fn add(&self, stack_info: CallbackInfo) {
         let raw_node = memory::slab_alloc::<SimpleListNode<CallbackInfo>>();
         let node = raw_node.write(SimpleListNode::wrap_data(stack_info));
-        self.callbacks.push_back(node);
+        self.lock.acquire();
+        unsafe {
+            (*self.callbacks.get()).push_back(node);
+        }
+        self.lock.release();
+    }
+    pub fn remove(&self, removable: Handle) {
+        self.lock.acquire();
+        let list = unsafe { &mut *self.callbacks.get() };
+        let mut iterator = list.iter_mut();
+        while let Some(callback) = iterator.next() {
+            if callback.driver.eq(&removable) {
+                let node = iterator
+                    .unlink_watched()
+                    .expect("The node is only visited");
+                memory::slab_dealloc(node);
+            }
+        }
+        self.lock.release();
+    }
+    pub fn line(&self) -> PicLine {
+        self.line
     }
 }
-

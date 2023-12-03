@@ -15,6 +15,7 @@
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
 extern crate static_assertions;
+extern crate num_enum;
 
 #[cfg(not(test))]
 #[allow(dead_code)]
@@ -46,8 +47,8 @@ use utils::logging;
 pub unsafe extern "C" fn main() {
     let properties: *const PagingProperties;
     asm!(
-    "mov {}, eax",
-    out(reg) properties
+    "",
+    out("eax") properties
     );
     logging::init();
     unsafe {

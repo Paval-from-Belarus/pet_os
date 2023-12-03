@@ -41,6 +41,7 @@ FILE_SYSTEM_BUILD_SCRIPT := $(SCRIPTS_PATH)/FileSystem.xml
 CARGO_FLAGS := -Z build-std=core,compiler_builtins
 CARGO_FLAGS += -Z build-std-features=compiler-builtins-mem
 CARGO_FLAGS += --target=$(TARGET_SPEC)
+OBJECTS = $(TARGET_KERNEL_PATH)/entry.o $(TARGET_KERNEL_PATH)/interceptors.o
 .PHONY: all image clean kernel entry loader layout debug unlock-debug PHONY
 all: test image
 clean:
@@ -65,13 +66,16 @@ rebuild-kernel:
 	@rm $(TARGET_KERNEL_PATH)/kernel.o
 	@make kernel
 kernel: $(TARGET_KERNEL_PATH)/kernel.o
-$(TARGET_KERNEL_PATH)/kernel.o: src $(LD_SCRIPT) $(TARGET_SPEC) $(TARGET_KERNEL_PATH)/entry.o
+$(TARGET_KERNEL_PATH)/kernel.o: src $(LD_SCRIPT) $(TARGET_SPEC) $(OBJECTS)
 	$(CARGO) build $(CARGO_FLAGS) --release
 	@cp --preserve $(TARGET_LIB_PATH)/libpet_os.a $(TARGET_KERNEL_PATH)/kernel.a
 	$(LD) $(LD_FLAGS) -o $@ $(TARGET_KERNEL_PATH)/entry.o $(TARGET_KERNEL_PATH)/kernel.a
 entry: $(TARGET_KERNEL_PATH)/entry.o
 $(TARGET_KERNEL_PATH)/entry.o: $(ASM_ENTRY_PATH)/entry.asm
 	$(ASM_BUILDER) ${ASM_ENTRY_PATH}/entry.asm $@
+interceptors: $(TARGET_KERNEL_PATH)/interceptors.o #the asm stub for Interrupt Objects
+$(TARGET_KERNEL_PATH)/interceptors.o:  $(ASM_ENTRY_PATH)/interceptors.asm
+	$(ASM_BUILDER) ${ASM_ENTRY_PATH}/interceptors.asm $@
 loader: layout
 	$(ASM_BUILDER) ${ASM_LOADER_SOURCES_PATH}/OsLoader.asm ${TARGET_LOADER_PATH}/OsLoader.bin
 	$(ASM_BUILDER) ${ASM_LOADER_SOURCES_PATH}/MBR.asm ${TARGET_LOADER_PATH}/MBR.bin
