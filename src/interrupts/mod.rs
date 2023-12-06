@@ -6,7 +6,7 @@ use crate::memory::{InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, 
 use core::{mem, ptr};
 use core::arch::asm;
 use core::ops::DerefMut;
-use crate::{declare_constants, memory};
+use crate::{declare_constants, log, memory};
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
@@ -37,8 +37,13 @@ pub struct CallbackInfo {
 }
 
 impl CallbackInfo {
-    pub const fn new(driver: Handle, callback: Callback, context: *mut ()) -> Self {
-        Self { driver, callback, context }
+    //the default kernel callback with no context
+    pub const fn default(callback: Callback) -> Self {
+        Self {
+            callback,
+            driver: Handle::KERNEL,
+            context: ptr::null_mut(),
+        }
     }
     #[inline]
     pub fn invoke(&self, is_dispatched: bool) -> bool {
@@ -223,7 +228,7 @@ unsafe fn interceptor_stub(index: usize) {
 }
 
 fn init_interceptors(table: &mut IDTable) {
-    let mut created_objects = system::init_irq(table);
+    let mut created_objects = system::init_irq();
     for (index, object_option) in created_objects.iter_mut().enumerate() {
         if object_option.is_none() {
             let line =
@@ -249,7 +254,7 @@ extern "C" {
 //this function is invoked directly from interrupt stub
 
 
-const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::new(Handle::KERNEL, suppress_irq, ptr::null_mut());
+const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::default(suppress_irq);
 
 const fn suppress_irq(is_processed: bool, context: *mut ()) -> bool {
     false

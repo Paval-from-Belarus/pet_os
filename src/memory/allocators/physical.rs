@@ -1,17 +1,21 @@
-use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError};
-use crate::memory::{MemoryMappingFlag, ProcessMemory, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion, ToPhysicalAddress, PageFlag};
+use core::cell::UnsafeCell;
+use core::ops::{Deref, DerefMut};
+use core::ptr::NonNull;
+use crate::log;
+use crate::memory::paging::{PageMarker, PageMarkerError};
+use crate::memory::{MemoryMappingFlag, ProcessInfo, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion, ToPhysicalAddress, PageFlag, OsAllocationError, TaskGate};
+use crate::memory::OsAllocationError::NoMemory;
 
-use core::{mem, ptr};
-use core::ptr::{drop_in_place, NonNull};
-
-use crate::memory::paging::table::{DirEntry, RefTable};
-use crate::utils::{LinkedList, ListNode};
+use crate::utils::{LinkedList, ListNode, SpinBox};
+use crate::utils::atomics::SpinLock;
 
 ///It's a responsibility of caller class to maintain synchronized caller sequence
 ///It's really recommended to use SystemCallQueue to control the order of invocation
 ///All methods are thread-safe
-pub struct PageAllocator {
-    free_pages: LinkedList<Page>,
+///todo: allocator should works as buddy allocator
+pub struct PhysicalAllocator<'a> {
+    free_pages: UnsafeCell<LinkedList<'a, Page>>,
+    lock: SpinLock,
     //all atomic operations should be atomic in system scope
     //it means that no thread switching will be enabled while atomic operations are not finished
 }
@@ -22,52 +26,70 @@ pub enum AllocationError {
     PageMarkerInvalidation(PageMarkerError),
 }
 
-//
-// pub fn get_kernel_layout() -> MemoryLayoutRec {
-//     let flags = MemRangeFlag::WRITABLE | MemRangeFlag::WRITE_THROUGH;
-//
-//     // MemoryLayoutRec {
-//     //     heap_offset: 0,
-//     //     stack_offset: 0,
-//     //     last_page_index: 0,
-//     //     heap_pages: (),
-//     //     stack_pages: (),
-//     //     flags: MemRangeFlag(),
-//     //     marker: (),
-//     // }
-// }
-const LIST_ACCESS_FLAG: MemoryMappingFlag = MemoryMappingFlag(MemoryMappingFlag::PRESENT | MemoryMappingFlag::WRITABLE);
-
-impl PageAllocator {
+impl<'a> PhysicalAllocator<'a> {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
-    pub const fn new(free_pages: LinkedList<Page>) -> Self {
-        Self { free_pages }
+    pub const fn new(free_pages: LinkedList<'a, Page>) -> Self {
+        let lock = SpinLock::new();
+        let free_pages = UnsafeCell::new(free_pages);
+        Self { free_pages, lock }
     }
-    pub fn dealloc_page(&mut self, offset: PhysicalAddress) {
+    #[deprecated]
+    pub fn dealloc_page_by_offset(&mut self, offset: PhysicalAddress) {
         unsafe {
             let mut node = ListNode::<Page>::wrap_page(offset);
-            node.as_mut().release();
-            self.free_pages.push_back(node);
+            node.as_mut().free();
+        }
+    }
+    fn synchronized_pages(&'a self) -> SpinBox<'a, LinkedList<'a, Page>> {
+        let list = unsafe { &mut *self.free_pages.get() };
+        SpinBox::new(&self.lock, list)
+    }
+    pub fn dealloc_page(&'a self, page: &'a mut ListNode<Page>) {
+        page.free();
+        if !page.is_used() {
+            let mut list = self.synchronized_pages();
+            unsafe { list.push_back(page) };
         }
     }
     //allocate continuous memory region
-    pub fn alloc_pages(&mut self, page_count: usize) -> Option<PhysicalAddress> {
-        assert_eq!(page_count, 1, "Failed to allocate more then 1 page");
-        let option_node = self.free_pages.remove_first();
-        match option_node {
-            None => None,
-            Some(mut page_node) => {
-                let page = unsafe { page_node.as_mut() };
-                page.acquire();
-                Some(page.as_physical())
+    pub fn alloc_pages(&'a self, count: usize) -> Result<LinkedList<'a, Page>, OsAllocationError> {
+        let mut pages = self.synchronized_pages();
+        let mut longest = 0; //the current longest count of pages in same sequence
+        let mut last_offset_option: Option<PhysicalAddress> = None;
+        for page in pages.iter() {
+            if let Some(offset) = last_offset_option && page.as_physical() == offset + Page::SIZE {
+                last_offset_option = last_offset_option
+                    .map(|offset| offset.saturating_add(Page::SIZE));
+                longest += 1;
+            } else {
+                longest = 1;
             }
+            if longest == count {
+                break;
+            }
+        }
+        if let Some(last_offset) = last_offset_option && longest == count {
+            let mut list = LinkedList::<'a, Page>::empty();
+            let mut page_iter = pages.iter_mut();
+            let _ = page_iter.by_ref()
+                .skip_while(|page| page.as_physical() < last_offset)
+                .take(count);
+            for _ in 0..count {
+                let _ = page_iter.next().expect("Invariant violation?");//skip list node value
+                let page = page_iter.unlink_watched().expect("Already watched");
+                page.take();
+                unsafe { list.push_back(page) };
+            }
+            Ok(list)
+        } else {
+            Err(NoMemory)
         }
     }
     //current version of kernel disallow to manage page caching policies
     //similar to UNIX (Linux) brk system call
     pub fn heap_alloc(
         &mut self,
-        _info_rec: &mut ProcessMemory,
+        _info_rec: &mut ProcessInfo,
         _request_offset: VirtualAddress,
     ) -> Result<(), AllocationError> {
         Ok(())
@@ -115,7 +137,7 @@ impl PageAllocator {
         // return result;
     }
     fn mark_pages(
-        _marker: &mut PageMarker<AllocHandler, DeallocHandler>,
+        _marker: &mut PageMarker,
         start_offset: VirtualAddress,
         _pages: &LinkedList<Page>,
         _flags: MemoryMappingFlag,

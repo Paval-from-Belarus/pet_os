@@ -3,7 +3,9 @@ pub mod io;
 pub mod atomics;
 mod doubly_linked_list;
 mod singly_linked_list;
+mod spin_box;
 
+pub use spin_box::SpinBox;
 pub use doubly_linked_list::{LinkedList, ListNode};
 pub use singly_linked_list::{SimpleList, SimpleListNode};
 #[macro_export]

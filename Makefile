@@ -69,7 +69,7 @@ kernel: $(TARGET_KERNEL_PATH)/kernel.o
 $(TARGET_KERNEL_PATH)/kernel.o: src $(LD_SCRIPT) $(TARGET_SPEC) $(OBJECTS)
 	$(CARGO) build $(CARGO_FLAGS) --release
 	@cp --preserve $(TARGET_LIB_PATH)/libpet_os.a $(TARGET_KERNEL_PATH)/kernel.a
-	$(LD) $(LD_FLAGS) -o $@ $(TARGET_KERNEL_PATH)/entry.o $(TARGET_KERNEL_PATH)/kernel.a
+	$(LD) $(LD_FLAGS) -o $@ $(OBJECTS) $(TARGET_KERNEL_PATH)/kernel.a
 entry: $(TARGET_KERNEL_PATH)/entry.o
 $(TARGET_KERNEL_PATH)/entry.o: $(ASM_ENTRY_PATH)/entry.asm
 	$(ASM_BUILDER) ${ASM_ENTRY_PATH}/entry.asm $@

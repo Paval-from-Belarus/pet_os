@@ -28,6 +28,7 @@ mod memory;
 #[allow(dead_code)]
 mod utils;
 mod drivers;
+mod process;
 
 use memory::PagingProperties;
 
@@ -39,6 +40,7 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 use core::arch::asm;
+use core::slice::SliceIndex;
 use utils::logging;
 
 #[no_mangle]
@@ -58,7 +60,6 @@ pub unsafe extern "C" fn main() {
         memory::init_kernel_space(allocator, dir_table, heap_offset);
     };
     interrupts::init();
-
     // ALLOCATOR.configure(allocator, layout);
 
     // let ranges = unsafe {

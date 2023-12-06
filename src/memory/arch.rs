@@ -88,6 +88,9 @@ pub trait DescriptorType {
     fn bits(&self) -> u8;
 }
 
+//the marker for type
+pub trait Descriptor {}
+
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct DescriptorFlags<T: DescriptorType> {
@@ -144,6 +147,8 @@ pub struct MemoryDescriptor {
     upper_address: u8,
 }
 assert_eq_size!(MemoryDescriptor, [u32; 2]);
+impl Descriptor for MemoryDescriptor {}
+
 impl MemoryDescriptor {
     pub fn default(base: VirtualAddress, limit: usize, memory_type: MemoryType) -> Self {
         let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
@@ -257,6 +262,8 @@ pub struct TaskGate {
     reserved_3: Zeroed<u16>,
 }
 assert_eq_size!(TaskGate, [u32; 2]);
+impl Descriptor for TaskGate {}
+
 impl TaskGate {
     pub fn default(task: SegmentSelector) -> Self {
         let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
@@ -284,6 +291,7 @@ pub struct InterruptGate {
     upper_offset: u16,
 }
 assert_eq_size!(InterruptGate, [u32; 2]);
+impl Descriptor for InterruptGate {}
 
 impl InterruptGate {
     /// The default interrupt gate is kernel ring and not present

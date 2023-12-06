@@ -1,13 +1,17 @@
 pub(crate) mod table;
 
+use core::cell::UnsafeCell;
 use core::slice;
 use core::intrinsics::unreachable;
+use core::mem::MaybeUninit;
+use core::ptr::addr_of_mut;
 use table::{RefTable, RefTableEntry};
 use crate::{bitflags, declare_constants, memory};
-use crate::memory::{KERNEL_LAYOUT_FLAGS, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
+use crate::memory::{AllocHandler, DeallocHandler, KERNEL_LAYOUT_FLAGS, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, TaskGate, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
 use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
+use crate::utils::{LinkedList, Zeroed};
 declare_constants!(
-    usize,
+    pub usize,
     DIRECTORY_ENTRIES_COUNT = 1024;
     TABLE_ENTRIES_COUNT = 1024;
     DIRECTORY_PAGES_COUNT = 1;
@@ -15,12 +19,10 @@ declare_constants!(
 );
 
 /// The struct is simply used to transfer physical layout for page allcoator
-pub struct PageMarker<T, S>
-    where T: FnMut(usize) -> Option<PhysicalAddress>, //allocate specific count of physical pages
-          S: FnMut(PhysicalAddress) {
+pub struct PageMarker {
     directory: RefTable<DirEntry>,
-    alloc_handler: T,
-    dealloc_handler: S,
+    alloc_handler: AllocHandler,
+    dealloc_handler: DeallocHandler,
 }
 
 pub enum CommonError {
@@ -50,15 +52,25 @@ pub struct PagingProperties {
     captures_cnt: usize,
 }
 
+#[repr(C)]
 pub struct GDTTable {
-    entries: *mut GDTEntry,
-    count: usize,
+    null: Zeroed<MemoryDescriptor>,
+    kernel_code: UnsafeCell<MemoryDescriptor>,
+    kernel_data: UnsafeCell<MemoryDescriptor>,
+    user_code: UnsafeCell<MemoryDescriptor>,
+    user_data: UnsafeCell<MemoryDescriptor>,
+    task: TaskGate,
 }
 
 impl GDTTable {
-    pub const fn new(entries: *mut GDTEntry, count: usize) -> GDTTable {
-        GDTTable { entries, count }
+    pub const fn null() {
+        unsafe { MaybeUninit::zeroed().assume_init() }
     }
+    pub fn set_task(&mut self, task: TaskGate) {
+        self.task = task;
+    }
+    //load the GDT into registers
+    pub unsafe fn load(&self) {}
 }
 
 pub struct GDTEntry {
@@ -67,7 +79,7 @@ pub struct GDTEntry {
     middle_base_address: u8,
     first_flag: u8,
     second_flag: u8,
-    high_base_address: u8
+    high_base_address: u8,
 }
 
 #[repr(C, packed)]
@@ -75,6 +87,7 @@ pub struct GDTHandle {
     table_size: u16,
     table: *mut GDTEntry,
 }
+
 ///The common information about physical memory region
 ///Supported only ZONE_NORMAL memory (see linux kernel docs)
 pub struct CaptureMemRec {
@@ -157,16 +170,6 @@ impl CaptureAllocator {
     }
 }
 
-impl MemoryMappingRegion {
-    #[deprecated]
-    #[doc = "Show to be replaced by upper list implementation"]
-    pub fn next(&self) -> Option<&mut MemoryMappingRegion> {
-        if self.next.is_null() {
-            return None;
-        }
-        unsafe { Some(&mut *self.next) }
-    }
-}
 
 macro_rules! table_index {
     ($argument:expr) => {
@@ -193,10 +196,8 @@ bitflags!(
     TABLES = 0b10
 
 );
-impl<T, S> PageMarker<T, S> where
-    T: FnMut(usize) -> Option<PhysicalAddress>, //allocate specific count of physical pages
-    S: FnMut(PhysicalAddress) {
-    pub fn wrap(directory: RefTable<DirEntry>, alloc_handler: T, dealloc_handler: S) -> Self {
+impl PageMarker {
+    pub fn wrap(directory: RefTable<DirEntry>, alloc_handler: AllocHandler, dealloc_handler: DeallocHandler) -> Self {
         Self { directory, alloc_handler, dealloc_handler }
     }
     fn alloc_pages(&mut self, page_count: usize) -> Option<PhysicalAddress> {
@@ -288,7 +289,6 @@ impl<T, S> PageMarker<T, S> where
         unsafe {
             self.map_range_unsafe(
                 map_region,
-                flags,
                 true)
         }
     }
@@ -300,7 +300,6 @@ impl<T, S> PageMarker<T, S> where
         unsafe {
             self.map_range_unsafe(
                 map_region,
-                flags,
                 false)
         }
     }
@@ -310,10 +309,10 @@ impl<T, S> PageMarker<T, S> where
     unsafe fn map_range_unsafe(
         &mut self,
         map_region: &MemoryMappingRegion,
-        flags: MemoryMappingFlag,
         can_allocate: bool) -> Result<(), PageMarkerError> {
         let mut addressable_offset = map_region.virtual_offset;
         let mut memory_offset = map_region.physical_offset;
+        let flags = map_region.flags;
         for _ in 0..map_region.page_count {
             let table_index = table_index!(addressable_offset);
             let entry_index = entry_index!(addressable_offset);
@@ -373,25 +372,17 @@ impl<T, S> PageMarker<T, S> where
     }
     pub fn new(
         &mut self,
-        alloc_handler: T,
-        dealloc_handler: S) -> Result<PageMarker<T, S>, PageMarkerError>
-        where
-            T: FnMut(usize) -> Option<PhysicalAddress>,
-            S: FnMut(PhysicalAddress) {
+        mapping_regions: LinkedList<MemoryMappingRegion>,
+        alloc_handler: AllocHandler,
+        dealloc_handler: DeallocHandler) -> Result<PageMarker, PageMarkerError> {
         let option_directory_offset: Option<PhysicalAddress> = self.alloc_pages(DIRECTORY_PAGES_COUNT);
-        let mut marker: PageMarker<T, S>;
+        let mut marker: PageMarker;
         if let Some(directory_offset) = option_directory_offset {
             let directory = RefTable::<DirEntry>::with_default_values(directory_offset as *mut DirEntry, DIRECTORY_ENTRIES_COUNT);
             marker = PageMarker::wrap(directory, alloc_handler, dealloc_handler);
-            let mut map_region = memory::get_kernel_mapping_region();
-            loop {
-                if let Err(error_code) = unsafe { marker.map_range_unsafe(map_region, KERNEL_LAYOUT_FLAGS, true) } {
-                    return Err(error_code);
-                }
-                if let Some(next_region) = map_region.next() {
-                    map_region = next_region;
-                } else {
-                    break;
+            for region in mapping_regions.iter() {
+                unsafe {
+                    marker.map_range_unsafe(region, true)?;
                 }
             }
         } else {

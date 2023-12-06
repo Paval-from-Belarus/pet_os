@@ -4,7 +4,7 @@ use core::ptr;
 use crate::{bitflags, interrupts};
 use crate::drivers::Handle;
 use crate::interrupts::{CallbackInfo, IrqLine};
-use crate::memory::{AddressSpace, ProcessMemory, SegmentSelector, VirtualAddress};
+use crate::memory::{AddressSpace, ProcessInfo, SegmentSelector, VirtualAddress};
 use crate::utils::atomics::SpinLockLazyCell;
 use crate::utils::Zeroed;
 
@@ -87,7 +87,7 @@ pub struct ThreadInfo {
     //the working time of thread (usize::max if too much)
     elapsed: usize,
     //the process context for thread
-    process: UnsafeCell<ProcessMemory>,
+    process: UnsafeCell<ProcessInfo>,
     files: FileHandle,
 }
 
@@ -95,9 +95,10 @@ static THREAD_SCHEDULER: SpinLockLazyCell<ThreadScheduler> = SpinLockLazyCell::e
 
 pub struct ThreadScheduler {}
 
-pub fn init_scheduler() {
-    let info = CallbackInfo::new(Handle::KERNEL, on_timer, ptr::null_mut());
+pub fn init_scheduler() -> CallbackInfo{
+    let info = CallbackInfo::default(on_timer);
     interrupts::registry(Handle::KERNEL, IrqLine::SYS_TIMER, info);
+    todo!()
 }
 
 fn on_timer(is_processed: bool, context: *mut ()) -> bool {

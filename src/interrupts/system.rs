@@ -1,6 +1,8 @@
-use crate::{bitflags, error_trap, naked_trap};
-use crate::interrupts::{IDTable, InterruptStackFrame, pic};
+use core::{u8, usize};
+use crate::{bitflags, error_trap, memory, naked_trap, process};
+use crate::interrupts::{CallbackInfo, IDTable, InterruptStackFrame, IrqLine, pic};
 use crate::interrupts::object::InterruptObject;
+use crate::interrupts::pic::PicLine;
 use crate::utils::SimpleList;
 
 //the common handlers
@@ -44,9 +46,17 @@ pub fn init_traps(table: &mut IDTable) {
 }
 
 ///Init IRQ lines
-pub fn init_irq(table: &mut IDTable) -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
-    let list = SimpleList::<Option<&'static InterruptObject>>::empty();
-    todo!()
+pub fn init_irq() -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
+    let mut objects: [Option<&'static InterruptObject>; pic::LINES_COUNT] = [None; pic::LINES_COUNT];
+    objects[u8::from(IrqLine::SYS_TIMER.line) as usize] = Some(init_timer());
+    objects
+}
+
+fn init_timer() -> &'static InterruptObject {
+    let raw_object = memory::slab_alloc::<InterruptObject>();
+    let timer_object = raw_object.write(InterruptObject::new(IrqLine::SYS_TIMER.line));
+    timer_object.add(process::init_scheduler());
+    timer_object
 }
 
 pub extern "x86-interrupt" fn syscall(frame: &mut InterruptStackFrame) {}

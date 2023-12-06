@@ -1,7 +1,7 @@
-mod page;
+mod physical;
 mod system;
 mod utils;
 
-pub use page::PageAllocator;
+pub use physical::PhysicalAllocator;
 // pub use utils::UtilsAllocator;
-pub use system::SystemAllocator;
+pub use system::SlabAllocator;
