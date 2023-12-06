@@ -37,10 +37,6 @@ impl PhysicalAllocator {
             node.as_mut().free();
         }
     }
-    fn synchronized_pages(&self) -> SpinBox<'_, LinkedList<'static, Page>> {
-        let list = unsafe { &mut *self.free_pages.get() };
-        SpinBox::new(&self.lock, list)
-    }
     pub fn dealloc_page(&self, page: &'static mut ListNode<Page>) {
         page.free();
         if !page.is_used() {
@@ -49,8 +45,8 @@ impl PhysicalAllocator {
         }
     }
     //allocate continuous memory region
-    pub fn alloc_pages(&self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
-        let mut pages = self.synchronized_pages();
+    pub fn alloc_pages(&'static self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+        let pages = self.synchronized_pages();
         let mut longest = 0; //the current longest count of pages in same sequence
         let mut last_offset_option: Option<PhysicalAddress> = None;
         for page in pages.iter() {
@@ -67,7 +63,7 @@ impl PhysicalAllocator {
         }
         if let Some(last_offset) = last_offset_option && longest == count {
             let mut list = LinkedList::<'static, Page>::empty();
-            let mut page_iter = pages.iter_mut();
+            let mut page_iter = unsafe { pages.leak().iter_mut() };
             let _ = page_iter.by_ref()
                 .skip_while(|page| page.as_physical() < last_offset)
                 .take(count);
@@ -81,6 +77,10 @@ impl PhysicalAllocator {
         } else {
             Err(NoMemory)
         }
+    }
+    fn synchronized_pages(&self) -> SpinBox<'_, 'static, LinkedList<'static, Page>> {
+        let list = unsafe { &mut *self.free_pages.get() };
+        SpinBox::new(&self.lock, list)
     }
     //current version of kernel disallow to manage page caching policies
 //similar to UNIX (Linux) brk system call
