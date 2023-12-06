@@ -1,15 +1,19 @@
 use core::ops::{Deref, DerefMut};
+use core::ptr::NonNull;
 use crate::utils::atomics::SpinLock;
 
 pub struct SpinBox<'a, T> {
     lock: &'a SpinLock,
-    data: &'a mut T,
+    data: NonNull<T>,
 }
 
 impl<'a, T> SpinBox<'a, T> {
-    pub fn new(lock: &'a SpinLock, data: &'a mut T) -> Self {
+    pub fn new(lock: &'a SpinLock, data: &mut T) -> Self {
         lock.acquire();
-        Self { lock, data }
+        Self {
+            lock,
+            data: NonNull::from(data),
+        }
     }
 }
 
@@ -23,12 +27,12 @@ impl<'a, T> Deref for SpinBox<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.data
+        unsafe { self.data.as_ref() }
     }
 }
 
 impl<'a, T> DerefMut for SpinBox<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
+        unsafe { self.data.as_mut() }
     }
 }

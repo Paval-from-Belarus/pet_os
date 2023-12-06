@@ -8,7 +8,6 @@ use core::ptr::NonNull;
 pub struct ListNode<T> {
     next: NonNull<ListNode<T>>,
     prev: NonNull<ListNode<T>>,
-    //consider to add spinlock
     data: T,
 }
 
@@ -36,6 +35,7 @@ impl<T:> ListNode<T> {
             _marker: PhantomData,
         }
     }
+    // pub fn unsafe leak<'a>
     pub fn data(&self) -> &T {
         &self.data
     }
@@ -146,7 +146,7 @@ impl<'a, T: Sized> LinkedList<'a, T> {
         }
     }
     //this method remove links from node
-    pub unsafe fn with_node(mut node: &'a mut ListNode<T>) -> LinkedList<T> {
+    pub unsafe fn with_node(node: &'a mut ListNode<T>) -> LinkedList<'a, T> {
         node.self_link();
         let raw_node = NonNull::from(node);
         LinkedList {
@@ -199,6 +199,7 @@ impl<'a, T: Sized> LinkedList<'a, T> {
             return;
         }
         self.insert_after_last(raw_node);
+        self.first = Some(raw_node);
     }
     //cause data leaks with node
     unsafe fn insert_after_last(&mut self, mut raw_node: NonNull<ListNode<T>>) {
@@ -335,7 +336,7 @@ impl<'a, T> MutListIterator<'a, T> {
     }
     ///Such as iterator is lazy primitive, this method unlink previously watched element
     pub fn unlink_watched(&mut self) -> Option<&'a mut ListNode<T>> {
-        match self.watched {
+        let unlinked = match self.watched {
             None => None,//last watched mean that parent is empty or no next/back_next method is invoked
             Some(mut watched) => unsafe {
                 self.parent.unlink_node(watched.as_ref());
@@ -349,7 +350,9 @@ impl<'a, T> MutListIterator<'a, T> {
                 }
                 Some(free_node)
             }
-        }
+        };
+        self.watched = None;
+        unlinked
     }
 }
 
@@ -419,11 +422,11 @@ mod tests {
             assert!(has_data(iter.next(), 12));
             assert!(has_data(iter.next(), 13));
             println!("forward test passed");
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 13));
-            assert!(has_data(iter.next(), 12));
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 13));
+            assert!(has_data(iter.next_back(), 14));
+            assert!(has_data(iter.next_back(), 13));
+            assert!(has_data(iter.next_back(), 12));
+            assert!(has_data(iter.next_back(), 14));
+            assert!(has_data(iter.next_back(), 13));
             println!("backward test passed");
         }
     }

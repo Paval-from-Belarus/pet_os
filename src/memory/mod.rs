@@ -4,7 +4,7 @@ mod arch;
 
 
 use core::ptr::{NonNull};
-use core::ops::{Range, RangeBounds};
+use core::ops::{Deref, Range, RangeBounds};
 pub use allocators::PhysicalAllocator;
 pub use paging::PagingProperties;
 pub use arch::*;
@@ -73,7 +73,7 @@ pub fn init_kernel_space(
 ) {
     let free_pages = collect_free_pages(&mut allocator);
     let allocator = PhysicalAllocator::new(free_pages);
-    unsafe { PHYSICAL_ALLOCATOR.set(allocator) };
+    PHYSICAL_ALLOCATOR.set(allocator);
     let mut marker = PageMarker::wrap(directory, alloc_physical_pages, dealloc_page);
     let higher_addresses_start = kernel_physical_offset();
     let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
@@ -90,10 +90,12 @@ fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
 }
 
 fn dealloc_page(offset: PhysicalAddress) {
-    let mut allocator: SpinLockGuard<'static, PhysicalAllocator> = unsafe { PHYSICAL_ALLOCATOR.get() };
+    let guard = unsafe { PHYSICAL_ALLOCATOR.get() };
     let mut page = unsafe { ListNode::<Page>::wrap_page(offset) };
     unsafe {
-        allocator.dealloc_page(page.as_mut());
+        let value = guard.deref();
+        value.dealloc_page(page.as_mut());
+        // allocator.dealloc_page(page.as_mut());
     }
 }
 
@@ -414,9 +416,9 @@ pub fn get_kernel_mapping_region() -> &'static MemoryMappingRegion {
 
 static KERNEL_MAPPING: MemoryMappingRegion = MemoryMappingRegion {
     flags: MemoryMappingFlag::wrap(MemoryMappingFlag::PRESENT | MemoryMappingFlag::WRITABLE),
-    virtual_offset: unsafe { KERNEL_VIRTUAL_OFFSET },
-    physical_offset: unsafe { KERNEL_PHYSICAL_OFFSET },
-    page_count: unsafe { VirtualAddress::MAX - KERNEL_VIRTUAL_OFFSET },
+    virtual_offset: 0, //unsafe { KERNEL_VIRTUAL_OFFSET },
+    physical_offset: 0, //unsafe { KERNEL_PHYSICAL_OFFSET },
+    page_count: 0, //unsafe { VirtualAddress::MAX - KERNEL_VIRTUAL_OFFSET },
 };
 
 #[cfg(not(test))]
@@ -428,7 +430,7 @@ extern "C" {
 static mut MEMORY_MAP: MemoryMap = MemoryMap::empty();
 
 
-static mut PHYSICAL_ALLOCATOR: SpinLockLazyCell<PhysicalAllocator> = SpinLockLazyCell::empty();
+static PHYSICAL_ALLOCATOR: SpinLockLazyCell<PhysicalAllocator> = SpinLockLazyCell::empty();
 
 #[cfg(test)]
 mod tests {

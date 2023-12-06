@@ -8,15 +8,15 @@ use crate::memory::{MemoryMappingFlag, ProcessInfo, PhysicalAllocator, VirtualAd
 //That is each method invocation is atomic
 //Using any synchronization mechanism is redundant
 ///This allocator is used in highly concurrent circumstances. Thus, each call should be legal
-pub struct UtilsAllocator<'a> {
-    allocator: Option<PhysicalAllocator<'a>>,
+pub struct UtilsAllocator {
+    allocator: Option<PhysicalAllocator>,
     kernel_layout: Option<ProcessInfo>,
 }
 
 //Unfortunately, but it's no possibility to prove compiler that code will access immutable SystemAllocator
-unsafe impl<'a> Sync for UtilsAllocator<'a> {}
+unsafe impl Sync for UtilsAllocator {}
 
-unsafe impl<'a> GlobalAlloc for UtilsAllocator<'a> {
+unsafe impl GlobalAlloc for UtilsAllocator {
     unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
         todo!()
     }

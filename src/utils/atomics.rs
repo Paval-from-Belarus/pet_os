@@ -63,10 +63,9 @@ unsafe impl<T> Sync for SpinLockLazyCell<T> {}
 
 ///Own spinlock while exists
 
-pub struct SpinLockGuard<'a, T> {
+pub struct SpinLockGuard<'a, T: 'a> {
     lock: &'a SpinLock,
     data: NonNull<T>,
-    _marker: PhantomData<T>,
 }
 
 impl<T> SpinLockLazyCell<T> {
@@ -97,7 +96,7 @@ impl<T> SpinLockLazyCell<T> {
 }
 
 impl<'a, T> SpinLockGuard<'a, T> {
-    pub fn new(data_option: &'a mut Option<T>, lock: &'a SpinLock) -> SpinLockGuard<'a, T> {
+    pub fn new(data_option: &mut Option<T>, lock: &'a SpinLock) -> SpinLockGuard<'a, T> {
         let pointer: NonNull<T>;
         loop {
             lock.acquire();
@@ -107,11 +106,7 @@ impl<'a, T> SpinLockGuard<'a, T> {
             }
             lock.release();
         }
-        Self {
-            lock,
-            data: NonNull::from(pointer),
-            _marker: PhantomData,
-        }
+        Self { lock, data: NonNull::from(pointer) }
     }
     fn data(&self) -> &T {
         unsafe { self.data.as_ref() }
@@ -121,13 +116,13 @@ impl<'a, T> SpinLockGuard<'a, T> {
     }
 }
 
-impl<T> Drop for SpinLockGuard<'_, T> {
+impl<'a, T> Drop for SpinLockGuard<'a, T> {
     fn drop(&mut self) {
         self.lock.release()
     }
 }
 
-impl<T> Deref for SpinLockGuard<'_, T> {
+impl<'a, T> Deref for SpinLockGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -135,7 +130,7 @@ impl<T> Deref for SpinLockGuard<'_, T> {
     }
 }
 
-impl<T> DerefMut for SpinLockGuard<'_, T> {
+impl<'a, T> DerefMut for SpinLockGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data_mut()
     }

@@ -9,11 +9,11 @@ struct MemBounds {
 
 //allocator of current process session
 //User process or Kernel session ― both have differently set allocator
-pub struct SlabAllocator<'a> {
+pub struct SlabAllocator {
     data_bounds: MemBounds,
     stack_bounds: MemBounds,
     //no interest in stack bounds
-    allocator: NonNull<PhysicalAllocator<'a>>,
+    allocator: &'static PhysicalAllocator,
 }
 
 pub struct SlabEntry {
@@ -22,14 +22,14 @@ pub struct SlabEntry {
 
 
 //each method of this struct is thread-safe
-unsafe impl<'a> Send for SlabAllocator<'a> {}
+unsafe impl Send for SlabAllocator {}
 
-impl<'a> SlabAllocator<'a> {
-    pub fn new(allocator: &'a mut PhysicalAllocator, kernel_marker: PageMarker) -> SlabAllocator<'a> {
+impl SlabAllocator {
+    pub fn new(allocator: &'static PhysicalAllocator, kernel_marker: PageMarker) -> SlabAllocator {
         Self {
             data_bounds: MemBounds { lower: 0, upper: 0 },
             stack_bounds: MemBounds { lower: 0, upper: 0 },
-            allocator: NonNull::from(allocator),
+            allocator,
         }
     }
     pub fn data_break(_offset: VirtualAddress) -> VirtualAddress {
