@@ -190,21 +190,21 @@ pub struct ProcessInfo {
     //Write | NoPrivilege
     marker: PageMarker,
     regions: SimpleList<'static, MemoryRegion>,
-    last_touched_region: Option<NonNull<MemoryRegion>>,
+    last_touched_region: Option<&'static MemoryRegion>,
 }
 
 impl ProcessInfo {
-    pub fn find_region(&mut self, address: VirtualAddress) -> Option<NonNull<MemoryRegion>> {
+    pub fn find_region(&mut self, address: VirtualAddress) -> Option<&'static MemoryRegion> {
         if let Some(last_region) = self.last_touched_region {
             unsafe {
-                if last_region.as_ref().range.contains(&address) {
+                if last_region.range.contains(&address) {
                     return Some(last_region);
                 }
             }
         }
         for region in self.regions.iter() {
             if region.range.contains(&address) {
-                return Some(NonNull::from(region));
+                return Some(region.data());
             }
         }
         None
@@ -213,7 +213,7 @@ impl ProcessInfo {
         None
     }
     pub fn add_region(&mut self, region: NonNull<MemoryRegion>) {}
-    pub fn find_prev_region(&mut self, address: VirtualAddress) -> Option<NonNull<MemoryRegion>> {
+    pub fn find_prev_region(&mut self, address: VirtualAddress) -> Option<&'static MemoryRegion> {
         let mut prev_region = None;
         for region in self.regions.iter() {
             if region.range.contains(&address) {
@@ -221,15 +221,15 @@ impl ProcessInfo {
             }
             //update prev region each time while region is not found
             if region.range.end < address {
-                prev_region = Some(NonNull::from(region));
+                prev_region = Some(region.data());
             }
         }
         prev_region
     }
-    pub fn find_intersect_region(&mut self, range: Range<VirtualAddress>) -> Option<NonNull<MemoryRegion>> {
+    pub fn find_intersect_region(&mut self, range: Range<VirtualAddress>) -> Option<&'static MemoryRegion> {
         let option_region = self.find_region(range.start);
         unsafe {
-            if let Some(region) = option_region && region.as_ref().range.end < range.end {
+            if let Some(region) = option_region && region.range.end < range.end {
                 return Some(region);
             }
         }
@@ -361,8 +361,9 @@ pub fn kernel_commit(region: MemoryMappingRegion) -> Result<(), PageMarkerError>
     // self.marker.map_kernel_range(&region).expect("Failed to commit kernel heap memory");
     todo!()
 }
+
 pub fn user_commit(region: MemoryMappingRegion) -> Result<(), PageMarkerError> {
-todo!()
+    todo!()
 }
 
 impl Page {

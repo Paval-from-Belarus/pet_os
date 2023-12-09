@@ -227,8 +227,8 @@ impl SlabAllocatorInner {
         if free_entries_count < entries_count {
             let additional_pages = Page::upper_bound((entries_count - free_entries_count) * mem::size_of::<SimpleListNode<SlabEntry>>());
             let pages = self.allocator.alloc_pages(additional_pages)?;
-            let mut new_entries = self.commit_new_entries(pages);
-            free_entries.splice(&mut new_entries);
+            let new_entries = self.commit_new_entries(pages);
+            free_entries.splice(new_entries);
         }
         let mut heap_pages = self.allocator.alloc_pages(entries_count * SlabEntry::DEFAULT_SLAB_SIZE)?;
         let mut page_iter = heap_pages.iter_mut();
