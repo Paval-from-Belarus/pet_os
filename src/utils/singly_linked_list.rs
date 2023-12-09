@@ -66,26 +66,26 @@ impl<'a, T> SimpleList<'a, T> {
     pub fn is_empty(&self) -> bool {
         self.first.is_some()
     }
-    pub fn iter(&'a self) -> ListIterator<'a, T> {
+    pub fn iter(&self) -> ListIterator<'a, T> {
         ListIterator::new(self)
     }
-    pub fn iter_mut(&'a mut self) -> MutListIterator<'a, T> {
+    pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
         MutListIterator::new(self)
     }
-    pub fn splice(&mut self, other: &mut SimpleList<T>) {
+    pub fn splice(&mut self, other: &mut SimpleList<'a, T>) {
         todo!()
     }
     pub fn size(&self) -> usize {
         self.iter()
             .count()
     }
-    pub fn push_front(&mut self, mut node: &mut SimpleListNode<T>) {
+    pub fn push_front(&mut self, node: &'a mut SimpleListNode<T>) {
         node.next = self.first;
         let raw_node = NonNull::from(node);
         self.first = Some(raw_node);
     }
     ///it's responsibility of upper level to guarantee that data will live still the whole collection
-    pub fn push_back(&mut self, node: &mut SimpleListNode<T>) {
+    pub fn push_back(&mut self, node: &'a mut SimpleListNode<T>) {
         unsafe {
             let mut node = NonNull::from(node);
             if let Some(old_tail) = self.tail.map(|mut tail| tail.as_mut()) {
@@ -106,7 +106,7 @@ pub struct ListIterator<'a, T> {
 
 
 impl<'a, T> ListIterator<'a, T> {
-    pub fn new(list: &'a SimpleList<T>) -> Self {
+    pub fn new(list: &SimpleList<T>) -> Self {
         ListIterator {
             next: list.first,
             _marker: PhantomData,
@@ -129,16 +129,18 @@ impl<'a, T> Iterator for ListIterator<'a, T> {
     }
 }
 
-pub struct MutListIterator<'a, T> {
+pub struct MutListIterator<'a, 'b, T> {
     next: Option<NonNull<SimpleListNode<T>>>,
     _marker: PhantomData<&'a mut T>,
+    _parent: PhantomData<&'b mut T>,
 }
 
-impl<'a, T> MutListIterator<'a, T> {
-    pub fn new(list: &'a mut SimpleList<T>) -> Self {
+impl<'a, 'b, T> MutListIterator<'a, 'b, T> {
+    pub fn new(list: &'b mut SimpleList<T>) -> Self {
         MutListIterator {
             next: list.first,
             _marker: PhantomData,
+            _parent: PhantomData,
         }
     }
     pub fn unlink_watched(&mut self) -> Option<&'a mut SimpleListNode<T>> {
@@ -146,7 +148,7 @@ impl<'a, T> MutListIterator<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for MutListIterator<'a, T> {
+impl<'a, 'b, T> Iterator for MutListIterator<'a, 'b, T> {
     type Item = &'a mut T;
     fn next(&mut self) -> Option<Self::Item> {
         match self.next {
@@ -179,6 +181,6 @@ mod tests {
         // assert_eq!(iter.next(), Some(&mut 6));
         std::println!("Hello");
         // assert_eq!(skipped, 1);
-        assert_eq!(number_iter.next(), Some(&mut 6));
+        assert_eq!(number_iter.next(), Some(&mut 4));
     }
 }

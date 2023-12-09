@@ -15,6 +15,7 @@ impl<'a, 'b, T> SpinBox<'a, 'b, T> {
             data: UnsafeCell::new(data),
         }
     }
+
     ///Using API of SpinBox is possible to create several mutable reference to any data,
     ///that is forbidden by Rust rules and should be considered as UB.
     ///Please, be very careful using such API

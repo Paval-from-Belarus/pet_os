@@ -60,11 +60,11 @@ impl PhysicalAllocator {
         todo!()
     }
     //allocate continuous memory region
-    pub fn alloc_pages(&'static self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+    pub fn alloc_pages(&self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         self.alloc_densely(count)
     }
-    fn alloc_densely(&'static self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
-        let pages = self.synchronized_pages();
+    fn alloc_densely(&self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+        let mut pages = self.synchronized_pages();
         let mut longest = 0; //the current longest count of pages in same sequence
         let mut last_offset_option: Option<PhysicalAddress> = None;
         let mut first_page_option: Option<&ListNode<Page>> = None;
@@ -87,8 +87,7 @@ impl PhysicalAllocator {
         }
         if let Some(last_offset) = last_offset_option && longest == count {
             let mut list = LinkedList::<'static, Page>::empty();
-            let mut page_iter = unsafe { pages.leak().iter_mut() };
-            // let mut page_iter = pages.iter_mut();
+            let mut page_iter = pages.iter_mut();
             let mut should_add = false;
             let mut added_count = 0;
             while added_count < count && let Some(page) = page_iter.next() {
@@ -96,7 +95,7 @@ impl PhysicalAllocator {
                 if should_add {
                     let page = page_iter.unlink_watched().expect("Already watched");
                     page.take();
-                    unsafe { list.push_back(page) };    
+                    unsafe { list.push_back(page) };
                     added_count += 1;
                 }
             }
@@ -105,7 +104,7 @@ impl PhysicalAllocator {
             Err(NoMemory)
         }
     }
-    fn alloc_split(&'static self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+    fn alloc_split(&self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         let pages = self.synchronized_pages();
         let mut page_iter = unsafe { pages.leak().iter_mut() };
         let mut list = LinkedList::<Page>::empty();

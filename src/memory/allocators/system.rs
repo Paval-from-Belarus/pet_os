@@ -1,13 +1,11 @@
-use core::{intrinsics, mem, ptr};
+use core::{mem, ptr};
 use core::cell::UnsafeCell;
-use core::cmp::Ordering;
 use core::ops::Add;
 use core::ptr::NonNull;
-use static_assertions::{const_assert, const_assert_eq};
+use static_assertions::{const_assert};
 use crate::{declare_constants, log, memory};
-use crate::memory::{MemoryMappingFlag, MemoryMappingRegion, OsAllocationError, Page, PhysicalAddress, PhysicalAllocator, ToPhysicalAddress, VirtualAddress};
-use crate::memory::paging::PageMarker;
-use crate::utils::{LinkedList, ListNode, SimpleList, SimpleListNode, Zeroed};
+use crate::memory::{MemoryMappingRegion, OsAllocationError, Page, PhysicalAddress, PhysicalAllocator, ToPhysicalAddress, VirtualAddress};
+use crate::utils::{LinkedList, SimpleList, SimpleListNode, SpinBox, Zeroed};
 use crate::utils::atomics::SpinLock;
 
 pub enum Alignment {
@@ -24,13 +22,14 @@ struct MemBounds {
 pub struct SlabAllocator {
     inner: UnsafeCell<SlabAllocatorInner>,
     //the list of entries ready to be used
-    free_entries: UnsafeCell<SimpleList<'static, SlabEntry>>,
+    free_pool: UnsafeCell<SimpleList<'static, SlabEntry>>,
     lock: SpinLock,
 }
 
 struct SlabAllocatorInner {
     //any pool should never be empty
     page_pool: SimpleList<'static, SlabEntry>,
+    // free_pool: UnsafeCell<SimpleList<'static, SlabEntry>>,
     allocator: &'static PhysicalAllocator,
     //holds GlobalPageDirectory
     heap_offset: VirtualAddress,//the next free virtual address
@@ -88,6 +87,10 @@ impl SlabEntry {
         self.count += pages_count;
         take_offset
     }
+    pub fn release(&mut self, offset: VirtualAddress) {
+        //not implemented
+    }
+
     pub fn set(&mut self,
                offset: VirtualAddress,
                pages: LinkedList<'static, Page>,
@@ -97,8 +100,11 @@ impl SlabEntry {
         self.count = 0;
         self.pages = pages;
     }
-    pub fn get_pages(&'static mut self) -> &mut LinkedList<'static, Page> {
+    pub fn get_pages(&mut self) -> &mut LinkedList<'static, Page> {
         &mut self.pages
+    }
+    pub fn set_pages(&mut self, pages: LinkedList<'static, Page>) {
+        self.pages = pages;
     }
     ///@return the total pages in slab available to alloc
     pub fn available(&self) -> usize {
@@ -110,6 +116,9 @@ impl SlabEntry {
     pub const fn is_empty(&self) -> bool {
         self.capacity == 0
     }
+    pub const fn is_bloated(&self) -> bool {
+        self.count > self.capacity / 2
+    }
     pub const fn is_full(&self) -> bool {
         self.count == self.capacity
     }
@@ -117,21 +126,53 @@ impl SlabEntry {
 
 //each method of this struct is thread-safe
 impl SlabAllocator {
-    pub fn new(allocator: &'static PhysicalAllocator,
-               heap_offset: VirtualAddress,
-    ) -> Result<SlabAllocator, OsAllocationError> {
-        let free_pages = SimpleList::<Page>::empty();
-
-
-        todo!()
-    }
-}
-
-impl SlabAllocatorInner {
     declare_constants!(
       pub usize,
       POOL_SIZE = 4, "the default size of pool";
     );
+    pub fn new(allocator: &'static PhysicalAllocator,
+               heap_offset: VirtualAddress,
+    ) -> Result<SlabAllocator, OsAllocationError> {
+        let mut free_pool = SimpleList::<'static, SlabEntry>::empty();
+        let mut inner = SlabAllocatorInner::empty(allocator,
+                                                  heap_offset);
+        inner.enlarge_pool(&mut free_pool, Self::POOL_SIZE)?;
+        Ok(Self {
+            inner: UnsafeCell::new(inner),
+            free_pool: UnsafeCell::new(free_pool),
+            lock: SpinLock::new(),
+        })
+    }
+    pub fn alloc(&'static self, piece: SlabPiece, _alignment: Alignment) -> Result<VirtualAddress, OsAllocationError> {
+        let inner = self.synchronized_inner();
+        let free_entries = self.free_pool();
+        let mut raw_inner = unsafe { NonNull::from(inner.leak()) };
+        let required_pages_count = Page::upper_bound(usize::from(piece));
+        let entry_option = unsafe { raw_inner.as_mut().find_suitable_entry(required_pages_count)? };
+        let entry = match entry_option {
+            None => unsafe {
+                raw_inner.as_mut().enlarge_pool(free_entries, 1)?;
+                raw_inner.as_mut().find_suitable_entry(required_pages_count)?
+                    .expect("Failed to find slab entry")
+            }
+            Some(entry) => entry
+        };
+        Ok(entry.take(required_pages_count))
+    }
+    pub fn dealloc(&'static mut self, offset: VirtualAddress) {
+        let inner = self.synchronized_inner();
+        unsafe { inner.leak().dealloc(offset) };
+    }
+    fn free_pool(&self) -> &'static mut SimpleList<SlabEntry> {
+        unsafe { &mut *self.free_pool.get() }
+    }
+    fn synchronized_inner(&self) -> SpinBox<'_, 'static, SlabAllocatorInner> {
+        let inner = unsafe { &mut *self.inner.get() };
+        SpinBox::new(&self.lock, inner)
+    }
+}
+
+impl SlabAllocatorInner {
     pub fn empty(
         allocator: &'static PhysicalAllocator,
         heap_offset: VirtualAddress,
@@ -151,42 +192,37 @@ impl SlabAllocatorInner {
     //     empty_allocator.enlarge_pool(free_pool, Self::POOL_SIZE)?;
     //     Ok(empty_allocator)
     // }
-    pub fn alloc(&'static mut self, piece: SlabPiece, _alignment: Alignment, free_pool: &'static mut SimpleList<SlabEntry>) -> Result<VirtualAddress, OsAllocationError> {
-        let required_pages_count = Page::upper_bound(usize::from(piece));
-        let entry_option = self.find_suitable_entry(required_pages_count)?;
-        let entry = match entry_option {
-            None => {
-                self.enlarge_pool(free_pool, 1)?;
-                self.find_suitable_entry(required_pages_count)?
-                    .expect("Failed to find slab entry")
-            }
-            Some(entry) => entry
-        };
-        todo!()
-        // if entry.available() < required_pages_count {
-        //     let additional_page_count = required_pages_count - entry.available();
-        //     self.add_pages(entry, additional_page_count)?;
-        // }
-        // self.com
-        // Ok(entry.push(required_pages_count))
-    }
-    pub fn dealloc(&'static mut self, offset: VirtualAddress, free_pool: &'static mut SimpleList<SlabEntry>) {
+    fn dealloc(&'static mut self, offset: VirtualAddress) {
         let entry = self.page_pool.iter_mut()
-            .find(|slab_entry| slab_entry.holds(offset))
-            .expect("Failed to find slab entry to dealloc");
+            .find(|entry| entry.holds(offset))
+            .expect("Failed to find not existing slab entry");
+        entry.release(offset);
+        if entry.is_bloated() {
+            //todo: release some pages
+        }
     }
-    fn find_suitable_entry(&'static mut self, required_pages_count: usize) -> Result<Option<&'static mut SlabEntry>, OsAllocationError> {
+
+    fn find_suitable_entry(&mut self, required_pages_count: usize) -> Result<Option<&'static mut SlabEntry>, OsAllocationError> {
         let entry_option = self.page_pool.iter_mut()
             .find(|entry| entry.total_available() >= required_pages_count);
-        if let Some(entry) = entry_option && entry.available() < required_pages_count {
-            let pages = entry.get_pages();
-            for page in pages.iter_mut() {
-                self.allocator.dealloc_page(page)
+        match entry_option {
+            None => Ok(None),
+            Some(entry) => unsafe {
+                if entry.available() >= required_pages_count {
+                    return Ok(Some(entry));
+                }
+                let mut raw_entry = NonNull::from(entry);
+                let pages = raw_entry.as_mut().get_pages();
+                for page in pages.iter_mut() {
+                    self.allocator.dealloc_page(page)
+                }
+                let pages = self.allocator.alloc_pages(required_pages_count)?;
+                raw_entry.as_mut().set_pages(pages);
+                Ok(Some(raw_entry.as_mut()))
             }
         }
-        Ok(entry_option)
     }
-    fn enlarge_pool(&'static mut self, free_entries: &'static mut SimpleList<SlabEntry>, entries_count: usize) -> Result<(), OsAllocationError> {
+    fn enlarge_pool(&mut self, free_entries: &mut SimpleList<'static, SlabEntry>, entries_count: usize) -> Result<(), OsAllocationError> {
         let free_entries_count = free_entries.size();
         if free_entries_count < entries_count {
             let additional_pages = Page::upper_bound((entries_count - free_entries_count) * mem::size_of::<SimpleListNode<SlabEntry>>());
