@@ -62,7 +62,6 @@ impl ToVirtualAddress for PhysicalAddress {
     }
 }
 
-
 // static mut SLAB_ALLOCATOR: SpinLockLazyCell<>
 ///Return crucial structures for kernel
 ///Without them, it's impossible
@@ -190,7 +189,7 @@ pub struct ProcessInfo {
     last_page_index: usize,
     //Write | NoPrivilege
     marker: PageMarker,
-    regions: SimpleList<MemoryRegion>,
+    regions: SimpleList<'static, MemoryRegion>,
     last_touched_region: Option<NonNull<MemoryRegion>>,
 }
 
@@ -322,7 +321,7 @@ pub fn alloc_proc() -> Result<ProcessInfo, OsAllocationError> {
 }
 
 const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
-    MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::WRITE_THROUGH);
+    MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::PRESENT);
 //duplicates in kernel.ld script
 declare_constants!(
     pub usize,
@@ -357,6 +356,14 @@ impl ListNode<Page> {
     }
 }
 
+///commit kernel memory
+pub fn kernel_commit(region: MemoryMappingRegion) -> Result<(), PageMarkerError> {
+    // self.marker.map_kernel_range(&region).expect("Failed to commit kernel heap memory");
+    todo!()
+}
+pub fn user_commit(region: MemoryMappingRegion) -> Result<(), PageMarkerError> {
+todo!()
+}
 
 impl Page {
     declare_constants!(

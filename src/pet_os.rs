@@ -16,6 +16,7 @@
 compile_error!("Operation system is suitable for Intel i686");
 extern crate static_assertions;
 extern crate num_enum;
+extern crate alloc;
 
 #[cfg(not(test))]
 #[allow(dead_code)]

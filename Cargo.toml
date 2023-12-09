@@ -22,6 +22,7 @@ static_assertions = "1.1.0"
 volatile = "0.2.6"#don't remove such dependency
 bitfield = "0.14.0"
 pc-keyboard = "0.7.0"
+spin = "0.9.8"
 num_enum = { version = "0.7.0", default-features = false }
 
 #bitflags = "2.3.3"

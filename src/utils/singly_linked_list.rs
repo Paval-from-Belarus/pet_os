@@ -9,9 +9,21 @@ pub struct SimpleListNode<T> {
 }
 
 impl<T> SimpleListNode<T> {
-    pub fn wrap_data(data: T) -> Self {
+    pub const fn wrap_data(data: T) -> Self {
         Self {
             next: None,
+            data,
+        }
+    }
+    pub fn new(data: T, next_ptr: *mut SimpleListNode<T>) -> Self {
+        let next = if next_ptr.is_null() {
+            None
+        } else {
+            let next_ref = unsafe { &mut *next_ptr };
+            Some(NonNull::from(next_ref))
+        };
+        Self {
+            next,
             data,
         }
     }
@@ -37,30 +49,40 @@ impl<T> DerefMut for SimpleListNode<T> {
     }
 }
 
-pub struct SimpleList<T: Sized> {
+pub struct SimpleList<'a, T: Sized> {
     first: Option<NonNull<SimpleListNode<T>>>,
     tail: Option<NonNull<SimpleListNode<T>>>,
+    _marker: PhantomData<&'a mut T>,
 }
 
-impl<T> SimpleList<T> {
-    pub fn empty() -> Self {
+impl<'a, T> SimpleList<'a, T> {
+    pub fn empty() -> SimpleList<'a, T> {
         SimpleList {
             first: None,
             tail: None,
+            _marker: PhantomData,
         }
     }
     pub fn is_empty(&self) -> bool {
         self.first.is_some()
     }
-    pub fn iter(&self) -> ListIterator<'_, T> {
+    pub fn iter(&'a self) -> ListIterator<'a, T> {
         ListIterator::new(self)
     }
-    pub fn iter_mut(&mut self) -> MutListIterator<'_, T> {
+    pub fn iter_mut(&'a mut self) -> MutListIterator<'a, T> {
         MutListIterator::new(self)
     }
-    pub fn push_front(&mut self, mut node: NonNull<SimpleListNode<T>>) {
-        unsafe { node.as_mut().next = self.first };
-        self.first = Some(node);
+    pub fn splice(&mut self, other: &mut SimpleList<T>) {
+        todo!()
+    }
+    pub fn size(&self) -> usize {
+        self.iter()
+            .count()
+    }
+    pub fn push_front(&mut self, mut node: &mut SimpleListNode<T>) {
+        node.next = self.first;
+        let raw_node = NonNull::from(node);
+        self.first = Some(raw_node);
     }
     ///it's responsibility of upper level to guarantee that data will live still the whole collection
     pub fn push_back(&mut self, node: &mut SimpleListNode<T>) {
@@ -81,6 +103,7 @@ pub struct ListIterator<'a, T> {
     next: Option<NonNull<SimpleListNode<T>>>,
     _marker: PhantomData<&'a T>,
 }
+
 
 impl<'a, T> ListIterator<'a, T> {
     pub fn new(list: &'a SimpleList<T>) -> Self {
@@ -142,6 +165,20 @@ mod tests {
     extern crate std;
     extern crate alloc;
 
+    use alloc::vec;
+    use alloc::vec::Vec;
+
     #[test]
-    fn iteration_test() {}
+    fn iteration_test() {
+        let mut numbers = vec![1, 2, 3, 4, 5, 6];
+        let mut number_iter = numbers.iter_mut();
+        let _ = number_iter.by_ref()
+            .take(2)
+            .count();
+        assert_eq!(number_iter.next(), Some(&mut 3));
+        // assert_eq!(iter.next(), Some(&mut 6));
+        std::println!("Hello");
+        // assert_eq!(skipped, 1);
+        assert_eq!(number_iter.next(), Some(&mut 6));
+    }
 }

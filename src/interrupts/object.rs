@@ -11,7 +11,7 @@ use crate::utils::atomics::{SpinLock};
 
 ///The manager struct that handle all request for given interrupt.
 pub struct InterruptObject {
-    callbacks: UnsafeCell<SimpleList<CallbackInfo>>,
+    callbacks: UnsafeCell<SimpleList<'static, CallbackInfo>>,
     //the interrupt number
     line: PicLine,
     lock: SpinLock,

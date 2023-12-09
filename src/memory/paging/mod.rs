@@ -7,7 +7,7 @@ use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
 use table::{RefTable, RefTableEntry};
 use crate::{bitflags, declare_constants, memory};
-use crate::memory::{AllocHandler, DeallocHandler, KERNEL_LAYOUT_FLAGS, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, TaskGate, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
+use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, TaskGate, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
 use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
 use crate::utils::{LinkedList, Zeroed};
 declare_constants!(
@@ -28,7 +28,7 @@ pub struct PageMarker {
 pub enum CommonError {
     OutOfBounds
 }
-
+#[derive(Debug)]
 pub enum PageMarkerError {
     EmptyDirEntry,
     EmptyTableEntry,
@@ -284,8 +284,7 @@ impl PageMarker {
     }
     pub fn map_user_range(
         &mut self,
-        map_region: &MemoryMappingRegion,
-        flags: MemoryMappingFlag) -> Result<(), PageMarkerError> {
+        map_region: &MemoryMappingRegion) -> Result<(), PageMarkerError> {
         unsafe {
             self.map_range_unsafe(
                 map_region,
@@ -295,8 +294,7 @@ impl PageMarker {
     ///the method mark memory in kernel space (doesn't check validness of region offset). That is, not additional memory can be allocated (we mark kernel, ie. memory already mapped)
     pub fn map_kernel_range(
         &mut self,
-        map_region: &MemoryMappingRegion,
-        flags: MemoryMappingFlag) -> Result<(), PageMarkerError> {
+        map_region: &MemoryMappingRegion) -> Result<(), PageMarkerError> {
         unsafe {
             self.map_range_unsafe(
                 map_region,
@@ -369,6 +367,10 @@ impl PageMarker {
             dir_entry.clear();
             self.dealloc_page(page_offset);
         }
+    }
+    //simple linux break method
+    pub fn commit(&mut self, offset: PhysicalAddress) -> VirtualAddress {
+        todo!()
     }
     pub fn new(
         &mut self,

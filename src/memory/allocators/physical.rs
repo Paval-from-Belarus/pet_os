@@ -1,6 +1,9 @@
 use core::cell::UnsafeCell;
+use core::ptr;
+use AllocationType::{Densely, Split};
 use crate::memory::paging::{PageMarker, PageMarkerError};
-use crate::memory::{MemoryMappingFlag, ProcessInfo, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion, ToPhysicalAddress, PageFlag, OsAllocationError, TaskGate};
+use crate::memory::{MemoryMappingFlag, ProcessInfo, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion, ToPhysicalAddress, PageFlag, OsAllocationError, TaskGate, PHYSICAL_ALLOCATOR};
+use crate::memory::allocators::physical::AllocationError::OutOfMemory;
 use crate::memory::OsAllocationError::NoMemory;
 
 use crate::utils::{LinkedList, ListNode, SpinBox};
@@ -23,6 +26,11 @@ pub enum AllocationError {
     PageMarkerInvalidation(PageMarkerError),
 }
 
+pub enum AllocationType {
+    Densely,
+    Split,
+}
+
 impl PhysicalAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
     pub const fn new(free_pages: LinkedList<'static, Page>) -> Self {
@@ -37,6 +45,7 @@ impl PhysicalAllocator {
             node.as_mut().free();
         }
     }
+    ///Be careful with such method: it should, theoretically, batch page in solid memory region, but, truly, doesn't
     pub fn dealloc_page(&self, page: &'static mut ListNode<Page>) {
         page.free();
         if !page.is_used() {
@@ -44,12 +53,27 @@ impl PhysicalAllocator {
             unsafe { list.push_back(page) };
         }
     }
+    ///the method try to unite page with existing list
+    unsafe fn dealloc_and_align(&self, page: &'static mut ListNode<Page>) {
+        let mut list = self.synchronized_pages();//lock list so no one can update it
+        page.self_link();
+        todo!()
+    }
     //allocate continuous memory region
     pub fn alloc_pages(&'static self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+        self.alloc_densely(count)
+    }
+    fn alloc_densely(&'static self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         let pages = self.synchronized_pages();
         let mut longest = 0; //the current longest count of pages in same sequence
         let mut last_offset_option: Option<PhysicalAddress> = None;
+        let mut first_page_option: Option<&ListNode<Page>> = None;
         for page in pages.iter() {
+            if let Some(first_page) = first_page_option && ptr::eq(page, first_page) {
+                return Err(NoMemory);
+            } else if first_page_option.is_none() {
+                first_page_option = Some(page);
+            }
             if let Some(offset) = last_offset_option && page.as_physical() == offset + Page::SIZE {
                 last_offset_option = last_offset_option
                     .map(|offset| offset.saturating_add(Page::SIZE));
@@ -64,19 +88,36 @@ impl PhysicalAllocator {
         if let Some(last_offset) = last_offset_option && longest == count {
             let mut list = LinkedList::<'static, Page>::empty();
             let mut page_iter = unsafe { pages.leak().iter_mut() };
-            let _ = page_iter.by_ref()
-                .skip_while(|page| page.as_physical() < last_offset)
-                .take(count);
-            for _ in 0..count {
-                let _ = page_iter.next().expect("Invariant violation?");//skip list node value
-                let page = page_iter.unlink_watched().expect("Already watched");
-                page.take();
-                unsafe { list.push_back(page) };
+            // let mut page_iter = pages.iter_mut();
+            let mut should_add = false;
+            let mut added_count = 0;
+            while added_count < count && let Some(page) = page_iter.next() {
+                should_add = should_add || page.as_physical() == last_offset;
+                if should_add {
+                    let page = page_iter.unlink_watched().expect("Already watched");
+                    page.take();
+                    unsafe { list.push_back(page) };    
+                    added_count += 1;
+                }
             }
             Ok(list)
         } else {
             Err(NoMemory)
         }
+    }
+    fn alloc_split(&'static self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+        let pages = self.synchronized_pages();
+        let mut page_iter = unsafe { pages.leak().iter_mut() };
+        let mut list = LinkedList::<Page>::empty();
+        for _ in 0..count {
+            if page_iter.next().is_none() {
+                return Err(NoMemory);
+            }
+            let page = page_iter.unlink_watched().expect("Already watched");
+            page.take();
+            unsafe { list.push_back(page) };
+        }
+        Ok(list)
     }
     fn synchronized_pages(&self) -> SpinBox<'_, 'static, LinkedList<'static, Page>> {
         let list = unsafe { &mut *self.free_pages.get() };

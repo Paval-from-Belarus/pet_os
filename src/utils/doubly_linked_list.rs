@@ -1,7 +1,9 @@
-use core::ptr;
+use core::{mem, ptr};
+use core::intrinsics::frem_fast;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
+use crate::memory::Page;
 
 
 #[repr(C)]
@@ -9,6 +11,16 @@ pub struct ListNode<T> {
     next: NonNull<ListNode<T>>,
     prev: NonNull<ListNode<T>>,
     data: T,
+}
+#[macro_export]
+macro_rules! list_node {
+    ($data:expr) => ({
+        {
+            let mut node = ListNode::wrap_data($data);
+            node.self_link();
+            node
+        }
+    });
 }
 
 impl<T:> ListNode<T> {
@@ -27,15 +39,10 @@ impl<T:> ListNode<T> {
             data,
         }
     }
-    pub unsafe fn as_head(&self) -> LinkedList<T> {
-        let node = NonNull::from(self);
-        LinkedList {
-            first: Some(node),
-            last: Some(node),
-            _marker: PhantomData,
-        }
+    ///the method
+    pub fn as_head(&mut self) -> &mut LinkedList<T> {
+        unsafe { mem::transmute::<&mut ListNode<T>, &mut LinkedList<T>>(self) }
     }
-    // pub fn unsafe leak<'a>
     pub fn data(&self) -> &T {
         &self.data
     }
@@ -102,7 +109,7 @@ impl<T:> ListNode<T> {
         self as *mut ListNode<T>
     }
     //unsafe because can lead to memory leaks
-    unsafe fn self_link(&mut self) {
+    pub unsafe fn self_link(&mut self) {
         let self_ptr = self as *mut ListNode<T>;
         unsafe {
             self.next = NonNull::new_unchecked(self_ptr);
@@ -131,6 +138,7 @@ impl<T> DerefMut for ListNode<T> {
 
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct LinkedList<'a, T: Sized> {
     first: Option<NonNull<ListNode<T>>>,
     last: Option<NonNull<ListNode<T>>>,
@@ -170,6 +178,51 @@ impl<'a, T: Sized> LinkedList<'a, T> {
     pub fn is_empty(&self) -> bool {
         debug_assert!(self.last.is_some() && self.first.is_some() || self.last.is_none() && self.first.is_none());
         self.first.is_none()
+    }
+    pub fn splice(&mut self, other: &mut LinkedList<T>) {
+        if let Some(first) = other.first && let Some(last) = other.last {
+            if self.is_empty() {
+                self.first = Some(first);
+                self.last = Some(last);
+                return;
+            }
+            unsafe { self.splice_bounds(first, last) };
+        } else {
+            debug_assert!(other.is_empty());
+        }
+    }
+    //this function assumes the current list is not empty
+    unsafe fn splice_bounds(&mut self, mut other_first: NonNull<ListNode<T>>, mut other_last: NonNull<ListNode<T>>) {
+        debug_assert!(!self.is_empty());
+        if let Some(mut first) = self.first && let Some(mut last) = self.last {
+            let first = first.as_mut();
+            let last = last.as_mut();
+            let other_first = other_first.as_mut();
+            let other_last = other_last.as_mut();
+            first.set_prev(other_last);
+            last.set_next(other_first);
+            other_first.set_prev(last);
+            other_last.set_next(first);
+            self.first = Some(other_first.into());
+        } else {
+            unreachable!("Splice with empty list!");
+        }
+    }
+    unsafe fn same_as_first(&self, node: NonNull<ListNode<T>>) -> bool {
+        if let Some(head) = self.first && let Some(_) = self.last {
+            node.eq(&head)
+        } else {
+            unreachable!("The head is empty");
+        }
+    }
+    ///this method check the given node is same as node
+    ///Method failed with empty list
+    unsafe fn same_as_last(&self, node: NonNull<ListNode<T>>) -> bool {
+        if let Some(_) = self.first && let Some(tail) = self.last {
+            node.eq(&tail)
+        } else {
+            unreachable!("The tail is empty");
+        }
     }
     pub fn remove_first(&mut self) -> Option<NonNull<ListNode<T>>> {
         let node = match self.first {
@@ -286,6 +339,12 @@ impl<'a, T> ListIterator<'a, T> {
         }
     }
 }
+//
+// impl<'a, T> FromIterator<&'a ListNode<T>> for LinkedList<'a, T> {
+//     fn from_iter<S: IntoIterator<Item=&'a ListNode<T>>>(iter: S) -> Self {
+//         let mut list = LinkedList::<T>::empty();
+//     }
+// }
 
 //attention that iterator never stops
 impl<'a, T> Iterator for ListIterator<'a, T> {
@@ -503,6 +562,34 @@ mod tests {
     }
 
     #[test]
+    fn splice_test() {
+        let mut list = LinkedList::<usize>::empty();
+        unsafe {
+            let mut nodes = vec!(
+                ListNode::wrap_data(12),
+                ListNode::wrap_data(13),
+                ListNode::wrap_data(14),
+                ListNode::wrap_data(15)
+            );
+            //each node should support next/prevent invariant; list_node! macro to such stuff
+            nodes.iter_mut().for_each(|node| node.self_link());
+            let mut first = NonNull::from(nodes.get_mut(0).unwrap());
+            let mut last = NonNull::from(nodes.get_mut(2).unwrap());
+            let mut any = NonNull::from(nodes.get_mut(1).unwrap());
+            list.splice(first.as_mut().as_head());
+            assert!(!list.is_empty() && list.first.eq(&list.last));
+            list.push_front(last.as_mut());
+            let any_list = any.as_mut().as_head();
+            list.splice(any_list);
+            assert!(any.as_mut().next.as_mut().data().eq(&14) && any.as_mut().prev.as_mut().data().eq(&12));
+            let mut forth = NonNull::from(nodes.get_mut(3).unwrap());
+            let other_list = forth.as_mut().as_head();
+            first.as_mut().as_head().splice(other_list);
+            assert!(first.as_mut().next.as_mut().data().eq(&15) && last.as_mut().prev.as_mut().data().eq(&15));
+        }
+    }
+
+    #[test]
     fn mutability_iter_test() {
         let mut list = LinkedList::<usize>::empty();
         unsafe {
@@ -520,6 +607,20 @@ mod tests {
             assert!(node.is_some());
             assert_eq!(value.data_mut(), node.unwrap().data_mut());
             assert!(iter.unlink_watched().is_none());
+        }
+    }
+
+    #[test]
+    fn collection_test() {
+        let mut list = LinkedList::<usize>::empty();
+        unsafe {
+            let nodes =
+                vec!(ListNode::wrap_data(12),
+                     ListNode::wrap_data(13),
+                     ListNode::wrap_data(14));
+            for node in nodes.iter() {
+                list.push_back(NonNull::from(node).as_mut());
+            }
         }
     }
 
