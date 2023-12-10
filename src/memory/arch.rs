@@ -25,6 +25,7 @@ impl SegmentSelector {
         STACK = SegmentSelector(0x10);
         USER_CODE = SegmentSelector(0x18);
         USER_DATA = SegmentSelector(0x20);
+        TASK = SegmentSelector(0x28)
     );
     pub fn new(index: usize, ring: PrivilegeLevel, parent: SelectorType) -> Self {
         debug_assert!(index < u32::MAX as usize);

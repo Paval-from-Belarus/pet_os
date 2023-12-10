@@ -11,9 +11,11 @@ macro_rules! syscall {
         $(println!("edx: {}", $edx);)?
     };
 }
+
 pub unsafe fn wait() {
     outb(0x80u16, 0); //writing to any unused operation to skip time
 }
+
 pub unsafe fn outb(port: u16, value: u8) {
     asm!(
     "out dx, al", in("dx") port, in("al") value,

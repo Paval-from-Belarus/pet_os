@@ -9,21 +9,25 @@ pub use allocators::PhysicalAllocator;
 pub use paging::PagingProperties;
 pub use arch::*;
 
-use crate::{bitflags, declare_constants};
-use crate::memory::paging::{CaptureAllocator, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT, UnmapParamsFlag};
+use crate::{bitflags, declare_constants, process};
+use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT, UnmapParamsFlag};
 use core::{mem, ptr};
+use core::arch::asm;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use static_assertions::assert_eq_size;
 use paging::table::{DirEntry, RefTable};
-use crate::utils::atomics::{SpinLockGuard, SpinLockLazyCell};
-use crate::utils::{LinkedList, ListNode, SimpleList, Zeroed};
+use crate::memory::allocators::{Alignment, SlabAllocator, SlabPiece};
+use crate::process::{TaskState, ThreadTask};
+use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
+use crate::utils::{LinkedList, ListNode, SimpleList};
 
 pub enum ZoneType {
     Usable,
     Device,
 }
 
+#[derive(Debug)]
 pub enum OsAllocationError {
     NoMemory, //no memory to accomplish request
 }
@@ -62,7 +66,6 @@ impl ToVirtualAddress for PhysicalAddress {
     }
 }
 
-// static mut SLAB_ALLOCATOR: SpinLockLazyCell<>
 ///Return crucial structures for kernel
 ///Without them, it's impossible
 pub fn init_kernel_space(
@@ -70,25 +73,38 @@ pub fn init_kernel_space(
     directory: RefTable<DirEntry>,
     heap_offset: VirtualAddress,
 ) {
+    let mut marker = PageMarker::wrap(directory, alloc_physical_pages, dealloc_physical_pages);
+    KERNEL_MARKER.set(marker);
     let free_pages = collect_free_pages(&mut allocator);
     let allocator = PhysicalAllocator::new(free_pages);
     PHYSICAL_ALLOCATOR.set(allocator);
-    let mut marker = PageMarker::wrap(directory, alloc_physical_pages, dealloc_page);
+
     let higher_addresses_start = kernel_physical_offset();
     let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
     let unmap_flags = UnmapParamsFlag::from(UnmapParamsFlag::TABLES | UnmapParamsFlag::PAGES);
     //the higher addesses are fully mapped by the kernel
-    marker.unmap_range(higher_addresses_start, boot_mapping_pages, unmap_flags);
+    KERNEL_MARKER.get().unmap_range(higher_addresses_start, boot_mapping_pages, unmap_flags);
+
+    let slab_allocator = SlabAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
+        .expect("Failed to initialize slab allocator");
+    SLAB_ALLOCATOR.set(slab_allocator);
 }
 
+pub fn enable_task_switching(table: &mut GDTTable) {
+    let task = unsafe {
+        TASK_STATE.set_io_map(0xFFFF);//setting io_map beyond the TaskState structure -> let's forbid all io instruction in user mode
+        TASK_STATE.set_stack_selector(SegmentSelector::DATA);
+        TaskStateDescriptor::default(&TASK_STATE as *const TaskState as VirtualAddress, mem::size_of::<TaskState>() - 1)
+    };
+    table.set_task(task);
+}
 
 fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
-    debug_assert!(page_count > 0);
-    let mut allocator = unsafe { PHYSICAL_ALLOCATOR.get() };
     todo!()
+    // PHYSICAL_ALLOCATOR.get().alloc_pages(page_count)
 }
 
-fn dealloc_page(offset: PhysicalAddress) {
+fn dealloc_physical_pages(offset: PhysicalAddress) {
     let guard = unsafe { PHYSICAL_ALLOCATOR.get() };
     let mut page = unsafe { ListNode::<Page>::wrap_page(offset) };
     unsafe {
@@ -173,6 +189,7 @@ pub fn io_remap(offset: PhysicalAddress, size: usize) -> VirtualAddress {
 
 pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
 pub type DeallocHandler = fn(PhysicalAddress);
+pub type ThreadRoutine = fn(context: *mut ());
 
 ///Alternative to linux mm_struct
 pub struct ProcessInfo {
@@ -290,32 +307,65 @@ pub struct Page {
     ref_count: AtomicUsize,
 }
 assert_eq_size!(ListNode<Page>, [u8; 16]);
+
 ///the kernel method to allocate structure in kernel slab pool
 pub fn slab_alloc<T>() -> &'static mut MaybeUninit<T> {
     let size = mem::size_of::<T>();
-    todo!()
+    let piece = if size <= u16::MAX as usize {
+        SlabPiece::with_capacity(size as u16)
+    } else {
+        unreachable!("Slab piece too huge");
+    };
+    let offset = SLAB_ALLOCATOR.alloc(piece, Alignment::Page)
+        .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
+    unsafe { &mut *(offset as *mut MaybeUninit<T>) }
 }
 
 pub fn slab_dealloc<T>(pointer: &mut T) {
+    let offset = pointer as *mut T as VirtualAddress;
+    SLAB_ALLOCATOR.dealloc(offset);
+}
+
+///Allocate virtual memory regardless of physical layout
+///The each virtual page, probably, will be separate
+pub fn virtual_alloc(bytes: usize) -> VirtualAddress {
     todo!()
 }
 
-pub fn physical_alloc<T>() -> Result<&'static mut MaybeUninit<T>, OsAllocationError> {
+pub fn virtual_dealloc(offset: VirtualAddress) {
     todo!()
 }
 
-pub fn physical_alloc_with_count<T>(count: usize) -> Result<NonNull<T>, OsAllocationError> {
+pub fn physical_alloc(bytes: usize) -> Result<*mut u8, OsAllocationError> {
     todo!()
 }
 
-static KERNEL_MARKER: SpinLockLazyCell<PageMarker> = SpinLockLazyCell::empty();
+pub fn physical_dealloc(offset: *mut u8) {
+    todo!()
+}
+
+
+//the method should be invoked only by one thread
+//concurrency is forbidden
+pub unsafe fn switch_to_task(task: &'static mut ThreadTask) {
+    TASK_STATE.set_kernel_stack(task.kernel_stack + process::TASK_STACK_SIZE);
+    let mut marker = if task.parent.is_some() {
+        unreachable!("Process functionality is not implemeted")
+    } else {
+        KERNEL_MARKER.get()
+    };
+    let table = marker.table();
+    table.load();
+}
+
+pub fn switch_to_kernel() {}
 
 pub fn alloc_proc() -> Result<ProcessInfo, OsAllocationError> {
-    let mut entries = physical_alloc_with_count::<DirEntry>(TABLE_ENTRIES_COUNT)?;
+    let mut entries = physical_alloc(TABLE_ENTRIES_COUNT * mem::size_of::<DirEntry>())?;
     let table = unsafe {
-        let table = RefTable::with_default_values(entries.as_mut(), TABLE_ENTRIES_COUNT);
-        let marker = KERNEL_MARKER.get();
-        let kernel_region = get_kernel_mapping_region();
+        // let table = RefTable::with_default_values(entries.as_mut(), TABLE_ENTRIES_COUNT);
+        // let marker = KERNEL_MARKER.get();
+        // let kernel_region = get_kernel_mapping_region();
     };
     todo!()
 }
@@ -434,16 +484,17 @@ extern "C" {
     static mut MEMORY_MAP: MemoryMap;
 }
 
+static mut TASK_STATE: TaskState = TaskState::null();
+static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> = UnsafeLazyCell::empty();
+static SLAB_ALLOCATOR: UnsafeLazyCell<SlabAllocator> = UnsafeLazyCell::empty();
+static KERNEL_MARKER: SpinLockLazyCell<PageMarker> = SpinLockLazyCell::empty();
+
 #[cfg(test)]
 static mut MEMORY_MAP: MemoryMap = MemoryMap::empty();
-
-
-static PHYSICAL_ALLOCATOR: SpinLockLazyCell<PhysicalAllocator> = SpinLockLazyCell::empty();
 
 #[cfg(test)]
 mod tests {
     use core::mem;
-    use core::mem::MaybeUninit;
     use crate::memory::{MEMORY_MAP, MemoryMap, Page, PhysicalAddress, ToPhysicalAddress, VirtualAddress};
     use crate::utils::ListNode;
 

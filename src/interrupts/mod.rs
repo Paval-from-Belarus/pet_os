@@ -5,7 +5,7 @@ mod pic;
 use crate::memory::{InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, VirtualAddress};
 use core::{mem, ptr};
 use core::arch::asm;
-use core::ops::DerefMut;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use crate::{declare_constants, log, memory};
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
@@ -161,7 +161,9 @@ const MAX_INTERRUPTS_COUNT: usize = 256;
 
 ///the method to registry InterruptObject
 pub fn registry(handle: Handle, line: IrqLine, info: CallbackInfo) {}
-
+//the red zone in thread kernel size:
+//all segment registers + all base registers + InterStackFrame + error code + user-mode switching ― the worst case
+pub const KERNEL_TRAP_SIZE: usize = 4 * 2 + 8 * 4 + mem::size_of::<InterruptStackFrame>() + 4 + 4 * 2;
 //save all registers
 unsafe fn enter_kernel_trap() {
     asm!(
@@ -294,6 +296,25 @@ impl IDTHandle {
             table_size: table.byte_size().saturating_sub(1) as u16,
             table_offset: table.entries.as_ptr(),
         }
+    }
+}
+
+static INTERRUPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+pub unsafe fn disable() {
+    asm!(
+    "cli",
+    options(preserves_flags, nomem, nostack));
+
+    INTERRUPT_COUNTER.fetch_add(1, Ordering::SeqCst);
+}
+
+pub unsafe fn enable() {
+    let _ = INTERRUPT_COUNTER.fetch_sub(1, Ordering::SeqCst);
+    if INTERRUPT_COUNTER.load(Ordering::SeqCst) == 0 {
+        asm!(
+        "sti",
+        options(preserves_flags, nomem, nostack));
     }
 }
 

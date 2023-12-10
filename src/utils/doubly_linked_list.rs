@@ -229,11 +229,11 @@ impl<'a, T: Sized> LinkedList<'a, T> {
             raw_node.as_mut().relink(None);
         }
     }
-    pub fn remove_first(&mut self) -> Option<NonNull<ListNode<T>>> {
+    pub fn remove_first(&mut self) -> Option<&'a mut ListNode<T>> {
         match self.first {
-            Some(first) => {
-                unsafe { self.unlink_node(first) };
-                Some(first)
+            Some(mut first) => unsafe {
+                self.remove(first.as_mut());
+                Some(first.as_mut())
             }
             None => {
                 None
@@ -638,9 +638,9 @@ mod tests {
             for node in nodes.iter() {
                 list.push_back(NonNull::from(node).as_mut());
             }
-            assert_eq!(&12, list.remove_first().unwrap().as_mut().data());
-            assert_eq!(&13, list.remove_first().unwrap().as_mut().data());
-            assert_eq!(None, list.remove_first());
+            assert_eq!(&12, list.remove_first().unwrap().data());
+            assert_eq!(&13, list.remove_first().unwrap().data());
+            assert!(list.remove_first().is_none());
         }
     }
 }

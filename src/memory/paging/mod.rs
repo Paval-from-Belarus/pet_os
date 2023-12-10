@@ -1,13 +1,14 @@
 pub(crate) mod table;
 
+use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::slice;
 use core::intrinsics::unreachable;
 use core::mem::MaybeUninit;
-use core::ptr::addr_of_mut;
+use core::ptr::{addr_of_mut, NonNull};
 use table::{RefTable, RefTableEntry};
 use crate::{bitflags, declare_constants, memory};
-use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, TaskGate, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
+use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector, TaskGate, TaskStateDescriptor, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
 use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
 use crate::utils::{LinkedList, Zeroed};
 declare_constants!(
@@ -28,6 +29,7 @@ pub struct PageMarker {
 pub enum CommonError {
     OutOfBounds
 }
+
 #[derive(Debug)]
 pub enum PageMarkerError {
     EmptyDirEntry,
@@ -59,15 +61,21 @@ pub struct GDTTable {
     kernel_data: UnsafeCell<MemoryDescriptor>,
     user_code: UnsafeCell<MemoryDescriptor>,
     user_data: UnsafeCell<MemoryDescriptor>,
-    task: TaskGate,
+    task: TaskStateDescriptor,
 }
 
 impl GDTTable {
     pub const fn null() {
         unsafe { MaybeUninit::zeroed().assume_init() }
     }
-    pub fn set_task(&mut self, task: TaskGate) {
+    pub fn set_task(&mut self, task: TaskStateDescriptor) {
         self.task = task;
+        unsafe {
+            asm!(
+            "ltr {}",
+            in(reg) u16::from(SegmentSelector::TASK),
+            options(preserves_flags, nomem, nostack));
+        }
     }
     //load the GDT into registers
     pub unsafe fn load(&self) {}
@@ -85,7 +93,7 @@ pub struct GDTEntry {
 #[repr(C, packed)]
 pub struct GDTHandle {
     table_size: u16,
-    table: *mut GDTEntry,
+    table: *mut GDTTable,
 }
 
 ///The common information about physical memory region
@@ -114,6 +122,12 @@ impl PagingProperties {
     }
     pub fn heap_offset(&self) -> VirtualAddress {
         self.heap_offset
+    }
+    pub fn gdt(&self) -> NonNull<GDTTable> {
+        unsafe {
+            let raw_table = (*self.handle).table;
+            NonNull::new_unchecked(raw_table)
+        }
     }
 }
 
@@ -209,6 +223,9 @@ impl PageMarker {
     #[deprecated]
     fn entries(&mut self) -> &mut [DirEntry] {
         self.directory.as_mut_slice()
+    }
+    pub fn table(&mut self) -> &mut RefTable<DirEntry> {
+        &mut self.directory
     }
     fn get_page_entry(
         &mut self,

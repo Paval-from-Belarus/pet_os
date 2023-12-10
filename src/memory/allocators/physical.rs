@@ -20,6 +20,10 @@ pub struct PhysicalAllocator {
     //it means that no thread switching will be enabled while atomic operations are not finished
 }
 
+unsafe impl Send for PhysicalAllocator {}
+
+unsafe impl Sync for PhysicalAllocator {}
+
 pub enum AllocationError {
     OutOfMemory,
     //something else

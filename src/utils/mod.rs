@@ -7,7 +7,7 @@ mod spin_box;
 
 pub use spin_box::SpinBox;
 pub use doubly_linked_list::{LinkedList, ListNode};
-pub use singly_linked_list::{SimpleList, SimpleListNode};
+pub use singly_linked_list::{SimpleList, SimpleListNode, ListNodeWrapper, ToSimpleListNode};
 #[macro_export]
 macro_rules! bitflags {
     ($vis:vis $s:ident($t:ty), $($name:ident = $value:expr),* $(,)?) => {

@@ -52,6 +52,45 @@ impl SpinLock {
     }
 }
 
+#[repr(transparent)]
+pub struct UnsafeLazyCell<T> {
+    cell: UnsafeCell<Option<T>>,
+}
+
+impl<T> UnsafeLazyCell<T> {
+    pub const fn empty() -> Self {
+        Self { cell: UnsafeCell::new(None) }
+    }
+    pub fn set(&self, value: T) {
+        let option = unsafe {
+            &mut *self.cell.get()
+        };
+        if option.is_none() {
+            option.replace(value);
+        }
+    }
+    pub fn get(&self) -> &T {
+        let option = unsafe { &*self.cell.get() };
+        if let Some(value) = option {
+            &value
+        } else {
+            unreachable!("The lazy cell is not initialized");
+        }
+    }
+}
+
+unsafe impl<T> Send for UnsafeLazyCell<T> where T: Send {}
+
+unsafe impl<T> Sync for UnsafeLazyCell<T> where T: Sync {}
+
+impl<T> Deref for UnsafeLazyCell<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.get()
+    }
+}
+
 pub struct SpinLockLazyCell<T> {
     lock: SpinLock,
     data: UnsafeCell<Option<T>>,

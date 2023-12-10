@@ -52,6 +52,7 @@ SECTIONS
 	/DISCARD/ : {
     		*(.eh_frame .note.GNU-stack)
     }
+    BINARY_SIZE = edata - START_OFFSET;
 	KERNEL_SIZE = END_OFFSET - START_OFFSET;
 
 }

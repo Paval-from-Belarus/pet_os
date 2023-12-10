@@ -19,12 +19,20 @@ struct MemBounds {
     upper: VirtualAddress,
 }
 
+#[repr(transparent)]
+#[derive(Copy, Clone)]
+pub struct SlabPiece(u16);
+
 pub struct SlabAllocator {
     inner: UnsafeCell<SlabAllocatorInner>,
     //the list of entries ready to be used
     free_pool: UnsafeCell<SimpleList<'static, SlabEntry>>,
     lock: SpinLock,
 }
+
+unsafe impl Send for SlabAllocator {}
+
+unsafe impl Sync for SlabAllocator {}
 
 struct SlabAllocatorInner {
     //any pool should never be empty
@@ -44,9 +52,7 @@ struct SlabEntry {
     reserved: Zeroed<[usize; 2]>,
 }
 const_assert!(Page::SIZE % core::mem::size_of::<SimpleListNode<SlabEntry>>() == 0);
-#[repr(transparent)]
-#[derive(Copy, Clone)]
-pub struct SlabPiece(u16);
+
 
 impl SlabPiece {
     pub const fn with_capacity(size: u16) -> Self {
@@ -134,8 +140,7 @@ impl SlabAllocator {
                heap_offset: VirtualAddress,
     ) -> Result<SlabAllocator, OsAllocationError> {
         let mut free_pool = SimpleList::<'static, SlabEntry>::empty();
-        let mut inner = SlabAllocatorInner::empty(allocator,
-                                                  heap_offset);
+        let mut inner = SlabAllocatorInner::empty(allocator, heap_offset);
         inner.enlarge_pool(&mut free_pool, Self::POOL_SIZE)?;
         Ok(Self {
             inner: UnsafeCell::new(inner),
@@ -159,7 +164,7 @@ impl SlabAllocator {
         };
         Ok(entry.take(required_pages_count))
     }
-    pub fn dealloc(&'static mut self, offset: VirtualAddress) {
+    pub fn dealloc(&'static self, offset: VirtualAddress) {
         let inner = self.synchronized_inner();
         unsafe { inner.leak().dealloc(offset) };
     }
@@ -183,15 +188,6 @@ impl SlabAllocatorInner {
             heap_offset,
         }
     }
-    // pub fn new(allocator: &'static PhysicalAllocator,
-    //            free_pool: &'static mut SimpleList<SlabEntry>,
-    //            heap_offset: VirtualAddress,//th
-    // ) -> Result<SlabAllocatorInner, OsAllocationError> {
-    //     let mut empty_allocator = Self::empty(allocator,
-    //                                           heap_offset);
-    //     empty_allocator.enlarge_pool(free_pool, Self::POOL_SIZE)?;
-    //     Ok(empty_allocator)
-    // }
     fn dealloc(&'static mut self, offset: VirtualAddress) {
         let entry = self.page_pool.iter_mut()
             .find(|entry| entry.holds(offset))

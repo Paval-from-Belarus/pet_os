@@ -1,14 +1,45 @@
 use core::ptr::NonNull;
 use core::marker::PhantomData;
+use core::mem;
 use core::ops::Deref;
 use core::ops::DerefMut;
+use crate::utils::ListNode;
 
-
+#[repr(C)]
 pub struct SimpleListNode<T> {
     next: Option<NonNull<SimpleListNode<T>>>,
     data: T,
 }
+pub trait ToSimpleListNode<T> {
+    fn as_simple(&mut self) -> &mut SimpleListNode<ListNodeWrapper<T>>;
+}
+#[repr(C)]
+pub struct ListNodeWrapper<T> {
+    _reserved: NonNull<ListNode<T>>,
+    data: T
+}
 
+impl<T> Deref for ListNodeWrapper<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T> ToSimpleListNode<T> for ListNode<T> {
+    fn as_simple(&mut self) -> &mut SimpleListNode<ListNodeWrapper<T>> {
+        unsafe {
+            mem::transmute::<&mut ListNode<T>, &mut SimpleListNode<ListNodeWrapper<T>>>(self)
+        }
+    }
+}
+impl<T> SimpleListNode<ListNodeWrapper<T>> {
+    pub fn as_node(&mut self) -> &mut ListNode<T> {
+        unsafe {
+            mem::transmute::<&mut SimpleListNode<ListNodeWrapper<T>>, &mut ListNode<T>>(self)
+        }
+    }
+}
 impl<T> SimpleListNode<T> {
     pub const fn wrap_data(data: T) -> Self {
         Self {

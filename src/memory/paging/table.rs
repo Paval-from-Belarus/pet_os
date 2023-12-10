@@ -115,7 +115,11 @@ impl RefTableEntry for TableEntry {
         self.entry = PhysicalAddress::NULL | TableEntryFlag::EMPTY;
     }
 }
-
+impl RefTable<DirEntry> {
+    ///load table in CPU register
+    pub unsafe fn load(&self) {
+    }
+}
 impl RefTable<TableEntry> {
     pub fn wrap_page_table(entry: DirEntry) -> Option<Self> {
         let table_offset = entry.get_table_offset();
