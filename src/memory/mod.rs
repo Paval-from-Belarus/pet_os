@@ -14,6 +14,7 @@ use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerEr
 use core::{mem, ptr};
 use core::arch::asm;
 use core::mem::MaybeUninit;
+use core::slice::SliceIndex;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use static_assertions::assert_eq_size;
 use paging::table::{DirEntry, RefTable};
@@ -56,13 +57,13 @@ pub type VirtualAddress = usize;
 
 impl ToPhysicalAddress for VirtualAddress {
     fn as_physical(&self) -> PhysicalAddress {
-        unsafe { self - KERNEL_VIRTUAL_OFFSET }
+        self - kernel_virtual_offset()
     }
 }
 
 impl ToVirtualAddress for PhysicalAddress {
     fn as_virtual(&self) -> VirtualAddress {
-        unsafe { self + KERNEL_VIRTUAL_OFFSET }
+        self + kernel_virtual_offset()
     }
 }
 
@@ -73,17 +74,16 @@ pub fn init_kernel_space(
     directory: RefTable<DirEntry>,
     heap_offset: VirtualAddress,
 ) {
-    let mut marker = PageMarker::wrap(directory, alloc_physical_pages, dealloc_physical_pages);
+    let marker = PageMarker::wrap(directory, alloc_physical_pages, dealloc_physical_pages);
     KERNEL_MARKER.set(marker);
     let free_pages = collect_free_pages(&mut allocator);
     let allocator = PhysicalAllocator::new(free_pages);
     PHYSICAL_ALLOCATOR.set(allocator);
 
-    let higher_addresses_start = kernel_physical_offset();
     let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
     let unmap_flags = UnmapParamsFlag::from(UnmapParamsFlag::TABLES | UnmapParamsFlag::PAGES);
-    //the higher addesses are fully mapped by the kernel
-    KERNEL_MARKER.get().unmap_range(higher_addresses_start, boot_mapping_pages, unmap_flags);
+    //the higher addresses are fully mapped by the kernel
+    KERNEL_MARKER.get().unmap_range(VirtualAddress::NULL, boot_mapping_pages, unmap_flags);
 
     let slab_allocator = SlabAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
         .expect("Failed to initialize slab allocator");
@@ -105,22 +105,25 @@ fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
 }
 
 fn dealloc_physical_pages(offset: PhysicalAddress) {
-    let guard = unsafe { PHYSICAL_ALLOCATOR.get() };
+    let allocator = PHYSICAL_ALLOCATOR.get();
     let mut page = unsafe { ListNode::<Page>::wrap_page(offset) };
     unsafe {
-        let value = guard.deref();
-        value.dealloc_page(page.as_mut());
-        // allocator.dealloc_page(page.as_mut());
+        allocator.dealloc_page(page.as_mut());
     }
 }
 
+#[inline(never)]
 fn collect_free_pages(allocator: &mut CaptureAllocator) -> LinkedList<'static, Page> {
     let mut free_pages = LinkedList::<Page>::empty();
     for pivot in allocator.as_pivots() {
-        let mut mem_offset = pivot.mem_offset();
+        let mut mem_offset = pivot.next_offset();
         for _ in 0..pivot.free_pages_count() {
             unsafe {
                 let mut node = ListNode::<Page>::wrap_page(mem_offset);
+                let node_index = (node.as_ptr() as VirtualAddress - mem_map_offset() as VirtualAddress) / mem::size_of::<ListNode<Page>>();
+                if node_index >= MEMORY_MAP_SIZE {
+                    break;
+                }
                 free_pages.push_back(node.as_mut());
             }
             mem_offset += Page::SIZE;
@@ -160,7 +163,7 @@ bitflags!(
 );
 
 pub fn kernel_binary_size() -> usize {
-    unsafe { KERNEL_SIZE }
+    unsafe { &KERNEL_SIZE as *const usize as VirtualAddress }
 }
 
 pub fn kernel_page_size() -> usize {
@@ -168,15 +171,15 @@ pub fn kernel_page_size() -> usize {
 }
 
 pub fn kernel_virtual_offset() -> usize {
-    unsafe { KERNEL_VIRTUAL_OFFSET }
+    unsafe { &KERNEL_VIRTUAL_OFFSET as *const usize as VirtualAddress }
 }
 
 pub fn kernel_physical_offset() -> usize {
-    unsafe { KERNEL_PHYSICAL_OFFSET }
+    unsafe { &KERNEL_PHYSICAL_OFFSET as *const usize as VirtualAddress }
 }
 
 pub fn stack_size() -> usize {
-    unsafe { KERNEL_STACK_SIZE }
+    unsafe { &KERNEL_STACK_SIZE as *const usize as VirtualAddress }
 }
 
 
@@ -387,7 +390,7 @@ pub struct MemoryMap {
 
 
 fn mem_map_offset() -> *mut ListNode<Page> {
-    unsafe { ptr::from_mut(&mut MEMORY_MAP) as *mut u8 as *mut ListNode<Page> }
+    unsafe { &mut MEMORY_MAP as *mut MemoryMap as *mut ListNode<Page> }
 }
 
 impl ToPhysicalAddress for ListNode<Page> {

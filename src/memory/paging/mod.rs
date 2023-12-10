@@ -99,12 +99,12 @@ pub struct GDTHandle {
 ///The common information about physical memory region
 ///Supported only ZONE_NORMAL memory (see linux kernel docs)
 pub struct CaptureMemRec {
-    ///The start physical offset of region
-    memory_offset: PhysicalAddress,
-    ///The common count of pages in region
-    page_cnt: usize,
     ///The next free page
     next_page: usize,
+    ///The common count of pages in region
+    page_cnt: usize,
+    ///The start physical offset of region
+    memory_offset: PhysicalAddress,
 }
 
 pub struct CaptureAllocator {
@@ -134,21 +134,24 @@ impl PagingProperties {
 impl CaptureMemRec {
     pub fn capture_offset(&mut self, page_cnt: usize) -> Option<PhysicalAddress> {
         let rest_pages = self.free_pages_count();
-        let result: Option<PhysicalAddress>;
         if rest_pages >= page_cnt {
             self.next_page += page_cnt;
             let offset = self.memory_offset + page_cnt * Page::SIZE;
-            result = Some(offset);
+            Some(offset)
         } else {
-            result = None;
+            None
         }
-        return result;
     }
     pub fn free_pages_count(&self) -> usize {
-        return self.page_cnt - self.next_page;
+        self.page_cnt - self.next_page
     }
+    ///return the beginning of region which is describes by this entry
     pub fn mem_offset(&self) -> PhysicalAddress {
-        return self.memory_offset;
+        self.memory_offset
+    }
+    ///return next free physical offset in region
+    pub fn next_offset(&self) -> PhysicalAddress {
+        self.memory_offset + self.next_page * Page::SIZE
     }
 }
 
@@ -180,7 +183,7 @@ impl CaptureAllocator {
             .sum::<usize>();
     }
     pub fn as_pivots(&mut self) -> &mut [CaptureMemRec] {
-        return self.pivots;
+        self.pivots
     }
 }
 
@@ -359,17 +362,20 @@ impl PageMarker {
         }
         return Ok(());
     }
+    #[inline(never)]
     pub fn unmap_range(&mut self, virtual_offset: VirtualAddress, page_count: usize, params: UnmapParamsFlag) {
         let mut addressable_offset = virtual_offset;
         for _ in 0..page_count {
             let table_index = table_index!(addressable_offset);
             let entry_index = entry_index!(addressable_offset);
             let dir_entry = unsafe { self.directory.get_unchecked(table_index) };
-            let option_page_table = RefTable::wrap_page_table(dir_entry.clone());
+            let option_page_table = RefTable::wrap_page_table(*dir_entry);
             if let Some(mut page_table) = option_page_table {
                 let table_entry = unsafe { page_table.get_mut_unchecked(entry_index) };
-                table_entry.clear();
-                self.dealloc_page(table_entry.get_page_offset());
+                if table_entry.is_present() {
+                    self.dealloc_page(table_entry.get_page_offset());
+                    table_entry.clear();
+                }
             }
             addressable_offset += Page::SIZE;
         }

@@ -54,7 +54,7 @@ impl PhysicalAllocator {
         page.free();
         if !page.is_used() {
             let mut list = self.synchronized_pages();
-            unsafe { list.push_back(page) };
+            list.push_back(page);
         }
     }
     ///the method try to unite page with existing list
@@ -99,7 +99,7 @@ impl PhysicalAllocator {
                 if should_add {
                     let page = page_iter.unlink_watched().expect("Already watched");
                     page.take();
-                    unsafe { list.push_back(page) };
+                    list.push_back(page);
                     added_count += 1;
                 }
             }
@@ -118,7 +118,7 @@ impl PhysicalAllocator {
             }
             let page = page_iter.unlink_watched().expect("Already watched");
             page.take();
-            unsafe { list.push_back(page) };
+            list.push_back(page);
         }
         Ok(list)
     }

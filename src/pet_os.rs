@@ -51,7 +51,8 @@ pub unsafe extern "C" fn main() {
     let properties: *const PagingProperties;
     asm!(
     "",
-    out("eax") properties
+    out("eax") properties,
+    options(nostack)
     );
     logging::init();
     unsafe {

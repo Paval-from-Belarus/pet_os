@@ -44,7 +44,7 @@ SECTIONS
 	    PROVIDE(edata = .);
 		*(.bss)
 		MEMORY_MAP = .;
-		. += MEMORY_MAP_SIZE * 16;
+		. += MEMORY_MAP_SIZE;
 	}
 	. = ALIGN(PAGE_SIZE);
 	.heap : { . = . + SIZEOF(.bss); }
