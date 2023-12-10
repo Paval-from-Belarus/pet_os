@@ -40,6 +40,7 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 use core::arch::asm;
+use core::ptr;
 use core::slice::SliceIndex;
 use utils::logging;
 
@@ -61,4 +62,27 @@ pub unsafe extern "C" fn main() {
         memory::enable_task_switching((*properties).gdt().as_mut())
     };
     interrupts::init();
+    let thread_1 = process::new_task(task1, ptr::null_mut());
+    let thread_2 = process::new_task(task2, ptr::null_mut());
+    process::submit_task(thread_1);
+    process::submit_task(thread_2);
+    process::run();
+}
+
+fn task1(_context: *mut ()) {
+    unsafe { interrupts::enable() };
+    log!("task 1 started");
+    loop {
+        process::sleep(300);
+        log!("task 1 awaken");
+    }
+}
+
+fn task2(_context: *mut ()) {
+    unsafe { interrupts::enable() };
+    log!("task 2 started");
+    loop {
+        process::sleep(400);
+        log!("task 2 awaken");
+    }
 }

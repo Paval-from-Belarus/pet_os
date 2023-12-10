@@ -1,3 +1,5 @@
+mod clocks;
+
 use core::mem::MaybeUninit;
 use core::arch::{asm, global_asm};
 use core::{mem, ptr};
@@ -5,7 +7,7 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use crate::{bitflags, declare_constants, interrupts, log, memory};
 use crate::drivers::Handle;
-use crate::interrupts::{CallbackInfo, IrqLine};
+use crate::interrupts::{CallbackInfo, InterruptableLazyCell, IrqLine};
 use crate::memory::{AddressSpace, Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::utils::atomics::SpinLockLazyCell;
 use crate::utils::{LinkedList, ListNode, ListNodeWrapper, SimpleList, SimpleListNode, SpinBox, ToSimpleListNode, Zeroed};
@@ -134,21 +136,29 @@ impl ThreadTask {
 }
 
 //the calling convention is: eax, edx, ecx (default x8086)
-pub fn new_task(routine: ThreadRoutine, arg: *mut ()) -> &'static mut ThreadTask {
-    TaskContext::with_return_address(routine as VirtualAddress);
+///todo: each task should have stub before running to enable interrupts
+pub fn new_task(routine: ThreadRoutine, arg: *mut ()) -> &'static mut ListNode<ThreadTask> {
     let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
-    let raw_task = memory::slab_alloc::<ThreadTask>();
+    let raw_task = memory::slab_alloc::<ListNode<ThreadTask>>();
     let task_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
-    let task = raw_task.write(ThreadTask::new(task_id, kernel_stack));
+    let task = unsafe {
+        let task_data = ThreadTask::new(task_id, kernel_stack);
+        raw_task.write(ListNode::wrap_data(task_data))
+    };
+    let context = TaskContext::with_return_address(routine as VirtualAddress);
     task.context = (task.kernel_stack + TASK_STACK_SIZE - mem::size_of::<TaskContext>() - interrupts::KERNEL_TRAP_SIZE) as *mut TaskContext;
+    unsafe { task.context.write(context) };
     let arg_offset = ((task.context as VirtualAddress) - mem::size_of_val(&arg)) as *mut *mut ();
     unsafe { arg_offset.write(arg) };
     task
 }
 
+pub fn submit_task(task: &'static mut ListNode<ThreadTask>) {
+    SCHEDULER.get().add_task(task);
+}
+
 pub struct TaskScheduler {
     delayed: LinkedList<'static, ThreadTask>,
-    blocked: SimpleList<'static, ListNodeWrapper<ThreadTask>>,
     current: Option<NonNull<ListNode<ThreadTask>>>,
     context: *mut TaskContext,
 }
@@ -157,14 +167,13 @@ impl TaskScheduler {
     pub fn new() -> Self {
         Self {
             delayed: LinkedList::empty(),
-            blocked: SimpleList::empty(),
             current: None,
             context: ptr::null_mut(),
         }
     }
     pub fn add_task(&mut self, task: &'static mut ListNode<ThreadTask>) {
         task.status = TaskStatus::Delayed;
-        unsafe { self.delayed.push_back(task) };
+        self.delayed.push_back(task);
     }
     //try fetch next task
     pub fn next_task(&mut self) -> Option<&'static mut ListNode<ThreadTask>> {
@@ -181,7 +190,7 @@ impl TaskScheduler {
         }
         next_task
     }
-    //replace current task and place it
+    //replace current task and place it in delayed queue
     pub fn replace_current(&mut self, next: &'static mut ListNode<ThreadTask>) {
         if let Some(mut raw_current_task) = self.current {
             let current_task = unsafe { raw_current_task.as_mut() };
@@ -192,23 +201,16 @@ impl TaskScheduler {
         //if not current task is specified, simply set it
         self.current = Some(NonNull::from(next));
     }
-    pub fn block_current(&mut self) -> NonNull<ListNode<ThreadTask>> {
+    pub fn block_current(&mut self) -> &'static mut ListNode<ThreadTask> {
         if let Some(mut raw_current_task) = self.current {
             let current_task = unsafe { raw_current_task.as_mut() };
             current_task.status = TaskStatus::Blocked;
-            self.blocked.push_back(current_task.as_simple());
-            raw_current_task
+            current_task
         } else {
             unreachable!("Attempt to block empty task")
         }
     }
-    pub fn unblock(&mut self, raw_task: NonNull<ListNode<ThreadTask>>) {
-        let task = self.blocked.iter_mut()
-            .find(|node| -> bool {
-                ptr::eq(node as _, raw_task.as_ptr() as _)
-            })
-            .map(|node| node.as_node())
-            .expect("Failed to unblock not-existing node");
+    pub fn unblock(&mut self, task: &'static mut ListNode<ThreadTask>) {
         self.add_task(task);
     }
 }
@@ -260,8 +262,8 @@ pub unsafe fn switch_context(old: &mut *mut TaskContext, new: *mut TaskContext) 
 
 //run the kernel main loop
 pub fn run() -> ! {
+    unsafe { interrupts::enable() };//previously, they were disabled
     loop {
-        unsafe { interrupts::enable() };
         let mut scheduler = SCHEDULER.get();
         let next_task = scheduler.next_task();
         //next_task is valid task to be run
@@ -271,44 +273,58 @@ pub fn run() -> ! {
                 scheduler.replace_current(raw_task.as_mut());
                 memory::switch_to_task(raw_task.as_mut());
                 switch_context(&mut scheduler.context, raw_task.as_mut().context);
+                memory::switch_to_kernel();
             }
         }
     }
 }
 
 //mark current task as sleeping
-pub fn sleep(milliseconds: usize) {}
-static SLEEPING_TASKS: SpinLockLazyCell<SimpleList<'static, ListNodeWrapper<ThreadTask>>> = SpinLockLazyCell::empty();
 
-pub fn sleep_until(milliseconds: usize) {
-    unsafe { interrupts::disable() };
+
+pub fn sleep(milliseconds: usize) {
     let mut scheduler = SCHEDULER.get();
     let blocked = scheduler.block_current();
+    blocked.start_time = clocks::get_time_since_boot() + milliseconds;
+    SLEEPING_TASKS.get().push_back(blocked.as_simple());
+    unsafe { switch_context(&mut blocked.context, scheduler.context) };
 }
 
-pub fn init() {
-    //initially, no thread_info in table (table is empty)
-    let table: [Option<&'static ThreadTask>; MAX_THREAD_COUNT] = [None; MAX_THREAD_COUNT];
-    THREAD_INFO_TABLE.set(table);
-    let scheduler = TaskScheduler::new();
-    SCHEDULER.set(scheduler);
+pub fn init() -> CallbackInfo {
+    clocks::init();
+    SCHEDULER.set(TaskScheduler::new());
+    CallbackInfo::default(on_timer)
 }
 
-pub fn add_task() {}
-
-pub fn init_scheduler() -> CallbackInfo {
-    unsafe {}
-    let info = CallbackInfo::default(on_timer);
-    info
+fn reschedule() {
+    let scheduler = SCHEDULER.get();
+    if let Some(mut raw_current) = scheduler.current {
+        let current = unsafe { raw_current.as_mut() };
+        unsafe { switch_context(&mut current.context, scheduler.context) };
+    }
 }
 
-fn on_timer(is_processed: bool, context: *mut ()) -> bool {
-    false
+fn try_wakeup() {
+    let mut scheduler = SCHEDULER.get();
+    let mut tasks = SLEEPING_TASKS.get();
+    let mut iter = tasks.iter_mut();
+    let current_time = clocks::get_time_since_boot();
+    while let Some(task) = iter.next() {
+        if task.start_time < current_time {
+            let _ = iter.unlink_watched();
+            scheduler.unblock(task.as_node());
+        }
+    }
 }
 
-#[no_mangle]
-static THREAD_INFO_TABLE: SpinLockLazyCell<[Option<&'static ThreadTask>; MAX_THREAD_COUNT]> = SpinLockLazyCell::empty();
-static SCHEDULER: SpinLockLazyCell<TaskScheduler> = SpinLockLazyCell::empty();
+fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
+    clocks::update_time();
+    try_wakeup();
+    true
+}
+
+static SLEEPING_TASKS: SpinLockLazyCell<SimpleList<'static, ListNodeWrapper<ThreadTask>>> = SpinLockLazyCell::empty();
+static SCHEDULER: InterruptableLazyCell<TaskScheduler> = InterruptableLazyCell::empty();
 static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(1);
 
 pub struct FileHandle {}

@@ -1,6 +1,7 @@
 mod object;
 mod system;
-mod pic;
+pub(crate) mod pic;
+mod lock;
 
 use crate::memory::{InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, VirtualAddress};
 use core::{mem, ptr};
@@ -11,7 +12,7 @@ use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
 use crate::utils::atomics::{SpinLock, SpinLockLazyCell};
-use crate::utils::{io, SimpleList};
+pub use lock::InterruptableLazyCell;
 
 #[allow(unused)]
 #[repr(C)] //the wrapper on real stack frame
@@ -161,9 +162,11 @@ const MAX_INTERRUPTS_COUNT: usize = 256;
 
 ///the method to registry InterruptObject
 pub fn registry(handle: Handle, line: IrqLine, info: CallbackInfo) {}
+
 //the red zone in thread kernel size:
 //all segment registers + all base registers + InterStackFrame + error code + user-mode switching ― the worst case
 pub const KERNEL_TRAP_SIZE: usize = 4 * 2 + 8 * 4 + mem::size_of::<InterruptStackFrame>() + 4 + 4 * 2;
+
 //save all registers
 unsafe fn enter_kernel_trap() {
     asm!(
@@ -299,7 +302,7 @@ impl IDTHandle {
     }
 }
 
-static INTERRUPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static INTERRUPT_COUNTER: AtomicUsize = AtomicUsize::new(1);//by default, interrupts are disabled
 
 pub unsafe fn disable() {
     asm!(

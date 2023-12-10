@@ -311,13 +311,7 @@ assert_eq_size!(ListNode<Page>, [u8; 16]);
 ///the kernel method to allocate structure in kernel slab pool
 pub fn slab_alloc<T>() -> &'static mut MaybeUninit<T> {
     let size = mem::size_of::<T>();
-    let piece = if size <= u16::MAX as usize {
-        SlabPiece::with_capacity(size as u16)
-    } else {
-        unreachable!("Slab piece too huge");
-    };
-    let offset = SLAB_ALLOCATOR.alloc(piece, Alignment::Page)
-        .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
+    let offset = virtual_alloc(size);
     unsafe { &mut *(offset as *mut MaybeUninit<T>) }
 }
 
@@ -328,8 +322,16 @@ pub fn slab_dealloc<T>(pointer: &mut T) {
 
 ///Allocate virtual memory regardless of physical layout
 ///The each virtual page, probably, will be separate
-pub fn virtual_alloc(bytes: usize) -> VirtualAddress {
-    todo!()
+///The current implementation is simple slab allocation (it will fail with too huge memory size)
+pub fn virtual_alloc(size: usize) -> VirtualAddress {
+    let piece = if size <= u16::MAX as usize {
+        SlabPiece::with_capacity(size as u16)
+    } else {
+        unreachable!("Slab piece too huge");
+    };
+    let offset = SLAB_ALLOCATOR.alloc(piece, Alignment::Page)
+        .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
+    offset
 }
 
 pub fn virtual_dealloc(offset: VirtualAddress) {
@@ -358,7 +360,7 @@ pub unsafe fn switch_to_task(task: &'static mut ThreadTask) {
     table.load();
 }
 
-pub fn switch_to_kernel() {}
+pub unsafe fn switch_to_kernel() {}
 
 pub fn alloc_proc() -> Result<ProcessInfo, OsAllocationError> {
     let mut entries = physical_alloc(TABLE_ENTRIES_COUNT * mem::size_of::<DirEntry>())?;

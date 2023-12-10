@@ -240,22 +240,26 @@ impl<'a, T: Sized> LinkedList<'a, T> {
             }
         }
     }
-    pub unsafe fn push_back(&mut self, node: &mut ListNode<T>) {
+    pub fn push_back(&mut self, node: &mut ListNode<T>) {
         let raw_node = NonNull::from(node);
-        if self.is_empty() {
-            self.first_link(raw_node);
-            return;
+        unsafe {
+            if self.is_empty() {
+                self.first_link(raw_node);
+                return;
+            }
+            self.insert_after_last(raw_node);
         }
-        self.insert_after_last(raw_node);
         self.last = Some(raw_node);//we already changed last in list
     }
-    pub unsafe fn push_front(&mut self, node: &mut ListNode<T>) {
+    pub fn push_front(&mut self, node: &mut ListNode<T>) {
         let raw_node = NonNull::from(node);
-        if self.is_empty() {
-            self.first_link(raw_node);
-            return;
+        unsafe {
+            if self.is_empty() {
+                self.first_link(raw_node);
+                return;
+            }
+            self.insert_after_last(raw_node);
         }
-        self.insert_after_last(raw_node);
         self.first = Some(raw_node);
     }
     //cause data leaks with node

@@ -48,7 +48,7 @@ pub fn init_traps(table: &mut IDTable) {
 ///Init IRQ lines
 pub fn init_irq() -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
     let mut objects: [Option<&'static InterruptObject>; pic::LINES_COUNT] = [None; pic::LINES_COUNT];
-    objects[u8::from(IrqLine::SYS_TIMER.line) as usize] = Some(init_timer(process::init_scheduler()));
+    objects[u8::from(IrqLine::SYS_TIMER.line) as usize] = Some(init_timer(process::init()));
     objects
 }
 
