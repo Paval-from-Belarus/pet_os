@@ -45,7 +45,6 @@ use core::slice::SliceIndex;
 use utils::logging;
 
 #[no_mangle]
-#[allow(dead_code)]
 #[cfg(not(test))]
 pub unsafe extern "C" fn main() {
     let properties: *const PagingProperties;
@@ -54,15 +53,26 @@ pub unsafe extern "C" fn main() {
     out("eax") properties,
     options(nostack)
     );
+    unsafe { rust_main(&*properties) };
+}
+
+
+pub fn rust_main(properties: &PagingProperties) {
     logging::init();
-    unsafe {
-        let allocator = (*properties).allocator();
-        let dir_table = (*properties).page_directory();
-        let heap_offset = (*properties).heap_offset();
-        memory::init_kernel_space(allocator, dir_table, heap_offset);
-        memory::enable_task_switching((*properties).gdt().as_mut())
-    };
+    let allocator = properties.allocator();
+    let dir_table = properties.page_directory();
+    let heap_offset = properties.heap_offset();
+    memory::init_kernel_space(allocator, dir_table, heap_offset);
     interrupts::init();
+    unsafe {
+        asm!(
+        "int 2h",
+        options(nostack, nomem)
+        )
+    };
+    unsafe { syscall!(12) };
+    let gdt = unsafe { properties.gdt().as_mut() };
+    memory::enable_task_switching(gdt);
     let thread_1 = process::new_task(task1, ptr::null_mut());
     let thread_2 = process::new_task(task2, ptr::null_mut());
     process::submit_task(thread_1);

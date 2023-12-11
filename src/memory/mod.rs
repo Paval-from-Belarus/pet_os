@@ -9,7 +9,7 @@ pub use allocators::PhysicalAllocator;
 pub use paging::PagingProperties;
 pub use arch::*;
 
-use crate::{bitflags, declare_constants, process};
+use crate::{bitflags, declare_constants, log, process};
 use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT, UnmapParamsFlag};
 use core::{mem, ptr};
 use core::arch::asm;
@@ -74,7 +74,7 @@ pub fn init_kernel_space(
     directory: RefTable<DirEntry>,
     heap_offset: VirtualAddress,
 ) {
-    let marker = PageMarker::wrap(directory, alloc_physical_pages, dealloc_physical_pages);
+    let marker = PageMarker::wrap(directory, alloc_physical_pages, first_dealloc_handler);
     KERNEL_MARKER.set(marker);
     let free_pages = collect_free_pages(&mut allocator);
     let allocator = PhysicalAllocator::new(free_pages);
@@ -84,19 +84,32 @@ pub fn init_kernel_space(
     let unmap_flags = UnmapParamsFlag::from(UnmapParamsFlag::TABLES | UnmapParamsFlag::PAGES);
     //the higher addresses are fully mapped by the kernel
     KERNEL_MARKER.get().unmap_range(VirtualAddress::NULL, boot_mapping_pages, unmap_flags);
-
+    KERNEL_MARKER.get().set_dealloc_handler(dealloc_physical_page);
     let slab_allocator = SlabAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
         .expect("Failed to initialize slab allocator");
     SLAB_ALLOCATOR.set(slab_allocator);
+    log!("memory is initialized");
 }
 
 pub fn enable_task_switching(table: &mut GDTTable) {
     let task = unsafe {
         TASK_STATE.set_io_map(0xFFFF);//setting io_map beyond the TaskState structure -> let's forbid all io instruction in user mode
         TASK_STATE.set_stack_selector(SegmentSelector::DATA);
+        TASK_STATE.set_kernel_stack(0xc0000000);
         TaskStateDescriptor::default(&TASK_STATE as *const TaskState as VirtualAddress, mem::size_of::<TaskState>() - 1)
     };
     table.set_task(task);
+}
+
+///this method is conventional way to free page acquired by asm stub
+#[deprecated]
+fn first_dealloc_handler(offset: PhysicalAddress) {
+    let mut page = unsafe {
+        let mut node = ListNode::<Page>::wrap_page(offset);
+        node.as_mut()
+    };
+    page.take();
+    PHYSICAL_ALLOCATOR.get().dealloc_page(page);
 }
 
 fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
@@ -104,7 +117,7 @@ fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
     // PHYSICAL_ALLOCATOR.get().alloc_pages(page_count)
 }
 
-fn dealloc_physical_pages(offset: PhysicalAddress) {
+fn dealloc_physical_page(offset: PhysicalAddress) {
     let allocator = PHYSICAL_ALLOCATOR.get();
     let mut page = unsafe { ListNode::<Page>::wrap_page(offset) };
     unsafe {
@@ -314,7 +327,13 @@ assert_eq_size!(ListNode<Page>, [u8; 16]);
 ///the kernel method to allocate structure in kernel slab pool
 pub fn slab_alloc<T>() -> &'static mut MaybeUninit<T> {
     let size = mem::size_of::<T>();
-    let offset = virtual_alloc(size);
+    let piece = if size <= u16::MAX as usize {
+        SlabPiece::with_capacity(size as u16)
+    } else {
+        unreachable!("Slab piece too huge");
+    };
+    let offset = SLAB_ALLOCATOR.alloc(piece, Alignment::Page)
+        .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
     unsafe { &mut *(offset as *mut MaybeUninit<T>) }
 }
 
@@ -327,14 +346,7 @@ pub fn slab_dealloc<T>(pointer: &mut T) {
 ///The each virtual page, probably, will be separate
 ///The current implementation is simple slab allocation (it will fail with too huge memory size)
 pub fn virtual_alloc(size: usize) -> VirtualAddress {
-    let piece = if size <= u16::MAX as usize {
-        SlabPiece::with_capacity(size as u16)
-    } else {
-        unreachable!("Slab piece too huge");
-    };
-    let offset = SLAB_ALLOCATOR.alloc(piece, Alignment::Page)
-        .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
-    offset
+    SLAB_ALLOCATOR.get().virtual_alloc(size).expect("Failed to allocate virtual memory")
 }
 
 pub fn virtual_dealloc(offset: VirtualAddress) {
@@ -413,8 +425,7 @@ impl ListNode<Page> {
 
 ///commit kernel memory
 pub fn kernel_commit(region: MemoryMappingRegion) -> Result<(), PageMarkerError> {
-    // self.marker.map_kernel_range(&region).expect("Failed to commit kernel heap memory");
-    todo!()
+    KERNEL_MARKER.get().map_kernel_range(&region)
 }
 
 pub fn user_commit(region: MemoryMappingRegion) -> Result<(), PageMarkerError> {

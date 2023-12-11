@@ -3,7 +3,7 @@ use core::mem;
 use bitfield::Bit;
 use static_assertions::{assert_eq_size};
 use crate::{bitflags, declare_constants};
-use crate::memory::VirtualAddress;
+use crate::memory::{PhysicalAddress, ToPhysicalAddress, VirtualAddress};
 use crate::utils::Zeroed;
 
 #[derive(Clone, Copy, Default)]
@@ -28,7 +28,7 @@ impl SegmentSelector {
         TASK = SegmentSelector(0x28)
     );
     pub fn new(index: usize, ring: PrivilegeLevel, parent: SelectorType) -> Self {
-        debug_assert!(index < u32::MAX as usize);
+        assert!(index < u32::MAX as usize);
         let type_bit = if parent == SelectorType::LDT { 0x04 } else { 0x00 };
         let selector = (index & !0x3) | type_bit | (ring.bits() as usize);
         Self(selector as u16)
@@ -214,7 +214,7 @@ impl TaskStateDescriptor {
         let system_type = SystemType::wrap(SystemType::TSS_FREE_32BIT);
         let flags = DescriptorFlags::new(false, ring, system_type);
         let mut instance = TaskStateDescriptor::null();
-        instance.set_base(base);
+        instance.set_base(base.as_physical());
         instance.set_limit(limit);
         instance.set_granularity(false);
         Self {
@@ -225,7 +225,7 @@ impl TaskStateDescriptor {
     pub const fn null() -> Self {
         unsafe { mem::MaybeUninit::zeroed().assume_init() }
     }
-    pub fn set_base(&mut self, base: VirtualAddress) {
+    pub fn set_base(&mut self, base: PhysicalAddress) {
         self.lower_base = (base & 0xFFFF) as u16;
         self.middle_base = ((base >> 16) & 0xFF) as u8;
         self.upper_base = ((base >> 24) & 0xFF) as u8;

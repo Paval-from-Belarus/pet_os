@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::Deref;
 use core::ops::DerefMut;
+use crate::memory::VirtualAddress;
 use crate::utils::ListNode;
 
 #[repr(C)]
@@ -10,13 +11,15 @@ pub struct SimpleListNode<T> {
     next: Option<NonNull<SimpleListNode<T>>>,
     data: T,
 }
+
 pub trait ToSimpleListNode<T> {
     fn as_simple(&mut self) -> &mut SimpleListNode<ListNodeWrapper<T>>;
 }
+
 #[repr(C)]
 pub struct ListNodeWrapper<T> {
     _reserved: NonNull<ListNode<T>>,
-    data: T
+    data: T,
 }
 
 impl<T> Deref for ListNodeWrapper<T> {
@@ -33,6 +36,7 @@ impl<T> ToSimpleListNode<T> for ListNode<T> {
         }
     }
 }
+
 impl<T> SimpleListNode<ListNodeWrapper<T>> {
     pub fn as_node(&mut self) -> &mut ListNode<T> {
         unsafe {
@@ -40,6 +44,7 @@ impl<T> SimpleListNode<ListNodeWrapper<T>> {
         }
     }
 }
+
 impl<T> SimpleListNode<T> {
     pub const fn wrap_data(data: T) -> Self {
         Self {
@@ -116,7 +121,7 @@ impl<'a, T> SimpleList<'a, T> {
         if let Some(first) = other.first && let Some(last) = other.last {
             unsafe { self.splice_bounds(first, last) };
         } else {
-            debug_assert!(other.is_empty());
+            assert!(other.is_empty());
         }
     }
     pub fn size(&self) -> usize {
@@ -142,20 +147,20 @@ impl<'a, T> SimpleList<'a, T> {
             if let Some(mut old_last) = self.last {
                 old_last.as_mut().set_next(raw_node.as_mut());
             } else {
-                debug_assert!(self.first.is_none(), "The empty last means empty first");
+                assert!(self.first.is_none(), "The empty last means empty first");
                 self.first = Some(raw_node);
             }
             self.last = Some(raw_node);
         }
     }
     pub fn remove(&mut self, node: &'a mut SimpleListNode<T>) {
-        debug_assert!(!self.is_empty());
+        assert!(!self.is_empty());
         let mut raw_node = NonNull::from(node);
         if let Some(raw_first) = self.first && let Some(raw_last) = self.last {
             if raw_first.eq(&raw_node) {
                 self.first = unsafe { raw_node.as_mut().next };
-                if raw_last.eq(&raw_last) {
-                    debug_assert!(self.first.is_some());
+                if raw_last.eq(&raw_node) {
+                    assert!(self.first.is_none());
                     self.last = None;
                 }
                 return;
@@ -168,7 +173,7 @@ impl<'a, T> SimpleList<'a, T> {
                         false
                     }
                 });
-            debug_assert!(self.is_empty() && before_option.is_none() || !self.is_empty() && before_option.is_some());
+            assert!(self.is_empty() && before_option.is_none() || !self.is_empty() && before_option.is_some());
             if let Some(before) = before_option {
                 before.next = unsafe { raw_node.as_mut().next };
                 if raw_last.eq(&raw_node) {
@@ -257,6 +262,7 @@ impl<'a, 'b, T> Iterator for MutListIterator<'a, 'b, T> {
         match self.next {
             None => None,
             Some(mut pointer) => {
+                self.watched = Some(pointer);
                 let current = unsafe { pointer.as_mut() };
                 self.next = current.next;
                 Some(current)
@@ -289,7 +295,6 @@ mod tests {
         // assert_eq!(skipped, 1);
         assert_eq!(number_iter.next(), Some(&mut 4));
     }
-
     #[test]
     fn splice_test() {
         let mut list = SimpleList::<usize>::empty();
@@ -313,6 +318,10 @@ mod tests {
                     numbers.get_unchecked(4).next.unwrap().as_ref().eq(numbers.get_unchecked(0)));
             list.remove(NonNull::from(numbers.get_unchecked(3)).as_mut());
             assert_eq!(list.first, Some(NonNull::from(numbers.get_unchecked(4))));
+            list.remove(NonNull::from(numbers.get_unchecked(1)).as_mut());
+            assert!(
+                numbers.get_unchecked(0).next.unwrap().as_ref().eq(&numbers.get_unchecked(2))
+            );
         }
     }
 }

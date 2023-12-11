@@ -49,7 +49,7 @@ impl<T:> ListNode<T> {
     }
     #[deprecated]
     pub unsafe fn new_unchecked(data: T, next: *mut ListNode<T>, prev: *mut ListNode<T>) -> Self {
-        debug_assert!(!next.is_null() && !prev.is_null());
+        assert!(!next.is_null() && !prev.is_null());
         ListNode::new(data, &mut *next, &mut *prev)
     }
     pub fn next(&self) -> &ListNode<T> {
@@ -165,15 +165,15 @@ impl<'a, T: Sized> LinkedList<'a, T> {
         self.last = None;
     }
     pub fn iter(&self) -> ListIterator<'a, T> {
-        debug_assert!(!self.is_empty());
+        assert!(!self.is_empty());
         ListIterator::new(self)
     }
     pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
-        debug_assert!(!self.is_empty());
+        assert!(!self.is_empty());
         MutListIterator::new(self)
     }
     pub fn is_empty(&self) -> bool {
-        debug_assert!(self.last.is_some() && self.first.is_some() || self.last.is_none() && self.first.is_none());
+        assert!(self.last.is_some() && self.first.is_some() || self.last.is_none() && self.first.is_none());
         self.first.is_none()
     }
     pub fn splice(&mut self, other: LinkedList<'a, T>) {
@@ -185,12 +185,12 @@ impl<'a, T: Sized> LinkedList<'a, T> {
             }
             unsafe { self.splice_bounds(first, last) };
         } else {
-            debug_assert!(other.is_empty());
+            assert!(other.is_empty());
         }
     }
     //this function assumes the current list is not empty
     unsafe fn splice_bounds(&mut self, mut other_first: NonNull<ListNode<T>>, mut other_last: NonNull<ListNode<T>>) {
-        debug_assert!(!self.is_empty());
+        assert!(!self.is_empty());
         if let Some(mut first) = self.first && let Some(mut last) = self.last {
             let first = first.as_mut();
             let last = last.as_mut();
@@ -222,7 +222,7 @@ impl<'a, T: Sized> LinkedList<'a, T> {
         }
     }
     pub fn remove(&mut self, node: &'a mut ListNode<T>) {
-        debug_assert!(!self.is_empty());
+        assert!(!self.is_empty());
         let mut raw_node = NonNull::from(node);
         unsafe {
             self.unlink_node(raw_node);

@@ -3,7 +3,7 @@ mod system;
 pub(crate) mod pic;
 mod lock;
 
-use crate::memory::{InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, VirtualAddress};
+use crate::memory::{InterruptGate, PhysicalAddress, PrivilegeLevel, SegmentSelector, SystemType, ToPhysicalAddress, VirtualAddress};
 use core::{mem, ptr};
 use core::arch::asm;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -144,7 +144,6 @@ impl InterruptGate {
     }
     pub fn with_error_handler(handler: ErrorExceptionHandler, selector: SegmentSelector, attributes: SystemType) -> Self {
         let handler_offset = handler as *const ErrorExceptionHandler as VirtualAddress;
-        let _number = 12usize;
         let mut instance = InterruptGate::default(handler_offset, selector, attributes);
         instance.flags.set_present(true);
         instance
@@ -207,20 +206,20 @@ pub fn init() {
     };
     init_interceptors(table);
     unsafe {
+        INTERRUPT_TABLE_HANDLE = IDTHandle::new(&INTERRUPT_TABLE);
         asm!(
-        "mov eax, {}",
         "lidt [eax]",
-        "sti", //enable interrupts
-        in(reg) &INTERRUPT_TABLE_HANDLE
+        in("eax") &INTERRUPT_TABLE_HANDLE
         );
     }
+    log!("interrupts are initialized");
 }
 
 #[no_mangle]
 static INTERCEPTORS: SpinLockLazyCell<[&'static InterruptObject; pic::LINES_COUNT]> = SpinLockLazyCell::empty();
 
 #[no_mangle]
-unsafe fn interceptor_stub(index: usize) {
+unsafe fn interceptor_stub() {
     let index: usize;
     asm!(
     "",
@@ -232,6 +231,7 @@ unsafe fn interceptor_stub(index: usize) {
     leave_kernel_trap();
 }
 
+#[inline(never)]
 fn init_interceptors(table: &mut IDTable) {
     let mut created_objects = system::init_irq();
     for (index, object_option) in created_objects.iter_mut().enumerate() {
@@ -276,7 +276,7 @@ pub fn set(index: usize, descriptor: InterruptGate) -> InterruptGate {
 #[repr(C, packed)]
 struct IDTHandle {
     table_size: u16,
-    table_offset: *const InterruptGate,
+    table_offset: PhysicalAddress,
 }
 
 unsafe impl Sync for IDTHandle {}
@@ -294,10 +294,16 @@ unsafe impl Sync for IDTable {}
 unsafe impl Send for IDTable {}
 
 impl IDTHandle {
-    pub const fn new(table: &IDTable) -> Self {
+    pub const fn null() -> Self {
+        Self {
+            table_size: 0,
+            table_offset: PhysicalAddress::NULL,
+        }
+    }
+    pub fn new(table: &IDTable) -> Self {
         IDTHandle {
             table_size: table.byte_size().saturating_sub(1) as u16,
-            table_offset: table.entries.as_ptr(),
+            table_offset: (table.entries.as_ptr() as VirtualAddress).as_physical(),
         }
     }
 }
@@ -322,7 +328,7 @@ pub unsafe fn enable() {
 }
 
 #[no_mangle]
-static INTERRUPT_TABLE_HANDLE: IDTHandle = IDTHandle::new(unsafe { &INTERRUPT_TABLE });
+static mut INTERRUPT_TABLE_HANDLE: IDTHandle = IDTHandle::null();
 #[no_mangle]
 static mut INTERRUPT_TABLE: IDTable = IDTable::empty();
 
@@ -363,10 +369,9 @@ impl IDTable {
         self.entries.len() * mem::size_of::<InterruptGate>()
     }
     pub fn set(&mut self, index: usize, descriptor: InterruptGate) -> InterruptGate {
-        debug_assert!(index < self.entries.len(), "Invalid index for IDTable");
-        let old: InterruptGate;
+        assert!(index < self.entries.len(), "Invalid index for IDTable");
         self.lock.acquire();
-        old = self.entries[index];
+        let old = self.entries[index];
         self.entries[index] = descriptor;
         self.lock.release();
         old
@@ -382,7 +387,7 @@ mod tests {
 
     #[test]
     fn integrity_tests() {
-        debug_assert!(
+        assert!(
             mem::size_of::<InterruptGate>() == 8,
             "Invalid size of IDTEntry"
         );

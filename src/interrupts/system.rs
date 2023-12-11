@@ -1,5 +1,5 @@
 use core::{u8, usize};
-use crate::{bitflags, error_trap, memory, naked_trap, process};
+use crate::{bitflags, error_trap, log, memory, naked_trap, process};
 use crate::interrupts::{CallbackInfo, IDTable, InterruptStackFrame, IrqLine, pic};
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
@@ -23,7 +23,7 @@ bitflags!(
     RESERVED_BIT_CAUSE = 0b1000,
     FETCH_CAUSE = 0b10000 //the cause is instruction fetch from page
 );
-
+#[inline(never)]
 pub fn init_traps(table: &mut IDTable) {
     for i in 0..IDTable::TRAP_COUNT {
         table.set(i, naked_trap!(unknown_trap));
@@ -59,44 +59,80 @@ fn init_timer(info: CallbackInfo) -> &'static InterruptObject {
     timer_object
 }
 
-pub extern "x86-interrupt" fn syscall(frame: &mut InterruptStackFrame) {}
+pub extern "x86-interrupt" fn syscall(frame: &mut InterruptStackFrame) {
+    let id: usize;
+    unsafe {
+        core::arch::asm!(
+        "",
+        out("eax") id,
+        options(preserves_flags, nomem, nostack)
+        );
+    }
+    log!("syscall happened {}", id);
+}
 
-pub extern "x86-interrupt" fn division_by_zero(_from: &mut InterruptStackFrame) {}
+pub extern "x86-interrupt" fn division_by_zero(_from: &mut InterruptStackFrame) {
+    log!("divizion by zero");
+}
 
-pub extern "x86-interrupt" fn debug(frame: &mut InterruptStackFrame) {}
+pub extern "x86-interrupt" fn debug(frame: &mut InterruptStackFrame) {
+    log!("debug int");
+}
 
-pub extern "x86-interrupt" fn nonmaskable(frame: &mut InterruptStackFrame) {}
+pub extern "x86-interrupt" fn nonmaskable(frame: &mut InterruptStackFrame) {
+    log!("nmi int");
+}
 
-pub extern "x86-interrupt" fn breakpoint(frame: &mut InterruptStackFrame) {}
+pub extern "x86-interrupt" fn breakpoint(frame: &mut InterruptStackFrame) {
+    log!("breakpoint");
+}
 
-pub extern "x86-interrupt" fn overflow(frame: &mut InterruptStackFrame) {}
+pub extern "x86-interrupt" fn overflow(frame: &mut InterruptStackFrame) {
+    log!("overflow");
+}
 
-pub extern "x86-interrupt" fn bound_check(frame: &mut InterruptStackFrame) {}
+pub extern "x86-interrupt" fn bound_check(frame: &mut InterruptStackFrame) {
+    log!("bound check failed");
+}
 
-pub extern "x86-interrupt" fn invalid_opcode(frame: &mut InterruptStackFrame) {}
+pub extern "x86-interrupt" fn invalid_opcode(frame: &mut InterruptStackFrame) {
+    log!("invalid opcode int");
+}
 
-pub extern "x86-interrupt" fn device_not_available(frame: &mut InterruptStackFrame) {}
+pub extern "x86-interrupt" fn device_not_available(frame: &mut InterruptStackFrame) {
+    log!("device not available");
+}
 
 //we can do nothing
 pub extern "x86-interrupt" fn double_fault(frame: &mut InterruptStackFrame, code: usize) {
     panic!("The double fault exception occurs. We can nothing...(");
 }
 
-pub extern "x86-interrupt" fn invalid_tss(frame: &mut InterruptStackFrame, code: usize) {}
+pub extern "x86-interrupt" fn invalid_tss(frame: &mut InterruptStackFrame, code: usize) {
+    log!("Invalid tss code={}",code);
+}
 
-pub extern "x86-interrupt" fn invalid_segment(frame: &mut InterruptStackFrame, code: usize) {}
+pub extern "x86-interrupt" fn invalid_segment(frame: &mut InterruptStackFrame, code: usize) {
+    log!("invalid segment");
+}
 
-pub extern "x86-interrupt" fn stack_fault(frame: &mut InterruptStackFrame, code: usize) {}
+pub extern "x86-interrupt" fn stack_fault(frame: &mut InterruptStackFrame, code: usize) {
+    log!("stack fault");
+}
 
 
-pub extern "x86-interrupt" fn general_protection(frame: &mut InterruptStackFrame, code: usize) {}
+pub extern "x86-interrupt" fn general_protection(frame: &mut InterruptStackFrame, code: usize) {
+    log!("general protection fault");
+}
 
 pub extern "x86-interrupt" fn page_fault(_frame: &mut InterruptStackFrame, error_code: usize) {
     let fault_code = PageFaultError::wrap(error_code);
     let _code = fault_code.contains_with_mask(PageFaultError::CAUSE_MASK, PageFaultError::MODE_MASK);
 }
 
-pub extern "x86-interrupt" fn alignment_check(frame: &mut InterruptStackFrame, code: usize) {}
+pub extern "x86-interrupt" fn alignment_check(frame: &mut InterruptStackFrame, code: usize) {
+    log!("alignment check failed");
+}
 
 ///By default, unknown trap is handled by this function. Even if real error code present on stack
 pub extern "x86-interrupt" fn unknown_trap(_frame: &mut InterruptStackFrame) {

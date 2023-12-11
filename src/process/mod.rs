@@ -185,7 +185,7 @@ impl TaskScheduler {
                 memory::slab_dealloc(task_node);
                 continue;
             }
-            debug_assert!(task_node.status != TaskStatus::Active, "No active task can be in delayed queue");
+            assert!(task_node.status != TaskStatus::Active, "No active task can be in delayed queue");
             next_task = iterator.unlink_watched();
         }
         next_task

@@ -1,6 +1,7 @@
 use core::cell::UnsafeCell;
 use core::ptr;
 use AllocationType::{Densely, Split};
+use crate::log;
 use crate::memory::paging::{PageMarker, PageMarkerError};
 use crate::memory::{MemoryMappingFlag, ProcessInfo, Page, PhysicalAddress, VirtualAddress, AllocHandler, DeallocHandler, MemoryMappingRegion, ToPhysicalAddress, PageFlag, OsAllocationError, TaskGate, PHYSICAL_ALLOCATOR};
 use crate::memory::allocators::physical::AllocationError::OutOfMemory;
@@ -42,20 +43,31 @@ impl PhysicalAllocator {
         let free_pages = UnsafeCell::new(free_pages);
         Self { free_pages, lock }
     }
-    #[deprecated]
-    pub fn dealloc_page_by_offset(&mut self, offset: PhysicalAddress) {
-        unsafe {
-            let mut node = ListNode::<Page>::wrap_page(offset);
-            node.as_mut().free();
-        }
-    }
     ///Be careful with such method: it should, theoretically, batch page in solid memory region, but, truly, doesn't
-    pub fn dealloc_page(&self, page: &'static mut ListNode<Page>) {
+    pub fn dealloc_page(&self, page: &mut ListNode<Page>) {
         page.free();
         if !page.is_used() {
             let mut list = self.synchronized_pages();
             list.push_back(page);
         }
+    }
+    pub fn fast_pages(&'static self, pages_count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+        let mut list = LinkedList::<'static, Page>::empty();
+        for _ in 0..pages_count {
+            let page_result = self.alloc_pages(1);
+            match page_result {
+                Ok(page_list) => {
+                    list.splice(page_list);
+                }
+                Err(error_code) => {
+                    for page in list.iter_mut() {
+                        self.dealloc_page(page);
+                    }
+                    return Err(error_code);
+                }
+            }
+        }
+        Ok(list)
     }
     ///the method try to unite page with existing list
     unsafe fn dealloc_and_align(&self, page: &'static mut ListNode<Page>) {
@@ -64,6 +76,7 @@ impl PhysicalAllocator {
         todo!()
     }
     //allocate continuous memory region
+    #[inline(never)]
     pub fn alloc_pages(&self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         self.alloc_densely(count)
     }
@@ -73,9 +86,11 @@ impl PhysicalAllocator {
         let mut last_offset_option: Option<PhysicalAddress> = None;
         let mut first_page_option: Option<&ListNode<Page>> = None;
         for page in pages.iter() {
-            if let Some(first_page) = first_page_option && ptr::eq(page, first_page) {
-                return Err(NoMemory);
-            } else if first_page_option.is_none() {
+            if let Some(first_page) = first_page_option {
+                if ptr::eq(first_page, page) {
+                    return Err(NoMemory);
+                }
+            } else {
                 first_page_option = Some(page);
             }
             if let Some(offset) = last_offset_option && page.as_physical() == offset + Page::SIZE {
@@ -83,6 +98,7 @@ impl PhysicalAllocator {
                     .map(|offset| offset.saturating_add(Page::SIZE));
                 longest += 1;
             } else {
+                last_offset_option = Some(page.as_physical());
                 longest = 1;
             }
             if longest == count {

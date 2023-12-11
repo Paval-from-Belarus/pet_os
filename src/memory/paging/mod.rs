@@ -2,12 +2,12 @@ pub(crate) mod table;
 
 use core::arch::asm;
 use core::cell::UnsafeCell;
-use core::slice;
+use core::{ptr, slice};
 use core::intrinsics::unreachable;
 use core::mem::MaybeUninit;
 use core::ptr::{addr_of_mut, NonNull};
 use table::{RefTable, RefTableEntry};
-use crate::{bitflags, declare_constants, memory};
+use crate::{bitflags, declare_constants, log, memory};
 use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector, TaskGate, TaskStateDescriptor, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
 use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
 use crate::utils::{LinkedList, Zeroed};
@@ -72,8 +72,8 @@ impl GDTTable {
         self.task = task;
         unsafe {
             asm!(
-            "ltr {}",
-            in(reg) u16::from(SegmentSelector::TASK),
+            "ltr ax",
+            in("ax") u16::from(SegmentSelector::TASK),
             options(preserves_flags, nomem, nostack));
         }
     }
@@ -93,7 +93,7 @@ pub struct GDTEntry {
 #[repr(C, packed)]
 pub struct GDTHandle {
     table_size: u16,
-    table: *mut GDTTable,
+    table: PhysicalAddress,
 }
 
 ///The common information about physical memory region
@@ -123,9 +123,12 @@ impl PagingProperties {
     pub fn heap_offset(&self) -> VirtualAddress {
         self.heap_offset
     }
+    #[cfg(target_arch = "x86")]
     pub fn gdt(&self) -> NonNull<GDTTable> {
         unsafe {
-            let raw_table = (*self.handle).table;
+            // ptr::read_unaligned(&self.(
+            let table_offset = (*self.handle).table;
+            let raw_table = table_offset.as_virtual() as *mut GDTTable;
             NonNull::new_unchecked(raw_table)
         }
     }
@@ -216,6 +219,10 @@ bitflags!(
 impl PageMarker {
     pub fn wrap(directory: RefTable<DirEntry>, alloc_handler: AllocHandler, dealloc_handler: DeallocHandler) -> Self {
         Self { directory, alloc_handler, dealloc_handler }
+    }
+    #[deprecated]
+    pub fn set_dealloc_handler(&mut self, handler: DeallocHandler) {
+        self.dealloc_handler = handler;
     }
     fn alloc_pages(&mut self, page_count: usize) -> Option<PhysicalAddress> {
         (self.alloc_handler)(page_count)

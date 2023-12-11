@@ -4,12 +4,14 @@ use core::arch::asm;
 use crate::utils::io;
 #[macro_export]
 macro_rules! syscall {
-    ($syscall_id:expr $(, eax: $eax:expr)? $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?) => {
-        println!("Syscall_id: {}", $syscall_id);
-        $(println!("eax: {}", $eax);)?
-        $(println!("ecx: {}", $ecx);)?
-        $(println!("edx: {}", $edx);)?
-    };
+    ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?) => ({
+        core::arch::asm!(
+          "int 80h",
+           in("eax") $id
+           $(,in("ecx", $ecx))?
+           $(,in("edx", $edx))?
+        );
+    });
 }
 
 pub unsafe fn wait() {

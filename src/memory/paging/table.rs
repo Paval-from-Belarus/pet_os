@@ -15,7 +15,7 @@ pub trait RefTableEntry {
 
 impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
     pub fn wrap(entries: *mut T, size: usize) -> Self {
-        debug_assert!(!entries.is_null(), "Impossible to create PageDirectory from null pointer");
+        assert!(!entries.is_null(), "Impossible to create PageDirectory from null pointer");
         Self { entries, size }
     }
     //the table will be initialized with default values
@@ -33,7 +33,7 @@ impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
         unsafe { Some(self.get_unchecked(index)) }
     }
     pub unsafe fn get_unchecked(&self, index: usize) -> &T {
-        debug_assert!(index < self.size);
+        assert!(index < self.size);
         let pointer: *mut T = self.entries.add(index);
         &*pointer
     }
@@ -44,7 +44,7 @@ impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
         unsafe { Some(self.get_mut_unchecked(index)) }
     }
     pub unsafe fn get_mut_unchecked(&mut self, index: usize) -> &mut T {
-        debug_assert!(index < self.size);
+        assert!(index < self.size);
         let pointer: *mut T = self.entries.add(index);
         &mut *pointer
     }
