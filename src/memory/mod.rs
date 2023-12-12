@@ -9,7 +9,7 @@ pub use allocators::PhysicalAllocator;
 pub use paging::PagingProperties;
 pub use arch::*;
 
-use crate::{bitflags, declare_constants, log, process};
+use crate::{bitflags, declare_constants, interrupts, log, process};
 use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT, UnmapParamsFlag};
 use core::{mem, ptr};
 use core::arch::asm;
@@ -69,6 +69,7 @@ impl ToVirtualAddress for PhysicalAddress {
 
 ///Return crucial structures for kernel
 ///Without them, it's impossible
+#[inline(never)]
 pub fn init_kernel_space(
     mut allocator: CaptureAllocator,
     directory: RefTable<DirEntry>,
@@ -80,10 +81,10 @@ pub fn init_kernel_space(
     let allocator = PhysicalAllocator::new(free_pages);
     PHYSICAL_ALLOCATOR.set(allocator);
 
-    let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
-    let unmap_flags = UnmapParamsFlag::from(UnmapParamsFlag::TABLES | UnmapParamsFlag::PAGES);
+    // let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
+    // let unmap_flags = UnmapParamsFlag::from(UnmapParamsFlag::TABLES | UnmapParamsFlag::PAGES);
     //the higher addresses are fully mapped by the kernel
-    KERNEL_MARKER.get().unmap_range(VirtualAddress::NULL, boot_mapping_pages, unmap_flags);
+    // KERNEL_MARKER.get().unmap_range(VirtualAddress::NULL, boot_mapping_pages, unmap_flags);
     KERNEL_MARKER.get().set_dealloc_handler(dealloc_physical_page);
     let slab_allocator = SlabAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
         .expect("Failed to initialize slab allocator");
@@ -95,10 +96,9 @@ pub fn enable_task_switching(table: &mut GDTTable) {
     let task = unsafe {
         TASK_STATE.set_io_map(0xFFFF);//setting io_map beyond the TaskState structure -> let's forbid all io instruction in user mode
         TASK_STATE.set_stack_selector(SegmentSelector::DATA);
-        TASK_STATE.set_kernel_stack(0xc0000000);
         TaskStateDescriptor::default(&TASK_STATE as *const TaskState as VirtualAddress, mem::size_of::<TaskState>() - 1)
     };
-    table.set_task(task);
+    table.load_task(task);
 }
 
 ///this method is conventional way to free page acquired by asm stub

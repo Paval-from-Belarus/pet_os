@@ -1,6 +1,6 @@
 use core::{u8, usize};
-use crate::{bitflags, error_trap, log, memory, naked_trap, process};
-use crate::interrupts::{CallbackInfo, IDTable, InterruptStackFrame, IrqLine, pic};
+use crate::{bitflags, declare_constants, error_trap, get_eax, log, memory, naked_trap, process, set_eax};
+use crate::interrupts::{CallbackInfo, IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT, pic};
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
 use crate::utils::SimpleList;
@@ -25,7 +25,7 @@ bitflags!(
 );
 #[inline(never)]
 pub fn init_traps(table: &mut IDTable) {
-    for i in 0..IDTable::TRAP_COUNT {
+    for i in 0..MAX_INTERRUPTS_COUNT { //setting all interrupts to default handler
         table.set(i, naked_trap!(unknown_trap));
     }
     table.set(IDTable::DIVISION_BY_ZERO, naked_trap!(division_by_zero));
@@ -58,21 +58,23 @@ fn init_timer(info: CallbackInfo) -> &'static InterruptObject {
     timer_object.add(info);
     timer_object
 }
-
+declare_constants!(
+    pub usize,
+    RESERVED_SYSCALL = 0xFFFF_FFFF, "No function to zero can be used; this function used to test system initialization";
+    INVALID = 0;
+);
 pub extern "x86-interrupt" fn syscall(frame: &mut InterruptStackFrame) {
-    let id: usize;
-    unsafe {
-        core::arch::asm!(
-        "",
-        out("eax") id,
-        options(preserves_flags, nomem, nostack)
-        );
+    let id: usize = unsafe { get_eax!() };
+    if id == RESERVED_SYSCALL {
+        log!("interrupts are initialized");
+        unsafe { set_eax!(1) };
+    } else {
+        unsafe { set_eax!(INVALID) };
     }
-    log!("syscall happened {}", id);
 }
 
 pub extern "x86-interrupt" fn division_by_zero(_from: &mut InterruptStackFrame) {
-    log!("divizion by zero");
+    log!("division by zero");
 }
 
 pub extern "x86-interrupt" fn debug(frame: &mut InterruptStackFrame) {

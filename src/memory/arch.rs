@@ -82,8 +82,7 @@ bitflags!(
     TSS_FREE_32BIT = SystemType::RESERVED | 0b1001,
     TSS_BUSY_32BIT = SystemType::RESERVED | 0b1011,
     CALL_32BIT = SystemType::RESERVED | 0b1100,
-    INTERRUPT = SystemType::RESERVED |0b1110,
-    INTERRUPT_32BIT = SystemType::RESERVED | 0b1111
+    INTERRUPT_32BIT = SystemType::RESERVED | 0b1110
 );
 pub trait DescriptorType {
     fn bits(&self) -> u8;
@@ -212,7 +211,7 @@ impl TaskStateDescriptor {
     pub fn default(base: VirtualAddress, limit: usize) -> Self {
         let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
         let system_type = SystemType::wrap(SystemType::TSS_FREE_32BIT);
-        let flags = DescriptorFlags::new(false, ring, system_type);
+        let flags = DescriptorFlags::new(true, ring, system_type);
         let mut instance = TaskStateDescriptor::null();
         instance.set_base(base.as_physical());
         instance.set_limit(limit);
@@ -297,6 +296,7 @@ impl Descriptor for InterruptGate {}
 impl InterruptGate {
     /// The default interrupt gate is kernel ring and not present
     pub fn default(handler_offset: VirtualAddress, selector: SegmentSelector, flags: SystemType) -> InterruptGate {
+        // let physical_offset = handler_offset.as_physical();
         let lower_offset = (handler_offset & 0xFFFF) as u16;
         let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
         let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);

@@ -41,7 +41,6 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
 
 use core::arch::asm;
 use core::ptr;
-use core::slice::SliceIndex;
 use utils::logging;
 
 #[no_mangle]
@@ -64,13 +63,6 @@ pub fn rust_main(properties: &PagingProperties) {
     let heap_offset = properties.heap_offset();
     memory::init_kernel_space(allocator, dir_table, heap_offset);
     interrupts::init();
-    unsafe {
-        asm!(
-        "int 2h",
-        options(nostack, nomem)
-        )
-    };
-    unsafe { syscall!(12) };
     let gdt = unsafe { properties.gdt().as_mut() };
     memory::enable_task_switching(gdt);
     let thread_1 = process::new_task(task1, ptr::null_mut());

@@ -2,10 +2,11 @@ pub(crate) mod table;
 
 use core::arch::asm;
 use core::cell::UnsafeCell;
-use core::{ptr, slice};
+use core::{mem, ptr, slice};
 use core::intrinsics::unreachable;
 use core::mem::MaybeUninit;
 use core::ptr::{addr_of_mut, NonNull};
+use static_assertions::assert_eq_size;
 use table::{RefTable, RefTableEntry};
 use crate::{bitflags, declare_constants, log, memory};
 use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector, TaskGate, TaskStateDescriptor, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
@@ -63,12 +64,13 @@ pub struct GDTTable {
     user_data: UnsafeCell<MemoryDescriptor>,
     task: TaskStateDescriptor,
 }
+assert_eq_size!(GDTTable, [usize; 2 * 6]);
 
 impl GDTTable {
     pub const fn null() {
         unsafe { MaybeUninit::zeroed().assume_init() }
     }
-    pub fn set_task(&mut self, task: TaskStateDescriptor) {
+    pub fn load_task(&mut self, task: TaskStateDescriptor) {
         self.task = task;
         unsafe {
             asm!(
@@ -77,8 +79,6 @@ impl GDTTable {
             options(preserves_flags, nomem, nostack));
         }
     }
-    //load the GDT into registers
-    pub unsafe fn load(&self) {}
 }
 
 pub struct GDTEntry {

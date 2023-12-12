@@ -3,11 +3,11 @@ mod system;
 pub(crate) mod pic;
 mod lock;
 
-use crate::memory::{InterruptGate, PhysicalAddress, PrivilegeLevel, SegmentSelector, SystemType, ToPhysicalAddress, VirtualAddress};
+use crate::memory::{InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, ToPhysicalAddress, VirtualAddress};
 use core::{mem, ptr};
 use core::arch::asm;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use crate::{declare_constants, log, memory};
+use crate::{declare_constants, get_eax, memory, syscall};
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
@@ -90,7 +90,7 @@ impl From<PicLine> for IrqLine {
 impl IrqLine {
     declare_constants!(
     pub IrqLine,
-    SYS_TIMER = irq_line!(33, IRQ0), "Scheduler and company";
+    SYS_TIMER = irq_line!(32, IRQ0), "Scheduler and company";
     KEYBOARD = irq_line!(34, IRQ1);
     CASCADE_SLAVE = irq_line!(35, IRQ2);
     COM1 = irq_line!(36, IRQ3);
@@ -111,7 +111,7 @@ impl IrqLine {
     pub usize,
         //The mapping of IRQ lines to IDT Table
     //The master's interrupts
-    IRQ_MASTER_OFFSET = 33, "The first interrupt for master";
+    IRQ_MASTER_OFFSET = 32, "The first interrupt for master";
     IRQ_SLAVE_OFFSET = 41, "The first interrupt for slave"
     );
 }
@@ -176,7 +176,6 @@ unsafe fn enter_kernel_trap() {
     "pusha",
     "push ax", //save ax from future changing
     options(preserves_flags));
-
     asm!(
     "mov ds, ax",
     "mov es, ax",
@@ -212,7 +211,13 @@ pub fn init() {
         in("eax") &INTERRUPT_TABLE_HANDLE
         );
     }
-    log!("interrupts are initialized");
+    unsafe {
+        syscall!(system::RESERVED_SYSCALL);
+        let code: usize = get_eax!();
+        if code == system::INVALID {
+            panic!("failed to init interrupts");
+        }
+    };
 }
 
 #[no_mangle]
@@ -267,16 +272,15 @@ const fn suppress_irq(is_processed: bool, context: *mut ()) -> bool {
 
 /// set custom interrupt handler
 pub fn set(index: usize, descriptor: InterruptGate) -> InterruptGate {
-    let old = unsafe {
+    unsafe {
         INTERRUPT_TABLE.set(index, descriptor)
-    };
-    old
+    }
 }
 
 #[repr(C, packed)]
 struct IDTHandle {
     table_size: u16,
-    table_offset: PhysicalAddress,
+    table_offset: *const InterruptGate,
 }
 
 unsafe impl Sync for IDTHandle {}
@@ -297,13 +301,13 @@ impl IDTHandle {
     pub const fn null() -> Self {
         Self {
             table_size: 0,
-            table_offset: PhysicalAddress::NULL,
+            table_offset: ptr::null_mut(),
         }
     }
-    pub fn new(table: &IDTable) -> Self {
+    pub const fn new(table: &IDTable) -> Self {
         IDTHandle {
             table_size: table.byte_size().saturating_sub(1) as u16,
-            table_offset: (table.entries.as_ptr() as VirtualAddress).as_physical(),
+            table_offset: table.entries.as_ptr(),
         }
     }
 }
@@ -313,8 +317,7 @@ static INTERRUPT_COUNTER: AtomicUsize = AtomicUsize::new(1);//by default, interr
 pub unsafe fn disable() {
     asm!(
     "cli",
-    options(preserves_flags, nomem, nostack));
-
+    options(nomem, nostack));
     INTERRUPT_COUNTER.fetch_add(1, Ordering::SeqCst);
 }
 
@@ -323,12 +326,12 @@ pub unsafe fn enable() {
     if INTERRUPT_COUNTER.load(Ordering::SeqCst) == 0 {
         asm!(
         "sti",
-        options(preserves_flags, nomem, nostack));
+        options(nomem, nostack));
     }
 }
 
 #[no_mangle]
-static mut INTERRUPT_TABLE_HANDLE: IDTHandle = IDTHandle::null();
+static mut INTERRUPT_TABLE_HANDLE: IDTHandle = unsafe { IDTHandle::new(&INTERRUPT_TABLE) };
 #[no_mangle]
 static mut INTERRUPT_TABLE: IDTable = IDTable::empty();
 
