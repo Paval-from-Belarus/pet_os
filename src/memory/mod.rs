@@ -13,6 +13,7 @@ use crate::{bitflags, declare_constants, interrupts, log, process};
 use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT, UnmapParamsFlag};
 use core::{mem, ptr};
 use core::arch::asm;
+use core::intrinsics::assert_mem_uninitialized_valid;
 use core::mem::MaybeUninit;
 use core::slice::SliceIndex;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -96,7 +97,7 @@ pub fn enable_task_switching(table: &mut GDTTable) {
     let task = unsafe {
         TASK_STATE.set_io_map(0xFFFF);//setting io_map beyond the TaskState structure -> let's forbid all io instruction in user mode
         TASK_STATE.set_stack_selector(SegmentSelector::DATA);
-        TaskStateDescriptor::default(&TASK_STATE as *const TaskState as VirtualAddress, mem::size_of::<TaskState>() - 1)
+        TaskStateDescriptor::active(&TASK_STATE as *const TaskState as VirtualAddress, mem::size_of::<TaskState>() - 1)
     };
     table.load_task(task);
 }
@@ -367,7 +368,7 @@ pub fn physical_dealloc(offset: *mut u8) {
 pub unsafe fn switch_to_task(task: &'static mut ThreadTask) {
     TASK_STATE.set_kernel_stack(task.kernel_stack + process::TASK_STACK_SIZE);
     let mut marker = if task.parent.is_some() {
-        unreachable!("Process functionality is not implemeted")
+        unreachable!("Process functionality is not implemented")
     } else {
         KERNEL_MARKER.get()
     };
@@ -375,7 +376,11 @@ pub unsafe fn switch_to_task(task: &'static mut ThreadTask) {
     table.load();
 }
 
-pub unsafe fn switch_to_kernel() {}
+pub unsafe fn switch_to_kernel() {
+    let mut marker = KERNEL_MARKER.get();
+    let table = marker.table();
+    table.load();
+}
 
 pub fn alloc_proc() -> Result<ProcessInfo, OsAllocationError> {
     let mut entries = physical_alloc(TABLE_ENTRIES_COUNT * mem::size_of::<DirEntry>())?;

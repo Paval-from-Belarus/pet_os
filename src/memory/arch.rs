@@ -208,7 +208,7 @@ pub struct TaskStateDescriptor {
 }
 assert_eq_size!(TaskStateDescriptor, [u32; 2]);
 impl TaskStateDescriptor {
-    pub fn default(base: VirtualAddress, limit: usize) -> Self {
+    pub fn active(base: VirtualAddress, limit: usize) -> Self {
         let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
         let system_type = SystemType::wrap(SystemType::TSS_FREE_32BIT);
         let flags = DescriptorFlags::new(true, ring, system_type);

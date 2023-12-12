@@ -286,13 +286,17 @@ pub fn sleep(milliseconds: usize) {
     let mut scheduler = SCHEDULER.get();
     let blocked = scheduler.block_current();
     blocked.start_time = clocks::get_time_since_boot() + milliseconds;
-    SLEEPING_TASKS.get().push_back(blocked.as_simple());
-    unsafe { switch_context(&mut blocked.context, scheduler.context) };
+    let mut raw_blocked = NonNull::from(blocked);
+    unsafe {
+        SLEEPING_TASKS.get().push_back(raw_blocked.as_mut().as_simple());
+        switch_context(&mut raw_blocked.as_mut().context, scheduler.context);
+    }
 }
 
 pub fn init() -> CallbackInfo {
     clocks::init();
     SCHEDULER.set(TaskScheduler::new());
+    SLEEPING_TASKS.set(SimpleList::empty());
     CallbackInfo::default(on_timer)
 }
 
@@ -323,7 +327,7 @@ fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
     true
 }
 
-static SLEEPING_TASKS: SpinLockLazyCell<SimpleList<'static, ListNodeWrapper<ThreadTask>>> = SpinLockLazyCell::empty();
+static SLEEPING_TASKS: InterruptableLazyCell<SimpleList<'static, ListNodeWrapper<ThreadTask>>> = InterruptableLazyCell::empty();
 static SCHEDULER: InterruptableLazyCell<TaskScheduler> = InterruptableLazyCell::empty();
 static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(1);
 

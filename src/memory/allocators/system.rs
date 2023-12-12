@@ -205,7 +205,15 @@ impl SlabAllocatorInner {
     fn virtual_alloc(&mut self, pages_count: usize) -> Result<VirtualAddress, OsAllocationError> {
         let pages = self.allocator.fast_pages(pages_count)?;
         let current_offset = self.heap_offset;
+        let mut first_page_option: Option<&ListNode<Page>> = None;
         for page in pages.iter() {
+            if let Some(first_page) = first_page_option {
+                if ptr::eq(first_page, page) {
+                    break;
+                }
+            } else {
+                first_page_option = Some(page);
+            }
             self.commit(page.as_physical(), 1);
         }
         Ok(current_offset)
