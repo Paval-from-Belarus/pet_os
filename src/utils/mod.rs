@@ -6,7 +6,7 @@ mod singly_linked_list;
 mod spin_box;
 
 pub use spin_box::SpinBox;
-pub use doubly_linked_list::{LinkedList, ListNode};
+pub use doubly_linked_list::{LinkedList, ListNode, ListNodeData, ListNodeHeader};
 pub use singly_linked_list::{SimpleList, SimpleListNode, ListNodeWrapper, ToSimpleListNode};
 #[macro_export]
 macro_rules! bitflags {

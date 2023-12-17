@@ -23,16 +23,16 @@ struct MemBounds {
 #[derive(Copy, Clone)]
 pub struct SlabPiece(u16);
 
-pub struct SlabAllocator {
+pub struct SystemAllocator {
     inner: UnsafeCell<SlabAllocatorInner>,
     //the list of entries ready to be used
     free_pool: UnsafeCell<SimpleList<'static, SlabEntry>>,
     lock: SpinLock,
 }
 
-unsafe impl Send for SlabAllocator {}
+unsafe impl Send for SystemAllocator {}
 
-unsafe impl Sync for SlabAllocator {}
+unsafe impl Sync for SystemAllocator {}
 
 struct SlabAllocatorInner {
     //any pool should never be empty
@@ -131,14 +131,14 @@ impl SlabEntry {
 }
 
 //each method of this struct is thread-safe
-impl SlabAllocator {
+impl SystemAllocator {
     declare_constants!(
       pub usize,
       POOL_SIZE = 4, "the default size of pool";
     );
     pub fn new(allocator: &'static PhysicalAllocator,
                heap_offset: VirtualAddress,
-    ) -> Result<SlabAllocator, OsAllocationError> {
+    ) -> Result<SystemAllocator, OsAllocationError> {
         let mut free_pool = SimpleList::<'static, SlabEntry>::empty();
         let mut inner = SlabAllocatorInner::empty(allocator, heap_offset);
         inner.enlarge_pool(&mut free_pool, Self::POOL_SIZE)?;

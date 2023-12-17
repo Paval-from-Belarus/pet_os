@@ -117,7 +117,7 @@ pub struct ThreadTask {
     pub start_time: usize,
     //the process context for thread
     pub parent: Option<&'static mut ProcessInfo>,
-    pub files: SimpleList<'static, FileHandle>,
+    pub files: SimpleList<'static, File>,
 }
 
 impl ThreadTask {
@@ -331,4 +331,13 @@ static SLEEPING_TASKS: InterruptableLazyCell<SimpleList<'static, ListNodeWrapper
 static SCHEDULER: InterruptableLazyCell<TaskScheduler> = InterruptableLazyCell::empty();
 static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(1);
 
-pub struct FileHandle {}
+pub struct File {
+    pub ref_count: AtomicUsize
+}
+
+pub struct FilePool {
+    //the current count of open files
+    file_count: usize,
+    //the next index of file
+    next_file: usize,
+}

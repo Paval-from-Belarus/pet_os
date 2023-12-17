@@ -11,6 +11,7 @@
 #![feature(allocator_api)]
 #![feature(pointer_byte_offsets)]
 #![feature(ptr_sub_ptr)]
+#![feature(maybe_uninit_uninit_array)]
 // #![feature(const_mut_refs)]
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");

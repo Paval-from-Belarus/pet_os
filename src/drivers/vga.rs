@@ -77,7 +77,15 @@ pub struct Writer {
     color_code: ColorAttribute,
     buffer: &'static mut MemoryBuffer,
 }
+///the essential element of VFS
+pub struct INode {
 
+}
+pub struct FileOperations {
+    owner: Handle,
+    open: fn(NonNull<INode>, NonNull<File>),
+    read: fn()
+}
 impl Writer {
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
@@ -146,8 +154,11 @@ impl Writer {
 
 
 use core::fmt;
+use core::ptr::NonNull;
 use crate::declare_constants;
+use crate::drivers::Handle;
 use crate::memory::PhysicalAddress;
+use crate::process::File;
 
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
@@ -155,6 +166,7 @@ impl fmt::Write for Writer {
         Ok(())
     }
 }
+
 
 fn print_something() {
     // use core::fmt::Write;

@@ -50,6 +50,8 @@ test:
 	$(CARGO) test --target=i686-unknown-linux-gnu -- --show-output
 fix:
 	$(CARGO) fix $(CARGO_FLAGS)
+clippy:
+	$(CARGO) clippy $(CARGO_FLAGS)
 run: image unlock-image
 	$(BOCHS_RUN)
 debug: image unlock-image

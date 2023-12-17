@@ -19,7 +19,7 @@ use core::slice::SliceIndex;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use static_assertions::assert_eq_size;
 use paging::table::{DirEntry, RefTable};
-use crate::memory::allocators::{Alignment, SlabAllocator, SlabPiece};
+use crate::memory::allocators::{Alignment, SystemAllocator, SlabPiece};
 use crate::process::{TaskState, ThreadTask};
 use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
 use crate::utils::{LinkedList, ListNode, SimpleList};
@@ -72,14 +72,13 @@ impl ToVirtualAddress for PhysicalAddress {
 ///Without them, it's impossible
 #[inline(never)]
 pub fn init_kernel_space(
-    mut allocator: CaptureAllocator,
+    allocator: CaptureAllocator,
     directory: RefTable<DirEntry>,
     heap_offset: VirtualAddress,
 ) {
     let marker = PageMarker::wrap(directory, alloc_physical_pages, first_dealloc_handler);
     KERNEL_MARKER.set(marker);
-    let free_pages = collect_free_pages(&mut allocator);
-    let allocator = PhysicalAllocator::new(free_pages);
+    let allocator = PhysicalAllocator::new(allocator);
     PHYSICAL_ALLOCATOR.set(allocator);
 
     // let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
@@ -87,7 +86,7 @@ pub fn init_kernel_space(
     //the higher addresses are fully mapped by the kernel
     // KERNEL_MARKER.get().unmap_range(VirtualAddress::NULL, boot_mapping_pages, unmap_flags);
     KERNEL_MARKER.get().set_dealloc_handler(dealloc_physical_page);
-    let slab_allocator = SlabAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
+    let slab_allocator = SystemAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
         .expect("Failed to initialize slab allocator");
     SLAB_ALLOCATOR.set(slab_allocator);
     log!("memory is initialized");
@@ -106,7 +105,7 @@ pub fn enable_task_switching(table: &mut GDTTable) {
 #[deprecated]
 fn first_dealloc_handler(offset: PhysicalAddress) {
     let mut page = unsafe {
-        let mut node = ListNode::<Page>::wrap_page(offset);
+        let mut node = ListNode::<Page>::map_offset(offset);
         node.as_mut()
     };
     page.take();
@@ -120,31 +119,12 @@ fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
 
 fn dealloc_physical_page(offset: PhysicalAddress) {
     let allocator = PHYSICAL_ALLOCATOR.get();
-    let mut page = unsafe { ListNode::<Page>::wrap_page(offset) };
+    let mut page = unsafe { ListNode::<Page>::map_offset(offset) };
     unsafe {
         allocator.dealloc_page(page.as_mut());
     }
 }
 
-#[inline(never)]
-fn collect_free_pages(allocator: &mut CaptureAllocator) -> LinkedList<'static, Page> {
-    let mut free_pages = LinkedList::<Page>::empty();
-    for pivot in allocator.as_pivots() {
-        let mut mem_offset = pivot.next_offset();
-        for _ in 0..pivot.free_pages_count() {
-            unsafe {
-                let mut node = ListNode::<Page>::wrap_page(mem_offset);
-                let node_index = (node.as_ptr() as VirtualAddress - mem_map_offset() as VirtualAddress) / mem::size_of::<ListNode<Page>>();
-                if node_index >= MEMORY_MAP_SIZE {
-                    break;
-                }
-                free_pages.push_back(node.as_mut());
-            }
-            mem_offset += Page::SIZE;
-        }
-    }
-    free_pages
-}
 
 bitflags!(
     //something info about range???
@@ -420,11 +400,20 @@ impl ToPhysicalAddress for ListNode<Page> {
 }
 
 impl ListNode<Page> {
-    #[deprecated]
-    pub unsafe fn wrap_page(offset: PhysicalAddress) -> NonNull<ListNode<Page>> {
+    pub unsafe fn map_offset(offset: PhysicalAddress) -> NonNull<ListNode<Page>> {
         let page_index: usize = offset >> Page::SHIFT;
         let page_offset = unsafe { mem_map_offset().add(page_index) };
         unsafe { NonNull::new_unchecked(page_offset) }
+    }
+    pub unsafe fn as_slice(&mut self, count: usize) -> &'static [ListNode<Page>] {
+        core::slice::from_raw_parts(self, count)
+    }
+    pub unsafe fn as_slice_mut(&mut self, count: usize) -> &'static mut [ListNode<Page>] {
+        core::slice::from_raw_parts_mut(self, count)
+    }
+    //return the index of page
+    pub unsafe fn index(&self) -> usize {
+        ((self as *const ListNode<Page> as VirtualAddress) - (mem_map_offset() as VirtualAddress)) / mem::size_of::<ListNode<Page>>()
     }
 }
 
@@ -507,7 +496,7 @@ extern "C" {
 
 static mut TASK_STATE: TaskState = TaskState::null();
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> = UnsafeLazyCell::empty();
-static SLAB_ALLOCATOR: UnsafeLazyCell<SlabAllocator> = UnsafeLazyCell::empty();
+static SLAB_ALLOCATOR: UnsafeLazyCell<SystemAllocator> = UnsafeLazyCell::empty();
 static KERNEL_MARKER: SpinLockLazyCell<PageMarker> = SpinLockLazyCell::empty();
 
 #[cfg(test)]
@@ -524,7 +513,7 @@ mod tests {
         let mem_map_virtual_offset: VirtualAddress = unsafe { &mut MEMORY_MAP as *mut MemoryMap as VirtualAddress };
         let page_index = 42;
         let page_virtual_offset = mem_map_virtual_offset + page_index * mem::size_of::<ListNode<Page>>();
-        let page = unsafe { ListNode::<Page>::wrap_page(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
+        let page = unsafe { ListNode::<Page>::map_offset(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
         assert_eq!(page.as_ptr() as VirtualAddress, page_virtual_offset);
         assert_eq!(page_index << Page::SHIFT, unsafe { page.as_ref() }.as_physical());
     }

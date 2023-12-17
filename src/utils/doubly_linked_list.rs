@@ -1,7 +1,24 @@
 use core::{mem, ptr};
+use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
+
+#[repr(C)]
+pub struct ListNodeHeader<T: ListNodeData<T>> {
+    next: NonNull<ListNode<T>>,
+    prev: NonNull<ListNode<T>>,
+}
+
+pub trait ListNodeData<T> {
+    fn cast(self) -> ListNode<T>;
+}
+
+impl<T: ListNodeData<T>> ListNodeHeader<T> {
+    pub unsafe fn cast(&self) -> &ListNode<T> {
+        mem::transmute::<&ListNodeHeader<T>, &ListNode<T>>(self)
+    }
+}
 
 
 #[repr(C)]
@@ -142,6 +159,26 @@ pub struct LinkedList<'a, T: Sized> {
     _marker: PhantomData<&'a mut T>,
 }
 
+pub struct UnlinkableGuard<'a, T> {
+    parent: NonNull<LinkedList<'a, T>>,
+}
+
+impl<'a, T> UnlinkableGuard<'a, T> {
+    pub unsafe fn collect<I: IntoIterator<Item=&'a mut ListNode<T>>>(mut self, iter: I) -> LinkedList<'a, T> {
+        let owner = self.parent.as_mut();
+        let mut target = LinkedList::<T>::empty();
+        for node in iter {
+            if owner.is_empty() {
+                break;
+            }
+            let mut raw_node = NonNull::from(node);
+            owner.remove(raw_node.as_mut());
+            target.push_back(raw_node.as_mut());
+        }
+        target
+    }
+}
+
 impl<'a, T: Sized> LinkedList<'a, T> {
     pub fn empty() -> LinkedList<'a, T> {
         LinkedList {
@@ -165,12 +202,16 @@ impl<'a, T: Sized> LinkedList<'a, T> {
         self.last = None;
     }
     pub fn iter(&self) -> ListIterator<'a, T> {
-        assert!(!self.is_empty());
         ListIterator::new(self)
     }
+    pub fn limit_iter(&self) -> LimitedIterator<'a, ListIterator<'a, T>> {
+        LimitedIterator::new(self.iter())
+    }
     pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
-        assert!(!self.is_empty());
         MutListIterator::new(self)
+    }
+    pub fn limit_iter_mut<'b>(&'b mut self) -> LimitedIterator<'a, MutListIterator<'a, 'b, T>> {
+        LimitedIterator::new(self.iter_mut())
     }
     pub fn is_empty(&self) -> bool {
         assert!(self.last.is_some() && self.first.is_some() || self.last.is_none() && self.first.is_none());
@@ -238,6 +279,16 @@ impl<'a, T: Sized> LinkedList<'a, T> {
             None => {
                 None
             }
+        }
+    }
+    //the only way to modify the current collection with external iterator
+    pub unsafe fn link_guard<'b>(&'b self) -> UnlinkableGuard<'a, T> {
+        // let parent = unsafe {
+        //     let mut raw_ref = NonNull::from(self);
+        //     UnsafeCell::new(raw_ref.as_mut())
+        // };
+        UnlinkableGuard {
+            parent: NonNull::from(self)
         }
     }
     pub fn push_back(&mut self, node: &mut ListNode<T>) {
@@ -323,6 +374,7 @@ impl<'a, T> IntoIterator for &'a mut LinkedList<'a, T> {
     }
 }
 
+
 pub struct ListIterator<'a, T> {
     next: NonNull<ListNode<T>>,
     prev: NonNull<ListNode<T>>,
@@ -331,8 +383,9 @@ pub struct ListIterator<'a, T> {
     _marker: PhantomData<&'a T>,
 }
 
+
 impl<'a, T> ListIterator<'a, T> {
-    pub fn new(list: &LinkedList<T>) -> Self {
+    fn new(list: &LinkedList<T>) -> Self {
         if let Some(first) = list.first && let Some(last) = list.last {
             ListIterator {
                 next: first,
@@ -349,13 +402,26 @@ impl<'a, T> ListIterator<'a, T> {
             }
         }
     }
+    pub fn limit(self) -> LimitedIterator<'a, ListIterator<'a, T>> {
+        LimitedIterator::new(self)
+    }
 }
-//
-// impl<'a, T> FromIterator<&'a ListNode<T>> for LinkedList<'a, T> {
-//     fn from_iter<S: IntoIterator<Item=&'a ListNode<T>>>(iter: S) -> Self {
-//         let mut list = LinkedList::<T>::empty();
-//     }
-// }
+
+impl<'a, T> FromIterator<&'a mut ListNode<T>> for LinkedList<'a, T> {
+    fn from_iter<S: IntoIterator<Item=&'a mut ListNode<T>> +>(mut iter: S) -> Self {
+        let mut list = LinkedList::<T>::empty();
+        // let another_iter: MutListIterator<'a, '_, T> =  iter.into();
+        // let iter_mut = unsafe {
+        //     mem::transmute::<&mut S, &mut MutListIterator<'a, '_, T>>(&mut iter)
+        // };
+        // while let Some(node) = iter_mut.next() {
+        //     let _ = iter_mut.unlink_watched().expect("Already watched");
+        //     list.push_back(node);
+        // }
+        list
+    }
+}
+
 
 //attention that iterator never stops
 impl<'a, T> Iterator for ListIterator<'a, T> {
@@ -394,6 +460,7 @@ pub struct MutListIterator<'a, 'b, T> {
     _marker: PhantomData<&'a mut T>,
 }
 
+
 impl<'a, 'b, T> MutListIterator<'a, 'b, T> {
     fn new(parent: &'b mut LinkedList<'a, T>) -> Self {
         MutListIterator {
@@ -403,6 +470,9 @@ impl<'a, 'b, T> MutListIterator<'a, 'b, T> {
             parent,
             _marker: PhantomData,
         }
+    }
+    pub fn limit(self) -> LimitedIterator<'a, MutListIterator<'a, 'b, T>> {
+        LimitedIterator::new(self)
     }
     ///Such as iterator is lazy primitive, this method unlink previously watched element
     pub fn unlink_watched(&mut self) -> Option<&'a mut ListNode<T>> {
@@ -424,7 +494,7 @@ impl<'a, 'b, T> MutListIterator<'a, 'b, T> {
 }
 
 impl<'a, 'b, T> Iterator for MutListIterator<'a, 'b, T> {
-    type Item = &'b mut ListNode<T>;
+    type Item = &'a mut ListNode<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next {
@@ -439,6 +509,7 @@ impl<'a, 'b, T> Iterator for MutListIterator<'a, 'b, T> {
     }
 }
 
+
 impl<'a, 'b, T> DoubleEndedIterator for MutListIterator<'a, 'b, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         match self.prev {
@@ -450,6 +521,52 @@ impl<'a, 'b, T> DoubleEndedIterator for MutListIterator<'a, 'b, T> {
                 Some(current_ref)
             }
         }
+    }
+}
+
+///to allow the iterator be binary compatible with each iterator, the first field is exactly iterator
+#[repr(C)]
+pub struct LimitedIterator<'a, I> {
+    iter: I,
+    first: Option<NonNull<u8>>,
+    _marker: PhantomData<&'a mut I>,
+}
+
+impl<'a, I> LimitedIterator<'a, I> {
+    fn new(iter: I) -> Self {
+        Self {
+            iter,
+            first: None,
+            _marker: PhantomData,
+        }
+    }
+    fn can_proceed<T>(&mut self, next: &T) -> bool {
+        let raw_next = unsafe {
+            let ref_next = mem::transmute::<&T, &u8>(next);
+            NonNull::from(ref_next)
+        };
+        if let Some(raw_first) = self.first {
+            !raw_next.eq(&raw_first)
+        } else {
+            self.first = Some(raw_next);
+            true
+        }
+    }
+}
+
+impl<'a, I: Iterator> Iterator for LimitedIterator<'a, I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+            .filter(|next| self.can_proceed(next))
+    }
+}
+
+impl<'a, I: DoubleEndedIterator> DoubleEndedIterator for LimitedIterator<'a, I> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back()
+            .filter(|prev| self.can_proceed(prev))
     }
 }
 
@@ -562,6 +679,9 @@ mod tests {
             assert!(has_data(iter.next_back(), 15));
             assert!(has_data(iter.next_back(), 14));
             println!("backward test passed");
+            let something: LinkedList<usize> = list.iter_mut()
+                .skip_while(|node| node.data > 0)
+                .collect();
         }
         unsafe {
             list.clear();
@@ -620,15 +740,27 @@ mod tests {
 
     #[test]
     fn collection_test() {
-        let mut list = LinkedList::<usize>::empty();
         unsafe {
-            let nodes =
-                vec!(ListNode::wrap_data(12),
-                     ListNode::wrap_data(13),
-                     ListNode::wrap_data(14));
+            let nodes = vec!(
+                list_node!(1),
+                list_node!(2),
+                list_node!(3),
+                list_node!(4),
+            );
+            let mut list = LinkedList::<usize>::empty();
+
             for node in nodes.iter() {
                 list.push_back(NonNull::from(node).as_mut());
             }
+            let guard = list.link_guard();
+            let iter = list
+                .iter_mut()
+                .skip_while(|node| node.data < 3)
+                .take(1);
+            let target = guard.collect(iter);
+            let mut test_iter = target.iter().limit();
+            assert_eq!(test_iter.next().unwrap().data, 3);
+            assert!(test_iter.next().is_none());
         }
     }
 
@@ -647,4 +779,7 @@ mod tests {
             assert!(list.remove_first().is_none());
         }
     }
+
+    #[test]
+    fn limit_test() {}
 }

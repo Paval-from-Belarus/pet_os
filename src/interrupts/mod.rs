@@ -160,7 +160,12 @@ impl InterruptGate {
 const MAX_INTERRUPTS_COUNT: usize = 256;
 
 ///the method to registry InterruptObject
-pub fn registry(handle: Handle, line: IrqLine, info: CallbackInfo) {}
+pub fn registry(handle: Handle, line: IrqLine, info: CallbackInfo) {
+    let index = u8::from(line.line) as usize;
+    let interceptors = INTERCEPTORS.get();
+    let manager = interceptors[index];
+    manager.add(info);
+}
 
 //the red zone in thread kernel size:
 //all segment registers + all base registers + InterStackFrame + error code + user-mode switching ― the worst case
@@ -220,9 +225,12 @@ pub fn init() {
     };
 }
 
+extern "C" {
+    static INTERCEPTOR_STUB_ARRAY: [NakedExceptionHandler; pic::LINES_COUNT];
+}
 #[no_mangle]
 static INTERCEPTORS: SpinLockLazyCell<[&'static InterruptObject; pic::LINES_COUNT]> = SpinLockLazyCell::empty();
-
+///the interceptor_stub is invoked by corresponding asm stub for certain interrupt
 #[no_mangle]
 unsafe fn interceptor_stub() {
     let index: usize;
@@ -256,10 +264,6 @@ fn init_interceptors(table: &mut IDTable) {
         table.set(irq_line.interrupt as usize, naked_trap!(trap));
     }
     let _ = INTERCEPTORS.set(interceptors);
-}
-
-extern "C" {
-    static INTERCEPTOR_STUB_ARRAY: [NakedExceptionHandler; pic::LINES_COUNT];
 }
 //this function is invoked directly from interrupt stub
 
