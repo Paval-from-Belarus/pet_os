@@ -3,7 +3,7 @@ use crate::{bitflags, declare_constants, error_trap, get_eax, log, memory, naked
 use crate::interrupts::{CallbackInfo, IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT, pic};
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
-use crate::utils::SimpleList;
+use crate::utils::TinyLinkedList;
 
 //the common handlers
 bitflags!(

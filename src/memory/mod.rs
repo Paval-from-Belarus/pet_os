@@ -22,7 +22,7 @@ use paging::table::{DirEntry, RefTable};
 use crate::memory::allocators::{Alignment, SystemAllocator, SlabPiece};
 use crate::process::{TaskState, ThreadTask};
 use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
-use crate::utils::{LinkedList, ListNode, SimpleList};
+use crate::utils::{LinkedList, ListNode, ListNodeData, ListNodePivot, ListNodePivots, TinyLinkedList, TinyListNodeData};
 
 pub enum ZoneType {
     Usable,
@@ -203,7 +203,7 @@ pub struct ProcessInfo {
     last_page_index: usize,
     //Write | NoPrivilege
     marker: PageMarker,
-    regions: SimpleList<'static, MemoryRegion>,
+    regions: TinyLinkedList<'static, MemoryRegion>,
     last_touched_region: Option<&'static MemoryRegion>,
 }
 
@@ -252,6 +252,7 @@ impl ProcessInfo {
 }
 
 pub struct MemoryRegion {
+    pivot: ListNodePivot<MemoryRegion>,
     parent: NonNull<ProcessInfo>,
     range: Range<VirtualAddress>,
     permissions: MemoryRegionFlag,
@@ -259,6 +260,7 @@ pub struct MemoryRegion {
     //mapped_file: MemoryMappedFile,
     //file_offset: usize
 }
+
 
 impl MemoryRegion {
     pub const fn new() -> Self {
@@ -298,10 +300,19 @@ pub struct MemoryMappingRegion {
 
 #[repr(C)]
 pub struct Page {
+    pivots: ListNodePivots<Page>,
     flags: PageFlag,
     //it's easy to use in calculation, in future should be replace by macro
     //when zero page should be free
     ref_count: AtomicUsize,
+}
+
+unsafe impl ListNodeData for Page {
+    type Item = Page;
+
+    fn pivots(&self) -> NonNull<ListNodePivots<Self::Item>> {
+        NonNull::from(self.pivots)
+    }
 }
 assert_eq_size!(ListNode<Page>, [u8; 16]);
 
@@ -443,11 +454,12 @@ impl Page {
         Self {
             flags: PageFlag::wrap(PageFlag::UNUSED),
             ref_count: AtomicUsize::new(0),
+            pivots: unsafe { ListNodePivots::empty() },
         }
     }
     ///increment reference counter in page
     pub fn take(&self) {
-        let _old_value = self.ref_count.fetch_add(1, Ordering::SeqCst);
+        let _old_value = self.ref_count.fetch_add(1, Ordering::Relaxed);
     }
     pub fn free(&self) {
         let old_value = self.ref_count.fetch_sub(1, Ordering::SeqCst);
@@ -470,7 +482,7 @@ impl Page {
 #[cfg(test)]
 impl MemoryMap {
     pub const fn empty() -> Self {
-        const NODE: ListNode<Page> = unsafe { ListNode::wrap_data(Page::empty()) };
+        const NODE: ListNode<Page> = unsafe { ListNode::new(Page::empty()) };
         let pages: [ListNode<Page>; MEMORY_MAP_SIZE] = [NODE; MEMORY_MAP_SIZE];
         Self { pages }
     }

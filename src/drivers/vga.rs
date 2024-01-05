@@ -1,5 +1,4 @@
 use volatile::Volatile;
-
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

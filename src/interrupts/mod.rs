@@ -228,8 +228,10 @@ pub fn init() {
 extern "C" {
     static INTERCEPTOR_STUB_ARRAY: [NakedExceptionHandler; pic::LINES_COUNT];
 }
+
 #[no_mangle]
 static INTERCEPTORS: SpinLockLazyCell<[&'static InterruptObject; pic::LINES_COUNT]> = SpinLockLazyCell::empty();
+
 ///the interceptor_stub is invoked by corresponding asm stub for certain interrupt
 #[no_mangle]
 unsafe fn interceptor_stub() {
@@ -316,22 +318,16 @@ impl IDTHandle {
     }
 }
 
-static INTERRUPT_COUNTER: AtomicUsize = AtomicUsize::new(1);//by default, interrupts are disabled
-
 pub unsafe fn disable() {
     asm!(
     "cli",
     options(nomem, nostack));
-    INTERRUPT_COUNTER.fetch_add(1, Ordering::SeqCst);
 }
 
 pub unsafe fn enable() {
-    let _ = INTERRUPT_COUNTER.fetch_sub(1, Ordering::SeqCst);
-    if INTERRUPT_COUNTER.load(Ordering::SeqCst) == 0 {
-        asm!(
-        "sti",
-        options(nomem, nostack));
-    }
+    asm!(
+    "sti",
+    options(nomem, nostack));
 }
 
 #[no_mangle]

@@ -6,12 +6,12 @@ use crate::interrupts::{CallbackInfo, pic};
 use crate::{log, memory};
 use crate::drivers::Handle;
 use crate::interrupts::pic::{PicLine};
-use crate::utils::{SimpleList, SimpleListNode};
+use crate::utils::{TinyLinkedList, TinyListNode};
 use crate::utils::atomics::{SpinLock};
 
 ///The manager struct that handle all request for given interrupt.
 pub struct InterruptObject {
-    callbacks: UnsafeCell<SimpleList<'static, CallbackInfo>>,
+    callbacks: UnsafeCell<TinyLinkedList<'static, CallbackInfo>>,
     //the interrupt number
     line: PicLine,
     lock: SpinLock,
@@ -27,7 +27,7 @@ impl InterruptObject {
         MaybeUninit::zeroed().assume_init()
     }
     pub fn new(line: PicLine) -> Self {
-        let callbacks = UnsafeCell::new(SimpleList::empty());
+        let callbacks = UnsafeCell::new(TinyLinkedList::empty());
         let lock = SpinLock::new();
         Self { callbacks, line, lock }
     }
@@ -49,8 +49,8 @@ impl InterruptObject {
     //the registration is appending callback to the end of sequence
     //to remove consider to add DriverHandle
     pub fn add(&self, stack_info: CallbackInfo) {
-        let raw_node = memory::slab_alloc::<SimpleListNode<CallbackInfo>>();
-        let node = raw_node.write(SimpleListNode::wrap_data(stack_info));
+        let raw_node = memory::slab_alloc::<TinyListNode<CallbackInfo>>();
+        let node = raw_node.write(TinyListNode::wrap_data(stack_info));
         self.lock.acquire();
         unsafe {
             (*self.callbacks.get()).push_back(node);

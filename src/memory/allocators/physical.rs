@@ -65,7 +65,10 @@ impl BuddyPiece {
         size
     }
 }
-
+pub struct FreePages {
+    pages: LinkedList<'static, Page>,
+    count: usize
+}
 ///It's a responsibility of caller class to maintain synchronized caller sequence
 ///It's really recommended to use SystemCallQueue to control the order of invocation
 ///All methods are thread-safe
@@ -223,6 +226,20 @@ impl PhysicalAllocator {
     }
     pub fn fast_pages(&'static self, pages_count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         let mut list = LinkedList::<'static, Page>::empty();
+        // let mut rest_pages_count = pages_count;
+        // let mut batch_size = 2;//the initial count of pages to wrap
+        // while rest_pages_count > 0 {
+        //     let batch_result = self.new_alloc(batch_size);
+        //     if batch_result.is_err() && batch_size == 1 {
+        //         //
+        //         return Err(NoMemory);
+        //     } else if batch_size == 2 {
+        //         batch_size = 1;
+        //     }
+        //     if let Ok(batch) = batch_result {
+        //
+        //     }
+        // }
         for _ in 0..pages_count {
             let page_result = self.alloc_pages(1);
             match page_result {

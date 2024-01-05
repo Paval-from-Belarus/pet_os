@@ -12,11 +12,15 @@
 #![feature(pointer_byte_offsets)]
 #![feature(ptr_sub_ptr)]
 #![feature(maybe_uninit_uninit_array)]
-// #![feature(const_mut_refs)]
+#![feature(offset_of)]
+#![feature(negative_impls)]
+#![feature(concat_idents)]
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
 extern crate static_assertions;
 extern crate num_enum;
+extern crate alloc;
+
 
 #[cfg(not(test))]
 #[allow(dead_code)]
@@ -43,6 +47,7 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
 use core::arch::asm;
 use core::ptr;
 use utils::logging;
+use crate::process::TaskPriority;
 
 #[no_mangle]
 #[cfg(not(test))]
@@ -66,15 +71,14 @@ pub fn rust_main(properties: &PagingProperties) {
     interrupts::init();
     let gdt = unsafe { properties.gdt().as_mut() };
     memory::enable_task_switching(gdt);
-    let thread_1 = process::new_task(task1, ptr::null_mut());
-    let thread_2 = process::new_task(task2, ptr::null_mut());
+    let thread_1 = process::new_task(task1, ptr::null_mut(), TaskPriority::HIGH);
+    let thread_2 = process::new_task(task2, ptr::null_mut(), TaskPriority::LOW);
     process::submit_task(thread_1);
     process::submit_task(thread_2);
     process::run();
 }
 
 fn task1(_context: *mut ()) {
-    unsafe { interrupts::enable() };
     log!("task 1 started");
     loop {
         process::sleep(300);
@@ -83,7 +87,6 @@ fn task1(_context: *mut ()) {
 }
 
 fn task2(_context: *mut ()) {
-    unsafe { interrupts::enable() };
     log!("task 2 started");
     loop {
         process::sleep(400);

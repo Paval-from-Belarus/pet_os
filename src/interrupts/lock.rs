@@ -4,6 +4,9 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use crate::interrupts;
 
+
+
+
 ///should be used only in single cpu architectures
 pub struct InterruptableLazyCell<T> {
     cell: UnsafeCell<Option<T>>,

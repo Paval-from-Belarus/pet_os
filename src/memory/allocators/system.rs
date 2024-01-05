@@ -5,7 +5,7 @@ use core::ptr::NonNull;
 use static_assertions::{const_assert};
 use crate::{declare_constants, log, memory};
 use crate::memory::{MemoryMappingRegion, OsAllocationError, Page, PhysicalAddress, PhysicalAllocator, ToPhysicalAddress, VirtualAddress};
-use crate::utils::{LinkedList, ListNode, SimpleList, SimpleListNode, SpinBox, Zeroed};
+use crate::utils::{LinkedList, ListNode, TinyLinkedList, TinyListNode, SpinBox, Zeroed};
 use crate::utils::atomics::SpinLock;
 
 pub enum Alignment {
@@ -26,7 +26,7 @@ pub struct SlabPiece(u16);
 pub struct SystemAllocator {
     inner: UnsafeCell<SlabAllocatorInner>,
     //the list of entries ready to be used
-    free_pool: UnsafeCell<SimpleList<'static, SlabEntry>>,
+    free_pool: UnsafeCell<TinyLinkedList<'static, SlabEntry>>,
     lock: SpinLock,
 }
 
@@ -36,7 +36,7 @@ unsafe impl Sync for SystemAllocator {}
 
 struct SlabAllocatorInner {
     //any pool should never be empty
-    page_pool: SimpleList<'static, SlabEntry>,
+    page_pool: TinyLinkedList<'static, SlabEntry>,
     // free_pool: UnsafeCell<SimpleList<'static, SlabEntry>>,
     allocator: &'static PhysicalAllocator,
     //holds GlobalPageDirectory
@@ -51,7 +51,7 @@ struct SlabEntry {
     pages: LinkedList<'static, Page>,
     reserved: Zeroed<[usize; 2]>,
 }
-const_assert!(Page::SIZE % core::mem::size_of::<SimpleListNode<SlabEntry>>() == 0);
+const_assert!(Page::SIZE % core::mem::size_of::<TinyListNode<SlabEntry>>() == 0);
 
 
 impl SlabPiece {
@@ -139,7 +139,7 @@ impl SystemAllocator {
     pub fn new(allocator: &'static PhysicalAllocator,
                heap_offset: VirtualAddress,
     ) -> Result<SystemAllocator, OsAllocationError> {
-        let mut free_pool = SimpleList::<'static, SlabEntry>::empty();
+        let mut free_pool = TinyLinkedList::<'static, SlabEntry>::empty();
         let mut inner = SlabAllocatorInner::empty(allocator, heap_offset);
         inner.enlarge_pool(&mut free_pool, Self::POOL_SIZE)?;
         Ok(Self {
@@ -173,7 +173,7 @@ impl SystemAllocator {
         let inner = self.synchronized_inner();
         unsafe { inner.leak().dealloc(offset) };
     }
-    fn free_pool(&self) -> &'static mut SimpleList<SlabEntry> {
+    fn free_pool(&self) -> &'static mut TinyLinkedList<SlabEntry> {
         unsafe { &mut *self.free_pool.get() }
     }
     fn synchronized_inner(&self) -> SpinBox<'_, 'static, SlabAllocatorInner> {
@@ -188,7 +188,7 @@ impl SlabAllocatorInner {
         heap_offset: VirtualAddress,
     ) -> Self {
         Self {
-            page_pool: SimpleList::empty(),
+            page_pool: TinyLinkedList::empty(),
             allocator,
             heap_offset,
         }
@@ -240,10 +240,10 @@ impl SlabAllocatorInner {
         }
     }
     #[inline(never)]
-    fn enlarge_pool(&mut self, free_entries: &mut SimpleList<'static, SlabEntry>, entries_count: usize) -> Result<(), OsAllocationError> {
+    fn enlarge_pool(&mut self, free_entries: &mut TinyLinkedList<'static, SlabEntry>, entries_count: usize) -> Result<(), OsAllocationError> {
         let free_entries_count = free_entries.size();
         if free_entries_count < entries_count {
-            let additional_pages = Page::upper_bound((entries_count - free_entries_count) * mem::size_of::<SimpleListNode<SlabEntry>>());
+            let additional_pages = Page::upper_bound((entries_count - free_entries_count) * mem::size_of::<TinyListNode<SlabEntry>>());
             let pages = self.allocator.alloc_pages(additional_pages)?;
             let new_entries = self.commit_new_entries(pages);
             free_entries.splice(new_entries);
@@ -271,11 +271,11 @@ impl SlabAllocatorInner {
         Ok(())
     }
     #[inline(never)]
-    fn commit_new_entries(&mut self, pages: LinkedList<Page>) -> SimpleList<'static, SlabEntry> {
+    fn commit_new_entries(&mut self, pages: LinkedList<Page>) -> TinyLinkedList<'static, SlabEntry> {
         assert!(!pages.is_empty());
-        const ENTRIES_PER_PAGE: usize = Page::SIZE / mem::size_of::<SimpleListNode<SlabEntry>>();
+        const ENTRIES_PER_PAGE: usize = Page::SIZE / mem::size_of::<TinyListNode<SlabEntry>>();
         const_assert!(ENTRIES_PER_PAGE > 0);
-        let mut entries = SimpleList::<SlabEntry>::empty();
+        let mut entries = TinyLinkedList::<SlabEntry>::empty();
         let mut first_page_option: Option<&ListNode<Page>> = None;
         for page in pages.iter() {
             if let Some(first_page) = first_page_option {
@@ -288,13 +288,13 @@ impl SlabAllocatorInner {
             let page_offset = page.as_physical();
             let committed_offset = self
                 .commit(page_offset, 1)
-                .cast::<SimpleListNode<SlabEntry>>();
+                .cast::<TinyListNode<SlabEntry>>();
             let mut current_node = unsafe { committed_offset.add(ENTRIES_PER_PAGE - 1) };
-            let mut next_node: *mut SimpleListNode<SlabEntry> = ptr::null_mut();
+            let mut next_node: *mut TinyListNode<SlabEntry> = ptr::null_mut();
             for _ in 0..ENTRIES_PER_PAGE {
                 let entry = SlabEntry::empty();
                 let node = unsafe {
-                    let node = SimpleListNode::new(entry, next_node);
+                    let node = TinyListNode::new(entry, next_node);
                     current_node.write(node);
                     &mut *current_node
                 };

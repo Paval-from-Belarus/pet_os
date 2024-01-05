@@ -1,81 +1,117 @@
 use core::ptr::NonNull;
 use core::marker::PhantomData;
 use core::mem;
+
 use core::ops::Deref;
 use core::ops::DerefMut;
-use crate::memory::VirtualAddress;
-use crate::utils::ListNode;
+use static_assertions::const_assert_eq;
+use crate::utils::{BorrowingLinkedList, ListNode, ListNodeData, ListNodePivot, ListNodePivots, TinyListNodeData, UnlinkableListGuard};
 
 #[repr(C)]
-pub struct SimpleListNode<T> {
-    next: Option<NonNull<SimpleListNode<T>>>,
-    data: T,
+pub struct TinyListNode<T: Sized> {
+    next: Option<NonNull<TinyListNode<T>>>,
+    _marker: PhantomData<T>,
 }
 
-pub trait ToSimpleListNode<T> {
-    fn as_simple(&mut self) -> &mut SimpleListNode<ListNodeWrapper<T>>;
-}
+//SimpleListNodeData is automatically implemented for ListNodeData
+unsafe impl<T: ListNodeData> TinyListNodeData for T {
+    type Item = T::Item;
 
-#[repr(C)]
-pub struct ListNodeWrapper<T> {
-    _reserved: NonNull<ListNode<T>>,
-    data: T,
-}
+    fn pivot(&self) -> NonNull<ListNodePivot<T>> {
+        unsafe { mem::transmute(self.pivots().as_mut().prev) }
+    }
 
-impl<T> Deref for ListNodeWrapper<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.data
+    fn from(node: NonNull<TinyListNode<Self>>) -> NonNull<Self::Item> {
+        const_assert_eq!()
+        unsafe {mem::transmute(node.as_mut().)}
     }
 }
 
-impl<T> ToSimpleListNode<T> for ListNode<T> {
-    fn as_simple(&mut self) -> &mut SimpleListNode<ListNodeWrapper<T>> {
+impl<T: ListNodeData> ListNodePivots<T> {
+    pub fn wrap_to_simple(&self) -> &TinyListNode<T> {
+        unsafe { mem::transmute::<&NonNull<ListNode<T>>, &TinyListNode<T>>(&self.prev) }
+    }
+    pub fn wrap_mut_to_simple(&mut self) -> &mut TinyListNode<T> {
+        unsafe { mem::transmute::<&mut NonNull<ListNode<T>>, &mut TinyListNode<T>>(&mut self.prev) }
+    }
+}
+
+impl<T: TinyListNodeData> ListNodePivot<T> {
+    pub fn wrap_simple(&self) -> &TinyListNode<T> {
+        unsafe { mem::transmute(self) }
+    }
+    pub fn wrap_mut_simple(&mut self) -> &mut TinyListNode<T> {
+        unsafe { mem::transmute(self) }
+    }
+}
+
+impl<T: TinyListNodeData> TinyListNode<T> {
+    pub fn unwrap_simple(&self) -> &T {
+        unsafe { mem::transmute(self) }
+    }
+    pub fn unwrap_mut_simple(&self) -> &mut T {
+        unsafe { mem::transmute(self) }
+    }
+}
+
+impl<T: ListNodeData> TinyListNode<T> {
+    pub fn unwrap(&self) -> &T {
         unsafe {
-            mem::transmute::<&mut ListNode<T>, &mut SimpleListNode<ListNodeWrapper<T>>>(self)
+            let pivots = self.cast_pivots();
+            (&*pivots).unwrap()
         }
     }
-}
-
-impl<T> SimpleListNode<ListNodeWrapper<T>> {
-    pub fn as_node(&mut self) -> &mut ListNode<T> {
+    pub fn unwrap_mut(&self) -> &T {
         unsafe {
-            mem::transmute::<&mut SimpleListNode<ListNodeWrapper<T>>, &mut ListNode<T>>(self)
+            let pivots = self.cast_pivots();
+            (&mut *pivots).unwrap_mut()
         }
+    }
+    unsafe fn cast_pivots(&self) -> *mut ListNodePivots<T> {
+        let byte_offset = mem::offset_of!(ListNodePivots, prev);
+        (self as *const ListNodePivot<T>)
+            .byte_sub(byte_offset)
+            .cast::<ListNodePivots<T>>()
+            .cast_mut()
     }
 }
 
-impl<T> SimpleListNode<T> {
+impl<T: ListNodeData> TinyListNode<T> {
+    pub fn cast_node(&self) -> &ListNode<T> {
+        unsafe { self.pivots().as_ref().wrap() }
+    }
+    pub fn cast_node_mut(&mut self) -> &mut ListNode<T> {
+        unsafe { self.pivots().as_mut().wrap_mut() }
+    }
+}
+
+impl<T: ListNodeData> ListNode<T> {
+    pub fn cast_node(&self) -> &TinyListNode<T> {
+        unsafe { self.pivots().as_mut().wrap_to_simple() }
+    }
+    pub fn cast_node_mut(&self) -> &mut TinyListNode<T> {
+        unsafe { self.pivots().as_mut().wrap_mut_to_simple() }
+    }
+}
+
+impl<T: TinyListNodeData> TinyListNode<T> {
     pub const fn wrap_data(data: T) -> Self {
         Self {
-            next: None,
-            data,
-        }
-    }
-    pub fn new(data: T, next_ptr: *mut SimpleListNode<T>) -> Self {
-        let next = if next_ptr.is_null() {
-            None
-        } else {
-            let next_ref = unsafe { &mut *next_ptr };
-            Some(NonNull::from(next_ref))
-        };
-        Self {
-            next,
             data,
         }
     }
     pub fn data(&self) -> &T {
         &self.data
     }
-    pub fn set_next(&mut self, next: &mut SimpleListNode<T>) {
-        self.next = Some(NonNull::from(next));
+    pub fn set_next(&mut self, next: &mut TinyListNode<T>) {
+        self.pivot().set_next(Some(next));
     }
     pub fn remove_next(&mut self) {
-        self.next = None;
+        self.pivot().set_next(None);
     }
 }
 
-impl<T> Deref for SimpleListNode<T> {
+impl<T: TinyListNodeData> Deref for TinyListNode<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -83,65 +119,50 @@ impl<T> Deref for SimpleListNode<T> {
     }
 }
 
-impl<T> DerefMut for SimpleListNode<T> {
+impl<T: TinyListNodeData> DerefMut for TinyListNode<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
     }
 }
 
-pub struct SimpleList<'a, T: Sized> {
-    first: Option<NonNull<SimpleListNode<T>>>,
-    last: Option<NonNull<SimpleListNode<T>>>,
+pub struct TinyLinkedList<'a, T: TinyListNodeData + Sized> {
+    first: Option<NonNull<TinyListNode<T>>>,
+    last: Option<NonNull<TinyListNode<T>>>,
     _marker: PhantomData<&'a mut T>,
 }
 
-impl<'a, T> SimpleList<'a, T> {
-    pub fn empty() -> SimpleList<'a, T> {
-        SimpleList {
+pub struct UnlinkableGuard<'a, T: TinyListNodeData> {
+    parent: NonNull<TinyLinkedList<'a, T>>,
+}
+
+
+impl<'a, T: TinyListNodeData> UnlinkableListGuard<'a, TinyLinkedList<'a, T>> for UnlinkableGuard<'a, T> {
+    type Item = &'a mut TinyListNode<T>;
+
+    fn parent(&self) -> NonNull<TinyLinkedList<'a, T>> {
+        self.parent
+    }
+}
+
+impl<'a, T: TinyListNodeData> Default for TinyLinkedList<'a, T> {
+    fn default() -> Self {
+        TinyLinkedList::empty()
+    }
+}
+
+impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a> for TinyLinkedList<'a, T> {
+    type Item = TinyListNode<T>;
+
+    fn empty() -> TinyLinkedList<'a, T> {
+        TinyLinkedList {
             first: None,
             last: None,
             _marker: PhantomData,
         }
     }
-    pub fn is_empty(&self) -> bool {
-        self.first.is_none()
-    }
-    pub fn iter(&self) -> ListIterator<'a, T> {
-        ListIterator::new(self)
-    }
-    pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
-        MutListIterator::new(self)
-    }
-    pub fn splice(&mut self, other: SimpleList<'a, T>) {
-        if self.is_empty() {
-            self.first = other.first;
-            self.last = other.last;
-            return;
-        }
-        if let Some(first) = other.first && let Some(last) = other.last {
-            unsafe { self.splice_bounds(first, last) };
-        } else {
-            assert!(other.is_empty());
-        }
-    }
-    pub fn size(&self) -> usize {
-        self.iter()
-            .count()
-    }
-    pub fn push_front(&mut self, node: &'a mut SimpleListNode<T>) {
-        node.next = self.first;
-        let mut raw_node = NonNull::from(node);
-        unsafe {
-            if let Some(mut old_first) = self.first {
-                raw_node.as_mut().set_next(old_first.as_mut());
-            } else {
-                self.last = Some(raw_node);
-            }
-        }
-        self.first = Some(raw_node);
-    }
+
     ///it's responsibility of upper level to guarantee that data will live still the whole collection
-    pub fn push_back(&mut self, node: &'a mut SimpleListNode<T>) {
+    fn push_back(&mut self, node: &'a mut TinyListNode<T>) {
         unsafe {
             let mut raw_node = NonNull::from(node);
             if let Some(mut old_last) = self.last {
@@ -153,7 +174,19 @@ impl<'a, T> SimpleList<'a, T> {
             self.last = Some(raw_node);
         }
     }
-    pub fn remove(&mut self, node: &'a mut SimpleListNode<T>) {
+    fn push_front(&mut self, node: &'a mut TinyListNode<T>) {
+        node.next = self.first;
+        let mut raw_node = NonNull::from(node);
+        unsafe {
+            if let Some(mut old_first) = self.first {
+                raw_node.as_mut().set_next(old_first.as_mut());
+            } else {
+                self.last = Some(raw_node);
+            }
+        }
+        self.first = Some(raw_node);
+    }
+    fn remove(&mut self, node: &'a mut TinyListNode<T>) {
         assert!(!self.is_empty());
         let mut raw_node = NonNull::from(node);
         if let Some(raw_first) = self.first && let Some(raw_last) = self.last {
@@ -184,9 +217,42 @@ impl<'a, T> SimpleList<'a, T> {
             unreachable!("Remove from empty single list");
         }
     }
+}
+
+impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
+    pub fn is_empty(&self) -> bool {
+        self.first.is_none()
+    }
+    pub fn iter(&self) -> ListIterator<'a, T> {
+        ListIterator::new(self)
+    }
+    pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
+        MutListIterator::new(self)
+    }
+    pub fn link_guard(&self) -> UnlinkableGuard<'a, T> {
+        UnlinkableGuard {
+            parent: NonNull::from(self),
+        }
+    }
+    pub fn splice(&mut self, other: TinyLinkedList<'a, T>) {
+        if self.is_empty() {
+            self.first = other.first;
+            self.last = other.last;
+            return;
+        }
+        if let Some(first) = other.first && let Some(last) = other.last {
+            unsafe { self.splice_bounds(first, last) };
+        } else {
+            assert!(other.is_empty());
+        }
+    }
+    pub fn size(&self) -> usize {
+        self.iter()
+            .count()
+    }
     unsafe fn splice_bounds(&mut self,
-                            other_first: NonNull<SimpleListNode<T>>,
-                            mut other_last: NonNull<SimpleListNode<T>>) {
+                            other_first: NonNull<TinyListNode<T>>,
+                            mut other_last: NonNull<TinyListNode<T>>) {
         if let Some(mut first) = self.first && let Some(_) = self.last {
             other_last.as_mut().set_next(first.as_mut());
             self.first = Some(other_first);
@@ -196,14 +262,14 @@ impl<'a, T> SimpleList<'a, T> {
     }
 }
 
-pub struct ListIterator<'a, T> {
-    next: Option<NonNull<SimpleListNode<T>>>,
+pub struct ListIterator<'a, T: TinyListNodeData> {
+    next: Option<NonNull<TinyListNode<T>>>,
     _marker: PhantomData<&'a T>,
 }
 
 
-impl<'a, T> ListIterator<'a, T> {
-    pub fn new(list: &SimpleList<T>) -> Self {
+impl<'a, T: TinyListNodeData> ListIterator<'a, T> {
+    pub fn new(list: &TinyLinkedList<T>) -> Self {
         ListIterator {
             next: list.first,
             _marker: PhantomData,
@@ -211,8 +277,8 @@ impl<'a, T> ListIterator<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for ListIterator<'a, T> {
-    type Item = &'a SimpleListNode<T>;
+impl<'a, T: TinyListNodeData> Iterator for ListIterator<'a, T> {
+    type Item = &'a TinyListNode<T>;
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self.next {
@@ -226,16 +292,16 @@ impl<'a, T> Iterator for ListIterator<'a, T> {
     }
 }
 
-pub struct MutListIterator<'a, 'b, T> {
-    next: Option<NonNull<SimpleListNode<T>>>,
-    watched: Option<NonNull<SimpleListNode<T>>>,
-    parent: &'b mut SimpleList<'a, T>,
+pub struct MutListIterator<'a, 'b, T: TinyListNodeData> {
+    next: Option<NonNull<TinyListNode<T>>>,
+    watched: Option<NonNull<TinyListNode<T>>>,
+    parent: &'b mut TinyLinkedList<'a, T>,
     _marker: PhantomData<&'a mut T>,
 
 }
 
-impl<'a, 'b, T> MutListIterator<'a, 'b, T> {
-    pub fn new(parent: &'b mut SimpleList<'a, T>) -> Self {
+impl<'a, 'b, T: TinyListNodeData> MutListIterator<'a, 'b, T> {
+    pub fn new(parent: &'b mut TinyLinkedList<'a, T>) -> Self {
         MutListIterator {
             next: parent.first,
             watched: None,
@@ -243,7 +309,7 @@ impl<'a, 'b, T> MutListIterator<'a, 'b, T> {
             _marker: PhantomData,
         }
     }
-    pub fn unlink_watched(&mut self) -> Option<&'a mut SimpleListNode<T>> {
+    pub fn unlink_watched(&mut self) -> Option<&'a mut TinyListNode<T>> {
         let unlinked = match self.watched {
             None => None,
             Some(mut watched) => unsafe {
@@ -256,8 +322,8 @@ impl<'a, 'b, T> MutListIterator<'a, 'b, T> {
     }
 }
 
-impl<'a, 'b, T> Iterator for MutListIterator<'a, 'b, T> {
-    type Item = &'a mut SimpleListNode<T>;
+impl<'a, 'b, T: TinyListNodeData> Iterator for MutListIterator<'a, 'b, T> {
+    type Item = &'a mut TinyListNode<T>;
     fn next(&mut self) -> Option<Self::Item> {
         match self.next {
             None => None,
@@ -279,7 +345,7 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
     use core::ptr::NonNull;
-    use crate::utils::{SimpleList, SimpleListNode};
+    use crate::utils::{BorrowingLinkedList, TinyLinkedList, TinyListNode};
 
 
     #[test]
@@ -295,21 +361,22 @@ mod tests {
         // assert_eq!(skipped, 1);
         assert_eq!(number_iter.next(), Some(&mut 4));
     }
+
     #[test]
     fn splice_test() {
-        let mut list = SimpleList::<usize>::empty();
+        let mut list = TinyLinkedList::<usize>::empty();
         unsafe {
-            let numbers: Vec<SimpleListNode<usize>> = vec!(
-                SimpleListNode::wrap_data(10),
-                SimpleListNode::wrap_data(11),
-                SimpleListNode::wrap_data(12),
-                SimpleListNode::wrap_data(13),
-                SimpleListNode::wrap_data(14),
+            let numbers: Vec<TinyListNode<usize>> = vec!(
+                TinyListNode::wrap_data(10),
+                TinyListNode::wrap_data(11),
+                TinyListNode::wrap_data(12),
+                TinyListNode::wrap_data(13),
+                TinyListNode::wrap_data(14),
             );
             for number in numbers[0..3].iter() {
                 list.push_back(NonNull::from(number).as_mut());
             }
-            let mut other_list = SimpleList::<usize>::empty();
+            let mut other_list = TinyLinkedList::<usize>::empty();
             other_list.push_back(NonNull::from(numbers.get_unchecked(3)).as_mut());
             other_list.push_back(NonNull::from(numbers.get_unchecked(4)).as_mut());
             list.splice(other_list);
