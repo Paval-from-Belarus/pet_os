@@ -4,8 +4,7 @@ use core::mem;
 
 use core::ops::Deref;
 use core::ops::DerefMut;
-use static_assertions::const_assert_eq;
-use crate::utils::{BorrowingLinkedList, ListNode, ListNodeData, ListNodePivot, ListNodePivots, TinyListNodeData, UnlinkableListGuard};
+use crate::utils::{BorrowingLinkedList, ListNode, ListNodeData, TinyListNodeData, UnlinkableListGuard};
 
 #[repr(C)]
 pub struct TinyListNode<T: Sized> {
@@ -13,115 +12,116 @@ pub struct TinyListNode<T: Sized> {
     _marker: PhantomData<T>,
 }
 
+
 //SimpleListNodeData is automatically implemented for ListNodeData
-unsafe impl<T: ListNodeData> TinyListNodeData for T {
-    type Item = T::Item;
 
-    fn pivot(&self) -> NonNull<ListNodePivot<T>> {
-        unsafe { mem::transmute(self.pivots().as_mut().prev) }
-    }
 
-    fn from(node: NonNull<TinyListNode<Self>>) -> NonNull<Self::Item> {
-        const_assert_eq!()
-        unsafe {mem::transmute(node.as_mut().)}
-    }
-}
+// impl<T: ListNodeData> ListNodePivots<T> {
+//     pub fn wrap_to_simple(&self) -> &TinyListNode<T> {
+//         unsafe { mem::transmute::<&NonNull<ListNode<T>>, &TinyListNode<T>>(&self.prev) }
+//     }
+//     pub fn wrap_mut_to_simple(&mut self) -> &mut TinyListNode<T> {
+//         unsafe { mem::transmute::<&mut NonNull<ListNode<T>>, &mut TinyListNode<T>>(&mut self.prev) }
+//     }
+// }
+//
+// impl<T: TinyListNodeData> ListNodePivot<T> {
+//     pub fn wrap_simple(&self) -> &TinyListNode<T> {
+//         unsafe { mem::transmute(self) }
+//     }
+//     pub fn wrap_mut_simple(&mut self) -> &mut TinyListNode<T> {
+//         unsafe { mem::transmute(self) }
+//     }
+// }
+//
+// impl<T: TinyListNodeData> TinyListNode<T> {
+//     pub fn unwrap_simple(&self) -> &T {
+//         unsafe { mem::transmute(self) }
+//     }
+//     pub fn unwrap_mut_simple(&self) -> &mut T {
+//         unsafe { mem::transmute(self) }
+//     }
+// }
 
-impl<T: ListNodeData> ListNodePivots<T> {
-    pub fn wrap_to_simple(&self) -> &TinyListNode<T> {
-        unsafe { mem::transmute::<&NonNull<ListNode<T>>, &TinyListNode<T>>(&self.prev) }
-    }
-    pub fn wrap_mut_to_simple(&mut self) -> &mut TinyListNode<T> {
-        unsafe { mem::transmute::<&mut NonNull<ListNode<T>>, &mut TinyListNode<T>>(&mut self.prev) }
-    }
-}
-
-impl<T: TinyListNodeData> ListNodePivot<T> {
-    pub fn wrap_simple(&self) -> &TinyListNode<T> {
-        unsafe { mem::transmute(self) }
-    }
-    pub fn wrap_mut_simple(&mut self) -> &mut TinyListNode<T> {
-        unsafe { mem::transmute(self) }
-    }
-}
-
-impl<T: TinyListNodeData> TinyListNode<T> {
-    pub fn unwrap_simple(&self) -> &T {
-        unsafe { mem::transmute(self) }
-    }
-    pub fn unwrap_mut_simple(&self) -> &mut T {
-        unsafe { mem::transmute(self) }
-    }
+impl<T: ListNodeData> TinyListNode<T> {
+    // pub fn unwrap(&self) -> &T {
+    //     unsafe {
+    //         let pivots = self.cast_pivots();
+    //         (&*pivots).unwrap()
+    //     }
+    // }
+    // pub fn unwrap_mut(&self) -> &T {
+    //     unsafe {
+    //         let pivots = self.cast_pivots();
+    //         (&mut *pivots).unwrap_mut()
+    //     }
+    // }
+    // unsafe fn cast_pivots(&self) -> *mut ListNodePivots<T> {
+    //     let byte_offset = mem::offset_of!(ListNodePivots, prev);
+    //     (self as *const ListNodePivot<T>)
+    //         .byte_sub(byte_offset)
+    //         .cast::<ListNodePivots<T>>()
+    //         .cast_mut()
+    // }
 }
 
 impl<T: ListNodeData> TinyListNode<T> {
-    pub fn unwrap(&self) -> &T {
-        unsafe {
-            let pivots = self.cast_pivots();
-            (&*pivots).unwrap()
-        }
+    pub fn node(&self) -> &ListNode<T> {
+        unsafe { mem::transmute(self) }
     }
-    pub fn unwrap_mut(&self) -> &T {
-        unsafe {
-            let pivots = self.cast_pivots();
-            (&mut *pivots).unwrap_mut()
-        }
-    }
-    unsafe fn cast_pivots(&self) -> *mut ListNodePivots<T> {
-        let byte_offset = mem::offset_of!(ListNodePivots, prev);
-        (self as *const ListNodePivot<T>)
-            .byte_sub(byte_offset)
-            .cast::<ListNodePivots<T>>()
-            .cast_mut()
-    }
-}
-
-impl<T: ListNodeData> TinyListNode<T> {
-    pub fn cast_node(&self) -> &ListNode<T> {
-        unsafe { self.pivots().as_ref().wrap() }
-    }
-    pub fn cast_node_mut(&mut self) -> &mut ListNode<T> {
-        unsafe { self.pivots().as_mut().wrap_mut() }
+    pub fn node_mut(&mut self) -> &mut ListNode<T> {
+        unsafe { mem::transmute(self) }
     }
 }
 
 impl<T: ListNodeData> ListNode<T> {
-    pub fn cast_node(&self) -> &TinyListNode<T> {
-        unsafe { self.pivots().as_mut().wrap_to_simple() }
+    pub fn tiny(&self) -> &TinyListNode<T> {
+        unsafe { mem::transmute(self) }
     }
-    pub fn cast_node_mut(&self) -> &mut TinyListNode<T> {
-        unsafe { self.pivots().as_mut().wrap_mut_to_simple() }
+    pub fn tiny_mut(&mut self) -> &mut TinyListNode<T> {
+        unsafe { mem::transmute(self) }
+    }
+}
+
+impl<T: TinyListNodeData> From<*mut TinyListNode<T>> for TinyListNode<T> {
+    fn from(value: *mut TinyListNode<T>) -> Self {
+        let next =
+            if value.is_null() {
+                None
+            } else {
+                unsafe { Some(&mut *value) }
+            };
+        Self::new(next)
     }
 }
 
 impl<T: TinyListNodeData> TinyListNode<T> {
-    pub const fn wrap_data(data: T) -> Self {
-        Self {
-            data,
-        }
+    pub const fn empty() -> Self {
+        Self { next: None, _marker: PhantomData }
     }
-    pub fn data(&self) -> &T {
-        &self.data
+    pub fn new(next: Option<&mut TinyListNode<T>>) -> TinyListNode<T> {
+        let next = next.map(|node| NonNull::from(node));
+        Self { next, _marker: PhantomData }
     }
     pub fn set_next(&mut self, next: &mut TinyListNode<T>) {
-        self.pivot().set_next(Some(next));
+        self.next.replace(NonNull::from(next));
     }
     pub fn remove_next(&mut self) {
-        self.pivot().set_next(None);
+        self.next = None;
     }
 }
 
 impl<T: TinyListNodeData> Deref for TinyListNode<T> {
-    type Target = T;
+    type Target = T::Item;
 
     fn deref(&self) -> &Self::Target {
-        &self.data
+        unsafe { TinyListNodeData::from(NonNull::from(self)).as_ref() }
     }
 }
 
 impl<T: TinyListNodeData> DerefMut for TinyListNode<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
+        unsafe { TinyListNodeData::from(NonNull::from(self)).as_mut() }
     }
 }
 
@@ -131,14 +131,14 @@ pub struct TinyLinkedList<'a, T: TinyListNodeData + Sized> {
     _marker: PhantomData<&'a mut T>,
 }
 
+
+
 pub struct UnlinkableGuard<'a, T: TinyListNodeData> {
     parent: NonNull<TinyLinkedList<'a, T>>,
 }
 
 
 impl<'a, T: TinyListNodeData> UnlinkableListGuard<'a, TinyLinkedList<'a, T>> for UnlinkableGuard<'a, T> {
-    type Item = &'a mut TinyListNode<T>;
-
     fn parent(&self) -> NonNull<TinyLinkedList<'a, T>> {
         self.parent
     }
@@ -217,11 +217,19 @@ impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a> for TinyLinkedList<'a, T> 
             unreachable!("Remove from empty single list");
         }
     }
+
+    fn is_empty(&self) -> bool {
+        self.first.is_none()
+    }
 }
 
 impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
-    pub fn is_empty(&self) -> bool {
-        self.first.is_none()
+    pub unsafe fn clone(&self) -> Self {
+        Self {
+            first: self.first,
+            last: self.last,
+            _marker: PhantomData
+        }
     }
     pub fn iter(&self) -> ListIterator<'a, T> {
         ListIterator::new(self)
@@ -345,8 +353,19 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
     use core::ptr::NonNull;
+    use crate::tiny_list_node;
     use crate::utils::{BorrowingLinkedList, TinyLinkedList, TinyListNode};
+    tiny_list_node!(pub TestStruct(node));
+    pub struct TestStruct {
+        node: TinyListNode<TestStruct>,
+        value: usize,
+    }
 
+    impl TestStruct {
+        pub fn new(value: usize) -> Self {
+            Self { node: TinyListNode::empty(), value }
+        }
+    }
 
     #[test]
     fn iteration_test() {
@@ -364,30 +383,30 @@ mod tests {
 
     #[test]
     fn splice_test() {
-        let mut list = TinyLinkedList::<usize>::empty();
+        let mut list = TinyLinkedList::<TestStruct>::empty();
         unsafe {
-            let numbers: Vec<TinyListNode<usize>> = vec!(
-                TinyListNode::wrap_data(10),
-                TinyListNode::wrap_data(11),
-                TinyListNode::wrap_data(12),
-                TinyListNode::wrap_data(13),
-                TinyListNode::wrap_data(14),
+            let numbers: Vec<TestStruct> = vec!(
+                TestStruct::new(10),
+                TestStruct::new(11),
+                TestStruct::new(12),
+                TestStruct::new(13),
+                TestStruct::new(14),
             );
             for number in numbers[0..3].iter() {
-                list.push_back(NonNull::from(number).as_mut());
+                list.push_back(number.as_node().as_mut())
             }
-            let mut other_list = TinyLinkedList::<usize>::empty();
-            other_list.push_back(NonNull::from(numbers.get_unchecked(3)).as_mut());
-            other_list.push_back(NonNull::from(numbers.get_unchecked(4)).as_mut());
+            let mut other_list = TinyLinkedList::<TestStruct>::empty();
+            other_list.push_back(numbers.get_unchecked(3).as_node().as_mut());
+            other_list.push_back(numbers.get_unchecked(4).as_node().as_mut());
             list.splice(other_list);
             assert!(
-                list.first.unwrap().as_ref().eq(numbers.get_unchecked(3)) &&
-                    numbers.get_unchecked(4).next.unwrap().as_ref().eq(numbers.get_unchecked(0)));
-            list.remove(NonNull::from(numbers.get_unchecked(3)).as_mut());
-            assert_eq!(list.first, Some(NonNull::from(numbers.get_unchecked(4))));
-            list.remove(NonNull::from(numbers.get_unchecked(1)).as_mut());
+                list.first.unwrap().eq(&numbers.get_unchecked(3).as_node()) &&
+                    numbers.get_unchecked(4).as_node().eq(&numbers.get_unchecked(0).as_node()));
+            list.remove(numbers.get_unchecked(3).as_node().as_mut());
+            assert_eq!(list.first, Some(numbers.get_unchecked(4).as_node()));
+            list.remove(numbers.get_unchecked(1).as_node().as_mut());
             assert!(
-                numbers.get_unchecked(0).next.unwrap().as_ref().eq(&numbers.get_unchecked(2))
+                numbers.get_unchecked(0).as_node().eq(&numbers.get_unchecked(2).as_node())
             );
         }
     }

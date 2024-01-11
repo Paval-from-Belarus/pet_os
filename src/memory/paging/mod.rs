@@ -2,13 +2,13 @@ pub(crate) mod table;
 
 use core::arch::asm;
 use core::cell::UnsafeCell;
-use core::{mem, ptr, slice};
+use core::{slice};
 use core::intrinsics::unreachable;
 use core::mem::MaybeUninit;
-use core::ptr::{addr_of_mut, NonNull};
+use core::ptr::{NonNull};
 use static_assertions::assert_eq_size;
 use table::{RefTable, RefTableEntry};
-use crate::{bitflags, declare_constants, log, memory};
+use crate::{bitflags, declare_constants};
 use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector, TaskGate, TaskStateDescriptor, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
 use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
 use crate::utils::{LinkedList, Zeroed};

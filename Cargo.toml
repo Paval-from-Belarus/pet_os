@@ -24,7 +24,8 @@ bitfield = "0.14.0"
 pc-keyboard = "0.7.0"
 paste = "1.0.14"
 num_enum = { version = "0.7.0", default-features = false }
-
+kernel-macro = { path = "kernel_macro" }
+kernel-types = {path = "kernel_types"}
 #bitflags = "2.3.3"
 ##alloca = "0.3.4"
 #impl_ops = "0.1.1"

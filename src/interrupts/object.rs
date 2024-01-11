@@ -6,7 +6,7 @@ use crate::interrupts::{CallbackInfo, pic};
 use crate::{log, memory};
 use crate::drivers::Handle;
 use crate::interrupts::pic::{PicLine};
-use crate::utils::{TinyLinkedList, TinyListNode};
+use crate::utils::{BorrowingLinkedList, TinyLinkedList};
 use crate::utils::atomics::{SpinLock};
 
 ///The manager struct that handle all request for given interrupt.
@@ -49,11 +49,11 @@ impl InterruptObject {
     //the registration is appending callback to the end of sequence
     //to remove consider to add DriverHandle
     pub fn add(&self, stack_info: CallbackInfo) {
-        let raw_node = memory::slab_alloc::<TinyListNode<CallbackInfo>>();
-        let node = raw_node.write(TinyListNode::wrap_data(stack_info));
+        let raw_node = memory::slab_alloc::<CallbackInfo>();
+        let node = raw_node.write(stack_info);
         self.lock.acquire();
         unsafe {
-            (*self.callbacks.get()).push_back(node);
+            (*self.callbacks.get()).push_back(node.as_next().as_mut());
         }
         self.lock.release();
     }

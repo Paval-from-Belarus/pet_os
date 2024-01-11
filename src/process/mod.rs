@@ -6,14 +6,16 @@ use core::mem::{MaybeUninit, offset_of};
 use core::arch::{asm, global_asm};
 use core::{mem, ptr};
 use core::cell::UnsafeCell;
-use core::ptr::{addr_of_mut, NonNull};
+use core::ptr::{NonNull};
+use core::slice::Iter;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
-use crate::{bitflags, declare_constants, interrupts, list_node_data, log, memory};
-use crate::interrupts::{CallbackInfo, InterruptableLazyCell};
-use crate::memory::{AddressSpace, Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress};
+use spin::Once;
+use crate::{bitflags, declare_constants, interrupts, list_node, log, memory};
+use crate::interrupts::{CallbackInfo};
+use crate::memory::{Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::process::scheduler::TaskScheduler;
-use crate::utils::{BorrowingLinkedList, LinkedList, ListNode, ListNodePivots, TinyLinkedList, TinyListNode, Zeroed, ListNodePivot, ListNodeData};
+use crate::utils::{BorrowingLinkedList, LinkedList, ListNode, Zeroed, ListNodeData};
 use crate::utils::atomics::UnsafeLazyCell;
 
 
@@ -32,7 +34,7 @@ pub enum TaskStatus {
 }
 bitflags!(
     pub TaskSignalMask(u8),
-    NO_USER1 = TaskSignal::User1
+    NO_USER1 = TaskSignal::User1 as u8
 );
 #[derive(PartialOrd, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]
@@ -156,17 +158,16 @@ impl TaskContext {
         }
     }
 }
-list_node_data!(
-    pub ThreadTask(node);
+list_node!(
+    pub ThreadTask;
     RunnableTask(runnable);
-    SiblingTask(sibling);
+    SiblingTask(sibling): DanglingData;
 );
 #[repr(C)]
 pub struct ThreadTask {
-    node: ListNode<ThreadTask>,
     //the pivots in scheduler list
     runnable: ListNode<RunnableTask>,
-    sibling: ListNodePivots<SiblingTask>,
+    sibling: ListNode<SiblingTask>,
     pub priority: TaskPriority,
     pub status: TaskStatus,
     //the bottom of the thread's kernel stack
@@ -186,7 +187,7 @@ pub struct ThreadTask {
 }
 
 impl ThreadTask {
-    pub fn new(id: usize, kernel_stack: VirtualAddress, priority: TaskPriority) -> Self {
+    pub unsafe fn new(id: usize, kernel_stack: VirtualAddress, priority: TaskPriority) -> Self {
         Self {
             kernel_stack,
             id,
@@ -197,7 +198,8 @@ impl ThreadTask {
             start_time: 0,
             parent: None,
             files: NonNull::dangling(),
-            ..Default::default()
+            runnable: ListNode::empty(),
+            sibling: ListNode::empty(),
         }
     }
 }
@@ -208,13 +210,13 @@ fn default_thread_routine(arg: *mut ()) {
 
 //the calling convention is: eax, edx, ecx (default x8086)
 //todo: each task should have stub before running to enable interrupts
-pub fn new_task(routine: ThreadRoutine, arg: *mut (), priority: TaskPriority) -> &'static mut ListNode<ThreadTask> {
+pub fn new_task(routine: ThreadRoutine, arg: *mut (), priority: TaskPriority) -> &'static mut ThreadTask {
     let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
-    let raw_task = memory::slab_alloc::<ListNode<ThreadTask>>();
+    let raw_task = memory::slab_alloc::<ThreadTask>();
     let task_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
     let task = unsafe {
         let task_data = ThreadTask::new(task_id, kernel_stack, priority);
-        raw_task.write(ListNode::new(task_data))
+        raw_task.write(task_data)
     };
 
     let context = TaskContext::with_return_address(routine as VirtualAddress);
@@ -226,9 +228,14 @@ pub fn new_task(routine: ThreadRoutine, arg: *mut (), priority: TaskPriority) ->
 }
 
 pub fn submit_task(task: &'static mut ThreadTask) {
+    
+    // let tiny_node = unsafe { task.as_sibling().as_mut() };
+    // let raw_tiny_node = NonNull::from(tiny_node);
     SCHEDULER.get().add_task(task);
 }
+fn accept(task: &'static ThreadTask) {
 
+}
 //run the kernel main loop
 pub fn run() -> ! {
     SCHEDULER.get().run();
@@ -267,7 +274,6 @@ fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
     try_wakeup();
     true
 }
-
 
 static SCHEDULER: UnsafeLazyCell<TaskScheduler> = UnsafeLazyCell::empty();
 static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(1);
@@ -329,7 +335,7 @@ impl Futex {
 struct FutexInner {
     count: AtomicUsize,
     max_count: usize,
-    waiting: LinkedList<'static, ThreadTask>,
+    waiting: LinkedList<'static, RunnableTask>,
 }
 
 impl FutexInner {
@@ -340,19 +346,18 @@ impl FutexInner {
         self.count.fetch_add(1, Ordering::Release);
         Ok(())
     }
-    pub fn wait(&mut self, task: &'static mut ListNode<ThreadTask>) {
+    pub fn wait(&mut self, task: &'static mut ThreadTask) {
         task.status = TaskStatus::Blocked;
-        self.waiting.push_back(task);
+        unsafe {
+            self.waiting.push_back(task.as_runnable().as_mut())
+        };
     }
-    fn release(&mut self) -> Option<&'static mut ListNode<ThreadTask>> {
+    fn release(&mut self) -> Option<&'static mut ListNode<RunnableTask>> {
         self.count.fetch_sub(1, Ordering::Release);
         self.waiting.remove_first()
     }
 }
 
-pub struct File {
-    pub ref_count: AtomicUsize,
-}
 
 pub struct FilePool {
     //the current count of open files

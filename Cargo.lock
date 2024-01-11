@@ -36,6 +36,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel-macro"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 2.0.39",
+]
+
+[[package]]
+name = "kernel-types"
+version = "0.1.0"
+
+[[package]]
 name = "lock_api"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -83,6 +95,8 @@ version = "0.1.0"
 dependencies = [
  "bitfield",
  "failure",
+ "kernel-macro",
+ "kernel-types",
  "num_enum",
  "paste",
  "pc-keyboard",

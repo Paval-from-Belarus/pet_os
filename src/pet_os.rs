@@ -15,11 +15,20 @@
 #![feature(offset_of)]
 #![feature(negative_impls)]
 #![feature(concat_idents)]
+#![feature(ascii_char)]
+extern crate num_enum;
+extern crate static_assertions;
+
+use core::arch::asm;
+use core::ptr;
+
+use memory::PagingProperties;
+use utils::logging;
+
+use crate::process::TaskPriority;
+
 #[cfg(any(not(target_arch = "x86")))]
 compile_error!("Operation system is suitable for Intel i686");
-extern crate static_assertions;
-extern crate num_enum;
-extern crate alloc;
 
 
 #[cfg(not(test))]
@@ -35,19 +44,12 @@ mod utils;
 mod drivers;
 mod process;
 
-use memory::PagingProperties;
-
 #[cfg(not(test))]
 #[panic_handler]
 pub fn panic(info: &core::panic::PanicInfo) -> ! {
     log!("kernel panics={}", info);
     unsafe { asm!("hlt", options(noreturn)) }
 }
-
-use core::arch::asm;
-use core::ptr;
-use utils::logging;
-use crate::process::TaskPriority;
 
 #[no_mangle]
 #[cfg(not(test))]

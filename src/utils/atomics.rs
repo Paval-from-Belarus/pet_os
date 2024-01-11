@@ -1,32 +1,24 @@
 use core::cell::UnsafeCell;
-use core::fmt::Pointer;
-use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, Ordering};
-use core::sync::atomic::Ordering::Acquire;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-pub struct AtomicCell<T> {
-    // value: UnsafeCell<T>,
-    value: T,
-    lock: bool,
-}
+#[repr(transparent)]
+pub struct RefCounter(AtomicUsize);
 
-impl<T: Clone + Copy> AtomicCell<T> {
-    pub fn wrap(value: T) -> AtomicCell<T> {
-        AtomicCell { value, lock: false }
+impl RefCounter {
+    pub const fn new() -> Self {
+        Self(AtomicUsize::new(0))
     }
-    pub fn set(&mut self, value: T) {
-        self.value = value;
-        todo!("Replace with asm code")
+    pub fn count(&self) -> usize {
+        self.0.load(Ordering::Relaxed)
     }
-    pub fn get(&self) -> T {
-        return self.value.clone();
+    pub fn take(&self) {
+        self.0.fetch_add(1, Ordering::Release);
     }
-    pub fn replace(&mut self, value: T) -> T {
-        let old = self.value;
-        self.value = value;
-        old
+    pub fn free(&self) -> Result<(), ()> {
+        self.0.fetch_sub(1, Ordering::Acquire);
+        todo!()
     }
 }
 
@@ -41,7 +33,7 @@ impl SpinLock {
     }
     pub fn acquire(&self) {
         loop {
-            let is_acquired = !self.lock.swap(true, Acquire);
+            let is_acquired = !self.lock.swap(true, Ordering::Acquire);
             if is_acquired {
                 break;
             }
@@ -49,6 +41,15 @@ impl SpinLock {
     }
     pub fn release(&self) {
         self.lock.store(false, Ordering::Release);
+    }
+
+    pub fn try_acquire(&self) -> Result<(), ()> {
+        let is_acquired = !self.lock.swap(true, Ordering::Acquire);
+        if is_acquired {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 }
 

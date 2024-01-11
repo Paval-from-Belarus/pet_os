@@ -2,13 +2,13 @@ use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::{mem, ptr, slice};
 
-use core::ptr::NonNull;
+use core::ptr::{addr_of_mut, NonNull};
 use crate::{declare_constants, log};
 use crate::memory::paging::{CaptureAllocator, PageMarkerError};
 use crate::memory::{ProcessInfo, Page, PhysicalAddress, VirtualAddress, ToPhysicalAddress, OsAllocationError, MEMORY_MAP_SIZE};
 use crate::memory::OsAllocationError::NoMemory;
 
-use crate::utils::{LinkedList, ListNode, SpinBox};
+use crate::utils::{BorrowingLinkedList, LinkedList, ListNode, SpinBox};
 use crate::utils::atomics::SpinLock;
 declare_constants!(
     pub usize,
@@ -43,7 +43,7 @@ impl BuddyPiece {
         self.size
     }
     //if this struct was constructed then all requirements are already passed. It's save to create slice of Page struct
-    pub fn pages(&self) -> &'static mut [ListNode<Page>] {
+    pub fn pages(&self) -> &'static mut [Page] {
         unsafe {
             let first_page = &mut (*self.first_page_cell.get());
             first_page.as_slice_mut(self.size)
@@ -65,10 +65,12 @@ impl BuddyPiece {
         size
     }
 }
+
 pub struct FreePages {
     pages: LinkedList<'static, Page>,
-    count: usize
+    count: usize,
 }
+
 ///It's a responsibility of caller class to maintain synchronized caller sequence
 ///It's really recommended to use SystemCallQueue to control the order of invocation
 ///All methods are thread-safe
@@ -95,11 +97,11 @@ pub enum AllocationType {
     Split,
 }
 
-fn is_first_buddy(page: &'static ListNode<Page>) -> bool {
+fn is_first_buddy(page: &'static Page) -> bool {
     unsafe { page.index() % 2 == 0 }
 }
 
-fn is_second_buddy(page: &'static ListNode<Page>) -> bool {
+fn is_second_buddy(page: &'static Page) -> bool {
     !is_first_buddy(page)
 }
 
@@ -120,7 +122,7 @@ impl PhysicalAllocator {
         for pivot in boot_allocator.as_pivots() {
             let mut mem_offset = pivot.next_offset();
             for _ in 0..pivot.free_pages_count() {
-                let mut raw_page = ListNode::<Page>::map_offset(mem_offset);
+                let mut raw_page = Page::map_offset(mem_offset);
                 let node_index = raw_page.as_mut().index();
                 if node_index >= MEMORY_MAP_SIZE {
                     break;
@@ -133,11 +135,12 @@ impl PhysicalAllocator {
                 let page_slice = self.find_page_slice(raw_page.as_mut());
                 mem_offset += Page::SIZE * page_slice.len();
                 let buddy_index = BuddyPiece::power_of(page_slice.len());
-                (*self.buddies_cell.get())[buddy_index].push_front(&mut page_slice[0]);
+                let page_node = page_slice[0].as_node().as_mut();
+                (*self.buddies_cell.get())[buddy_index].push_front(page_node);
             }
         }
     }
-    unsafe fn find_page_slice(&self, page: &mut ListNode<Page>) -> &'static mut [ListNode<Page>] {
+    unsafe fn find_page_slice(&self, page: &mut Page) -> &'static mut [Page] {
         let mut expected_slice_size = MAX_UNIT_SIZE;
         loop {
             let page_slice = page.as_slice_mut(expected_slice_size);
@@ -154,7 +157,7 @@ impl PhysicalAllocator {
     }
     //atomically save push slice in buddy array
     fn push_buddy(&self,
-                  page_slice: &'static mut [ListNode<Page>],
+                  page_slice: &'static mut [Page],
                   buddies_lock_option: Option<SpinBox<'_, 'static, [LinkedList<'static, Page>; MAX_UNIT_POWER + 1]>>) {
         assert!(!page_slice.is_empty() && (page_slice.len() % 2 == 0 || page_slice.len() == 1));
         let mut buddies_lock = buddies_lock_option
@@ -169,18 +172,18 @@ impl PhysicalAllocator {
                 let merged_page_slice = Self::merge_buddies(raw_page.as_mut(), buddy, page_slice.len() * 2);
                 self.push_buddy(merged_page_slice, Some(buddies_lock));
             } else {
-                buddies[power].push_front(raw_page.as_mut());
+                buddies[power].push_front(raw_page.as_mut().as_node().as_mut());
             }
         }
     }
     //this method should be invoked when all pages are synchronized
-    unsafe fn find_other_buddy(page: &'static ListNode<Page>, power: usize) -> Option<&'static mut ListNode<Page>> {
+    unsafe fn find_other_buddy(page: &'static Page, power: usize) -> Option<&'static mut Page> {
         if power == MAX_UNIT_POWER {
             //more merging is impossible
             return None;
         }
-        let page_offset = page.as_ptr() as VirtualAddress;
-        let page_slice_size = BuddyPiece::size_of(power) * mem::size_of::<ListNode<Page>>();
+        let page_offset = page as *const Page as VirtualAddress;
+        let page_slice_size = BuddyPiece::size_of(power) * mem::size_of::<Page>();
         let mut buddy_offset = VirtualAddress::NULL;
         if is_first_buddy(page) {
             if usize::MAX - page_offset > page_slice_size {
@@ -207,21 +210,22 @@ impl PhysicalAllocator {
             None
         }
     }
-    unsafe fn merge_buddies(first: &'static mut ListNode<Page>, second: &'static mut ListNode<Page>, target_size: usize) -> &'static mut [ListNode<Page>] {
-        assert!(!first.as_ptr().eq(&second.as_ptr()));
-        let slice_offset = if first.as_ptr().cmp(&second.as_ptr()).is_lt() {
-            first.as_mut_ptr()
+    unsafe fn merge_buddies(first: &'static mut Page, second: &'static mut Page, target_size: usize) -> &'static mut [Page] {
+        assert!(!ptr::eq(first as *mut Page, second as *mut Page));
+
+        let slice_offset = if ptr::from_ref(first).cmp(&ptr::from_ref(second)).is_lt() {
+            ptr::from_mut(first)
         } else {
-            second.as_mut_ptr()
+            ptr::from_mut(second)
         };
         slice::from_raw_parts_mut(slice_offset, target_size)
     }
     ///Be careful with such method: it should, theoretically, batch page in solid memory region, but, truly, doesn't
-    pub fn dealloc_page(&self, page: &mut ListNode<Page>) {
+    pub fn dealloc_page(&self, page: &'static mut Page) {
         page.free();
         if !page.is_used() {
             let mut list = self.synchronized_pages();
-            list.push_back(page);
+            unsafe { list.push_back(page.as_node().as_mut()); }
         }
     }
     pub fn fast_pages(&'static self, pages_count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {

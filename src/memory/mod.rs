@@ -9,11 +9,9 @@ pub use allocators::PhysicalAllocator;
 pub use paging::PagingProperties;
 pub use arch::*;
 
-use crate::{bitflags, declare_constants, interrupts, log, process};
+use crate::{bitflags, declare_constants, list_node, log, process, tiny_list_node};
 use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT, UnmapParamsFlag};
 use core::{mem, ptr};
-use core::arch::asm;
-use core::intrinsics::assert_mem_uninitialized_valid;
 use core::mem::MaybeUninit;
 use core::slice::SliceIndex;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -22,7 +20,7 @@ use paging::table::{DirEntry, RefTable};
 use crate::memory::allocators::{Alignment, SystemAllocator, SlabPiece};
 use crate::process::{TaskState, ThreadTask};
 use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
-use crate::utils::{LinkedList, ListNode, ListNodeData, ListNodePivot, ListNodePivots, TinyLinkedList, TinyListNodeData};
+use crate::utils::{LinkedList, ListNode, ListNodeData, TinyLinkedList, TinyListNode, TinyListNodeData};
 
 pub enum ZoneType {
     Usable,
@@ -105,7 +103,7 @@ pub fn enable_task_switching(table: &mut GDTTable) {
 #[deprecated]
 fn first_dealloc_handler(offset: PhysicalAddress) {
     let mut page = unsafe {
-        let mut node = ListNode::<Page>::map_offset(offset);
+        let mut node = Page::map_offset(offset);
         node.as_mut()
     };
     page.take();
@@ -119,7 +117,7 @@ fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
 
 fn dealloc_physical_page(offset: PhysicalAddress) {
     let allocator = PHYSICAL_ALLOCATOR.get();
-    let mut page = unsafe { ListNode::<Page>::map_offset(offset) };
+    let mut page = unsafe { Page::map_offset(offset) };
     unsafe {
         allocator.dealloc_page(page.as_mut());
     }
@@ -216,12 +214,9 @@ impl ProcessInfo {
                 }
             }
         }
-        for region in self.regions.iter() {
-            if region.range.contains(&address) {
-                return Some(region.data());
-            }
-        }
-        None
+        self.regions.iter()
+            .find(|region| region.range.contains(&address))
+            .map(|region| region as &MemoryRegion)
     }
     pub fn find_unmapped_region(&mut self, offset: VirtualAddress, length: usize, flags: MemoryRegionFlag) -> Option<VirtualAddress> {
         None
@@ -235,10 +230,10 @@ impl ProcessInfo {
             }
             //update prev region each time while region is not found
             if region.range.end < address {
-                prev_region = Some(region.data());
+                prev_region = Some(region);
             }
         }
-        prev_region
+        prev_region.map(|node| MemoryRegion::from_ref(node))
     }
     pub fn find_intersect_region(&mut self, range: Range<VirtualAddress>) -> Option<&'static MemoryRegion> {
         let option_region = self.find_region(range.start);
@@ -251,16 +246,15 @@ impl ProcessInfo {
     }
 }
 
+tiny_list_node!(pub MemoryRegion(node));
 pub struct MemoryRegion {
-    pivot: ListNodePivot<MemoryRegion>,
+    node: TinyListNode<MemoryRegion>,
     parent: NonNull<ProcessInfo>,
     range: Range<VirtualAddress>,
     permissions: MemoryRegionFlag,
-
     //mapped_file: MemoryMappedFile,
     //file_offset: usize
 }
-
 
 impl MemoryRegion {
     pub const fn new() -> Self {
@@ -288,9 +282,10 @@ pub struct AddressSpace {
     marker: PageMarker,
 }
 
+list_node!(pub MemoryMappingRegion(node));
 ///the one represent meor
-#[derive(Copy, Clone)]
 pub struct MemoryMappingRegion {
+    node: ListNode<MemoryMappingRegion>,
     flags: MemoryMappingFlag,
     //used to copy
     virtual_offset: VirtualAddress,
@@ -298,23 +293,17 @@ pub struct MemoryMappingRegion {
     page_count: usize,
 }
 
+list_node!(pub Page(node));
 #[repr(C)]
 pub struct Page {
-    pivots: ListNodePivots<Page>,
+    node: ListNode<Page>,
     flags: PageFlag,
     //it's easy to use in calculation, in future should be replace by macro
     //when zero page should be free
     ref_count: AtomicUsize,
 }
 
-unsafe impl ListNodeData for Page {
-    type Item = Page;
-
-    fn pivots(&self) -> NonNull<ListNodePivots<Self::Item>> {
-        NonNull::from(self.pivots)
-    }
-}
-assert_eq_size!(ListNode<Page>, [u8; 16]);
+assert_eq_size!(Page, [u8; 16]);
 
 ///the kernel method to allocate structure in kernel slab pool
 pub fn slab_alloc<T>() -> &'static mut MaybeUninit<T> {
@@ -356,7 +345,7 @@ pub fn physical_dealloc(offset: *mut u8) {
 
 //the method should be invoked only by one thread
 //concurrency is forbidden
-pub unsafe fn switch_to_task(task: &'static mut ThreadTask) {
+pub unsafe fn switch_to_task(task: &mut ThreadTask) {
     TASK_STATE.set_kernel_stack(task.kernel_stack + process::TASK_STACK_SIZE);
     let mut marker = if task.parent.is_some() {
         unreachable!("Process functionality is not implemented")
@@ -393,15 +382,15 @@ declare_constants!(
 );
 #[repr(transparent)]
 pub struct MemoryMap {
-    pages: [ListNode<Page>; MEMORY_MAP_SIZE],
+    pages: [Page; MEMORY_MAP_SIZE],
 }
 
 
-fn mem_map_offset() -> *mut ListNode<Page> {
-    unsafe { &mut MEMORY_MAP as *mut MemoryMap as *mut ListNode<Page> }
+fn mem_map_offset() -> *mut Page {
+    unsafe { &mut MEMORY_MAP as *mut MemoryMap as *mut Page }
 }
 
-impl ToPhysicalAddress for ListNode<Page> {
+impl ToPhysicalAddress for Page {
     //return which physical address is used for such
     fn as_physical(&self) -> PhysicalAddress {
         let page_offset = ptr::from_ref(self);
@@ -410,23 +399,6 @@ impl ToPhysicalAddress for ListNode<Page> {
     }
 }
 
-impl ListNode<Page> {
-    pub unsafe fn map_offset(offset: PhysicalAddress) -> NonNull<ListNode<Page>> {
-        let page_index: usize = offset >> Page::SHIFT;
-        let page_offset = unsafe { mem_map_offset().add(page_index) };
-        unsafe { NonNull::new_unchecked(page_offset) }
-    }
-    pub unsafe fn as_slice(&mut self, count: usize) -> &'static [ListNode<Page>] {
-        core::slice::from_raw_parts(self, count)
-    }
-    pub unsafe fn as_slice_mut(&mut self, count: usize) -> &'static mut [ListNode<Page>] {
-        core::slice::from_raw_parts_mut(self, count)
-    }
-    //return the index of page
-    pub unsafe fn index(&self) -> usize {
-        ((self as *const ListNode<Page> as VirtualAddress) - (mem_map_offset() as VirtualAddress)) / mem::size_of::<ListNode<Page>>()
-    }
-}
 
 ///commit kernel memory
 pub fn kernel_commit(region: MemoryMappingRegion) -> Result<(), PageMarkerError> {
@@ -454,7 +426,7 @@ impl Page {
         Self {
             flags: PageFlag::wrap(PageFlag::UNUSED),
             ref_count: AtomicUsize::new(0),
-            pivots: unsafe { ListNodePivots::empty() },
+            node: unsafe { ListNode::empty() },
         }
     }
     ///increment reference counter in page
@@ -477,29 +449,44 @@ impl Page {
     pub const fn lower_bound(byte_size: usize) -> usize {
         byte_size / Page::SIZE
     }
+    pub unsafe fn map_offset(offset: PhysicalAddress) -> NonNull<Page> {
+        let page_index: usize = offset >> Page::SHIFT;
+        let page_offset = unsafe { mem_map_offset().add(page_index) };
+        unsafe { NonNull::new_unchecked(page_offset) }
+    }
+    pub unsafe fn as_slice(&mut self, count: usize) -> &'static [Page] {
+        core::slice::from_raw_parts(self, count)
+    }
+    pub unsafe fn as_slice_mut(&mut self, count: usize) -> &'static mut [Page] {
+        core::slice::from_raw_parts_mut(self, count)
+    }
+    //return the index of page
+    pub unsafe fn index(&self) -> usize {
+        ((self as *const Page as VirtualAddress) - (mem_map_offset() as VirtualAddress)) / mem::size_of::<Page>()
+    }
 }
 
 #[cfg(test)]
 impl MemoryMap {
     pub const fn empty() -> Self {
-        const NODE: ListNode<Page> = unsafe { ListNode::new(Page::empty()) };
-        let pages: [ListNode<Page>; MEMORY_MAP_SIZE] = [NODE; MEMORY_MAP_SIZE];
+        const NODE: Page = Page::empty();
+        let pages = [NODE; MEMORY_MAP_SIZE];
         Self { pages }
     }
 }
 
-pub fn get_kernel_mapping_region() -> &'static MemoryMappingRegion {
-    // let node = unsafe { ListNode::wrap_data(KERNEL_MAPPING) };
-    // unsafe { node.as_head() }
-    &KERNEL_MAPPING
-}
-
-static KERNEL_MAPPING: MemoryMappingRegion = MemoryMappingRegion {
-    flags: MemoryMappingFlag::wrap(MemoryMappingFlag::PRESENT | MemoryMappingFlag::WRITABLE),
-    virtual_offset: 0, //unsafe { KERNEL_VIRTUAL_OFFSET },
-    physical_offset: 0, //unsafe { KERNEL_PHYSICAL_OFFSET },
-    page_count: 0, //unsafe { VirtualAddress::MAX - KERNEL_VIRTUAL_OFFSET },
-};
+// pub fn get_kernel_mapping_region() -> &'static MemoryMappingRegion {
+//     // let node = unsafe { ListNode::wrap_data(KERNEL_MAPPING) };
+//     // unsafe { node.as_head() }
+//     &KERNEL_MAPPING
+// }
+//
+// static KERNEL_MAPPING: MemoryMappingRegion = MemoryMappingRegion {
+//     flags: MemoryMappingFlag::wrap(MemoryMappingFlag::PRESENT | MemoryMappingFlag::WRITABLE),
+//     virtual_offset: 0, //unsafe { KERNEL_VIRTUAL_OFFSET },
+//     physical_offset: 0, //unsafe { KERNEL_PHYSICAL_OFFSET },
+//     page_count: 0, //unsafe { VirtualAddress::MAX - KERNEL_VIRTUAL_OFFSET },
+// };
 
 #[cfg(not(test))]
 extern "C" {
@@ -525,7 +512,7 @@ mod tests {
         let mem_map_virtual_offset: VirtualAddress = unsafe { &mut MEMORY_MAP as *mut MemoryMap as VirtualAddress };
         let page_index = 42;
         let page_virtual_offset = mem_map_virtual_offset + page_index * mem::size_of::<ListNode<Page>>();
-        let page = unsafe { ListNode::<Page>::map_offset(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
+        let page = unsafe { Page::map_offset(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
         assert_eq!(page.as_ptr() as VirtualAddress, page_virtual_offset);
         assert_eq!(page_index << Page::SHIFT, unsafe { page.as_ref() }.as_physical());
     }

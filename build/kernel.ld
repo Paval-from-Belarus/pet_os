@@ -23,6 +23,11 @@ SECTIONS
 	    PROVIDE(etext = .);	/* Define the 'etext' symbol to this value */
 		*(.rodata .rodata.* .gnu.linkonce.r.*)
 	}
+	. = ALIGN(PAGE_SIZE);
+	.symbol_table : {
+	    PROVIDE(symtab = .);
+	    *(.symbol_table .symbol_table.*)
+	}
 
 	/* Adjust the address for the data segment to the next page */
 

@@ -3,9 +3,9 @@ use core::cell::UnsafeCell;
 use core::ops::Add;
 use core::ptr::NonNull;
 use static_assertions::{const_assert};
-use crate::{declare_constants, log, memory};
+use crate::{declare_constants, log, memory, tiny_list_node};
 use crate::memory::{MemoryMappingRegion, OsAllocationError, Page, PhysicalAddress, PhysicalAllocator, ToPhysicalAddress, VirtualAddress};
-use crate::utils::{LinkedList, ListNode, TinyLinkedList, TinyListNode, SpinBox, Zeroed};
+use crate::utils::{LinkedList, ListNode, TinyLinkedList, TinyListNode, SpinBox, Zeroed, BorrowingLinkedList};
 use crate::utils::atomics::SpinLock;
 
 pub enum Alignment {
@@ -43,7 +43,9 @@ struct SlabAllocatorInner {
     heap_offset: VirtualAddress,//the next free virtual address
 }
 
+tiny_list_node!(pub SlabEntry(next));
 struct SlabEntry {
+    next: TinyListNode<SlabEntry>,
     offset: VirtualAddress,
     count: usize,
     capacity: usize,
@@ -74,8 +76,9 @@ impl SlabEntry {
         MAX_SLAB_SIZE = 16, "The maximal count of pages for slab entry";
     );
     //the size in bytes
-    pub fn empty() -> Self {
+    pub fn new(next: TinyListNode<SlabEntry>) -> Self {
         Self {
+            next,
             offset: VirtualAddress::NULL,
             count: 0,
             capacity: 0,
@@ -253,7 +256,7 @@ impl SlabAllocatorInner {
         let mut entry_iter = free_entries.iter_mut();
         for _ in 0..entries_count {
             let _ = entry_iter.next().expect("Page pool should be enough for heap");
-                let entry = entry_iter.unlink_watched().expect("Is watched already");
+            let entry = entry_iter.unlink_watched().expect("Is watched already");
             let mut cached_pages = LinkedList::<Page>::empty();
             for _ in 0..SlabEntry::DEFAULT_SLAB_SIZE {
                 let _ = page_iter.next().expect("We already allocate enough memory");
@@ -288,19 +291,22 @@ impl SlabAllocatorInner {
             let page_offset = page.as_physical();
             let committed_offset = self
                 .commit(page_offset, 1)
-                .cast::<TinyListNode<SlabEntry>>();
+                .cast::<SlabEntry>();
             let mut current_node = unsafe { committed_offset.add(ENTRIES_PER_PAGE - 1) };
             let mut next_node: *mut TinyListNode<SlabEntry> = ptr::null_mut();
             for _ in 0..ENTRIES_PER_PAGE {
-                let entry = SlabEntry::empty();
+                unsafe {}
                 let node = unsafe {
-                    let node = TinyListNode::new(entry, next_node);
-                    current_node.write(node);
+                    let node = TinyListNode::from(next_node);
+                    let entry = SlabEntry::new(node);
+                    current_node.write(entry);
                     &mut *current_node
                 };
-                next_node = node;
-                entries.push_front(node);
-                current_node = unsafe { current_node.sub(1) };
+                next_node = node.as_next().as_ptr();
+                unsafe {
+                    entries.push_front(node.as_next().as_mut());
+                    current_node = current_node.sub(1);
+                }
             }
         }
         entries
@@ -311,10 +317,12 @@ impl SlabAllocatorInner {
     #[inline(never)]
     fn commit(&mut self, offset: PhysicalAddress, count: usize) -> *mut u8 {
         let region = MemoryMappingRegion {
+            node: unsafe { ListNode::empty() },//region is not used anywhere
             flags: memory::KERNEL_LAYOUT_FLAGS,
             virtual_offset: self.heap_offset,
             physical_offset: offset,
             page_count: count,
+
         };
         memory::kernel_commit(region).expect("Failed to commit kernel heap memory");
         let committed_offset = self.heap_offset;

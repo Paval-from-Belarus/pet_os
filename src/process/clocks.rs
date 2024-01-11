@@ -3,6 +3,22 @@ use core::sync::atomic::Ordering::SeqCst;
 use crate::{declare_constants};
 use crate::interrupts::pic;
 use crate::utils::io;
+use crate::utils::time::Timestamp;
+
+pub enum ClockType {
+    //the time since epoch
+    Epoch,
+    //the time from system boot
+    Boot,
+    //the total time consumed to corresponding thread
+    ThreadConsumed,
+}
+
+///This upper level function is supposed to be really slow
+///Do not use this in high performance places
+pub fn now(clocks: ClockType) -> Timestamp {
+    todo!()
+}
 
 declare_constants!(
     pub usize,
