@@ -6,9 +6,14 @@ version = 3
 name = "kernel-macro"
 version = "0.1.0"
 dependencies = [
+ "kernel-types",
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "kernel-types"
+version = "0.1.0"
 
 [[package]]
 name = "proc-macro2"

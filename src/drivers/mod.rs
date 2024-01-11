@@ -1,43 +1,39 @@
+use core::{mem, slice};
 use kernel_macro::export_symbolic;
+use kernel_types::drivers::KernelSymbol;
 
 use crate::declare_constants;
 use crate::memory::VirtualAddress;
 
 mod vga;
 mod keyboard;
-///this macro is used to
-#[macro_export]
-macro_rules! export_symbol {
-    ($name: ident) => {
-        #[no_mangle]
-        #[link_section = ".symbol_table"]
-        paste::paste!{
-            static [<SYMTAB_ $name>]: &str = stringify!($name);
-        }
-    };
-}
-// export_symbol!(register_display_driver);
+
 #[export_symbolic]
 pub fn register_display_driver() {}
 
-#[repr(C)]
-pub struct KernelSymbol {
-    #[doc = "Offset of function to be exported"]
-    offset: VirtualAddress,
-    #[doc = "Offset of string to be checked"]
-    value: &'static str,
+extern "Rust" {
+    #[link_name = "symbol_table_start"]
+    static SYMBOL_TABLE_START: *const KernelSymbol;
+    #[link_name = "symbol_table_end"]
+    static SYMBOL_TABLE_END: *const KernelSymbol;
 }
 
-impl PartialEq for KernelSymbol {
-    fn eq(&self, other: &Self) -> bool {
-        self.value.eq(other.value)
+pub fn init() {
+    unsafe {
+        let bytes_size = (SYMBOL_TABLE_END as *const u8).sub_ptr(SYMBOL_TABLE_START as *const u8);
+        assert!(bytes_size % mem::size_of::<KernelSymbol>() == 0 && bytes_size > mem::size_of::<KernelSymbol>(), "Invalid Symbol table sizes");
     }
 }
 
-impl KernelSymbol {
-    pub fn offset_raw(&self) -> VirtualAddress {
-        self.offset
-    }
+fn find_symbol(name: &str) -> bool {
+    let table_size = unsafe {
+        SYMBOL_TABLE_END.sub_ptr(SYMBOL_TABLE_START)
+    };
+    let symbol_table = unsafe {
+        slice::from_raw_parts(SYMBOL_TABLE_START, table_size)
+    };
+    symbol_table.iter()
+        .any(|entry| entry.has_name(name))
 }
 
 #[repr(transparent)]

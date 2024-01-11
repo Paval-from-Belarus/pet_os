@@ -24,11 +24,16 @@ SECTIONS
 		*(.rodata .rodata.* .gnu.linkonce.r.*)
 	}
 	. = ALIGN(PAGE_SIZE);
+	PROVIDE(symbol_table_start = .);
 	.symbol_table : {
-	    PROVIDE(symtab = .);
 	    *(.symbol_table .symbol_table.*)
 	}
-
+	PROVIDE(symbol_table_end = .);
+    . = ALIGN(PAGE_SIZE);
+    .symbol_table_strings : {
+        PROVIDE(symtab_strings = .);
+        *(.symbol_table_strings .symbol_table_strings.*)
+    }
 	/* Adjust the address for the data segment to the next page */
 
 	/* Conventionally, Unix linkers provide pseudo-symbols
