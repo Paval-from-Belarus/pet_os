@@ -33,7 +33,7 @@ fn find_symbol(name: &str) -> bool {
         slice::from_raw_parts(SYMBOL_TABLE_START, table_size)
     };
     symbol_table.iter()
-        .any(|entry| entry.has_name(name))
+        .any(|entry| entry.has_same_name(name))
 }
 
 #[repr(transparent)]

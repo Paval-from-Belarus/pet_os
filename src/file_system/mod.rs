@@ -6,7 +6,9 @@ use crate::utils::atomics::SpinLock;
 use crate::utils::time::Timestamp;
 
 mod fat;
+pub fn parse_path(path: PString) {
 
+}
 pub fn registry(file_system: *const FileSystemType) {}
 declare_constants!(
     pub usize,

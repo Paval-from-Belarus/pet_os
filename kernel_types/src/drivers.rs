@@ -28,7 +28,7 @@ impl KernelSymbol {
             value,
         }
     }
-    pub fn has_name(&self, name: &str) -> bool {
+    pub fn has_same_name(&self, name: &str) -> bool {
         self.value.eq(name)
     }
     pub fn offset_raw(&self) -> usize {

@@ -540,6 +540,7 @@ mod tests {
     extern crate std;
     extern crate alloc;
 
+    use alloc::string::String;
     use alloc::vec;
     use core::ptr::NonNull;
     use std::println;
@@ -555,9 +556,6 @@ mod tests {
             return false;
         }
         node.unwrap().value == value
-        // let value = From::<&TestStruct>::from(node);
-        // let test = TestStruct::from_node(NonNull::from(node));
-        // false
     }
     list_node!(
         pub TestStruct(node);

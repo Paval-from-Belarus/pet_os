@@ -18,6 +18,7 @@
 #![feature(ascii_char)]
 extern crate num_enum;
 extern crate static_assertions;
+extern crate alloc;
 
 use core::arch::asm;
 use core::ptr;
