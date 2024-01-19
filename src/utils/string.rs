@@ -1,25 +1,120 @@
-use core::slice;
+use core::{ptr, slice};
+use core::hash::{Hash, Hasher};
+use core::marker::PhantomData;
+use core::str::from_utf8_unchecked;
+use crate::lambda_const_assert;
+
+pub type HashCode = u32;
+
+pub trait FastHasher: Hasher {
+    fn fast_hash(&self) -> HashCode;
+}
+
+pub trait HashKey: Eq {
+    fn hash_code(&self) -> HashCode;
+}
+
+/// The basic concept of HashData is data by itself storing key
+pub trait HashData<T: HashKey> {
+    fn key(&self) -> &T;
+    fn equals_by_key(&self, key: &T) -> bool;
+}
+
+//alternative to linux qstr
+#[derive(PartialEq, Eq)]
+#[repr(C)]
+pub struct QuickString<'a> {
+    hash_code: HashCode,
+    data: &'a str,
+}
+
+impl<'a> QuickString<'a> {
+    ///Save instance of string and manually set HashCode
+    pub fn new(data: &'a str, hash_code: HashCode) -> Self {
+        Self { data, hash_code }
+    }
+    ///recalculate the HashCode via data
+    fn rehash<T: FastHasher>(&mut self, state: &mut T) {
+        self.data.hash(state);
+        self.hash_code = state.fast_hash();
+    }
+    pub fn as_str(&self) -> &str {
+        self.data
+    }
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+}
+
+impl<'a> HashKey for QuickString<'a> {
+    fn hash_code(&self) -> HashCode {
+        self.hash_code
+    }
+}
+
+pub struct PolynomialHasher<const N: usize>(HashCode);
+
+impl<const N: usize> PolynomialHasher<N> {
+    pub fn new() -> Self {
+        lambda_const_assert!(N: usize => N < HashCode::MAX as usize);
+        Self(0)
+    }
+}
+
+impl<const N: usize> Hasher for PolynomialHasher<N> {
+    fn finish(&self) -> u64 {
+        self.0 as _
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.0 = bytes.iter()
+                      .fold(self.0, |sum, byte| {
+                          sum + (N as HashCode) * (*byte as HashCode)
+                      });
+    }
+}
+
+impl<const N: usize> FastHasher for PolynomialHasher<N> {
+    fn fast_hash(&self) -> HashCode {
+        self.0
+    }
+}
+
+impl<'a> From<&'a str> for QuickString<'a> {
+    fn from(value: &'a str) -> Self {
+        const DEFAULT_BASE: usize = 32;
+        let mut hasher = PolynomialHasher::<DEFAULT_BASE>::new();
+        hasher.write_str(value);
+        Self::new(value, hasher.fast_hash())
+    }
+}
 
 #[derive(Debug)]
-pub struct PString {
+#[repr(C)]
+pub struct MutString<'a> {
     len: usize,
     capacity: usize,
     data: *mut u8,
+    _marker: PhantomData<&'a mut u8>,
 }
 
-impl PString {
-    pub fn with_capacity(capacity: usize, data: *mut u8) -> Self {
+impl<'a> MutString<'a> {
+    pub unsafe fn with_capacity(capacity: usize, data: *mut u8) -> Self {
         let len = 0;
-        Self {
-            capacity,
-            len,
-            data,
-        }
+        Self { capacity, len, data, _marker: PhantomData }
     }
     //create the
-    pub fn new(len: usize, data: *mut u8) -> Self {
-        let capacity = len;
-        Self { len, capacity, data }
+    pub unsafe fn new(len: usize, capacity: usize, data: *mut u8) -> Self {
+        Self { len, capacity, data, _marker: PhantomData }
+    }
+    pub unsafe fn copy_to(&self, dest: *mut u8, capacity: usize) -> Self {
+        assert!(!dest.is_null(), "failed to copy {:?} to ptr::null with {capacity}", self);
+        let copy_len = usize::min(self.len(), capacity);
+        ptr::copy(self.data, dest, copy_len);
+        Self::new(copy_len, capacity, dest)
+    }
+    pub fn unwrap(self) -> *mut u8 {
+        self.data
     }
     pub fn as_bytes(&self) -> &[u8] {
         unsafe { slice::from_raw_parts(self.data, self.len()) }
@@ -38,6 +133,9 @@ impl PString {
         assert!(length <= self.len(), "New length of PString cannot exceed previous");
         self.len = length;
     }
+    pub fn as_str(&self) -> &str {
+        unsafe { from_utf8_unchecked(self.as_bytes()) }
+    }
     ///If letter cannot be pushed without increasing the capacity, the method will return Err
     ///Otherwise it will return ok
     ///try to append letter to given capacity
@@ -54,8 +152,8 @@ impl PString {
             1 => { self.push_byte_unchecked(letter as u8) }
             _ => {
                 letter.encode_utf8(&mut [0; 4]).as_bytes()
-                    .iter()
-                    .for_each(|byte| self.push_byte_unchecked(*byte))
+                      .iter()
+                      .for_each(|byte| self.push_byte_unchecked(*byte))
             }
         }
     }
@@ -67,19 +165,19 @@ impl PString {
     }
 }
 
-impl From<&mut str> for PString {
+impl<'a> From<&'a mut str> for MutString<'a> {
     fn from(value: &mut str) -> Self {
-        Self::new(value.len(), value.as_mut_ptr())
+        unsafe { Self::new(value.len(), value.len(), value.as_mut_ptr()) }
     }
 }
 
-impl From<&mut [u8]> for PString {
+impl<'a> From<&'a mut [u8]> for MutString<'a> {
     fn from(value: &mut [u8]) -> Self {
-        Self::new(value.len(), value.as_mut_ptr())
+        unsafe { Self::new(value.len(), value.len(), value.as_mut_ptr()) }
     }
 }
 
-impl PartialEq for PString {
+impl PartialEq for MutString<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.as_bytes().eq(other.as_bytes())
     }
@@ -87,10 +185,24 @@ impl PartialEq for PString {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::PString;
+    extern crate std;
+    extern crate alloc;
+
+    use alloc::borrow::ToOwned;
+    use alloc::vec::Vec;
+
+    use fallible_collections::FallibleVec;
+
+    use crate::utils::MutString;
+
+    fn new_string(value: &str) -> MutString {
+        let string = value.to_owned();
+        let bytes = unsafe { string.leak().as_bytes_mut() };
+        MutString::from(bytes)
+    }
 
     #[test]
-    pub fn test() {
+    pub fn replacing_test() {
         let mut mutable = [0u8; 5];
         let mut immutable = [0u8; 5];
         for (index, byte) in "aboba".as_bytes().iter().enumerate() {
@@ -99,11 +211,21 @@ mod tests {
         for (index, byte) in "aabba".as_bytes().iter().enumerate() {
             immutable[index] = *byte;
         }
-        let mut value = PString::from(mutable.as_mut_slice());
+        let mut value = MutString::from(mutable.as_mut_slice());
         unsafe { value.set_length(0) };
-        let template = PString::from(immutable.as_mut_slice());
+        let template = MutString::from(immutable.as_mut_slice());
         template.as_bytes().iter()
-            .for_each(|byte| unsafe { value.push_byte_unchecked(*byte) });
+                .for_each(|byte| unsafe { value.push_byte_unchecked(*byte) });
         assert_eq!(value, template);
+    }
+
+    #[test]
+    pub fn splitting_test() {
+        let p_string = new_string("/the/long/sentence");
+        let mut parts: Vec<&str> = Vec::try_with_capacity(1).unwrap();
+        for entry in p_string.as_str().split('/') {
+            parts.try_push(entry).unwrap();
+        }
+        assert_eq!(parts, ["", "the", "long", "sentence"]);
     }
 }

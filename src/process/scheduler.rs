@@ -7,10 +7,15 @@ use core::sync::atomic;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::sync::atomic::Ordering::{Relaxed, Release};
 use crate::{interrupts, memory};
-use crate::process::{RunnableTask, TaskContext, TaskStatus, ThreadTask};
+use crate::process::{RunnableTask, SCHEDULER, TaskContext, TaskStatus, ThreadTask};
 use crate::utils::{BorrowingLinkedList, LinkedList, ListNode, ListNodeData, TinyLinkedList, TinyListNode, TinyListNodeData, UnlinkableListGuard};
 use crate::utils::atomics::SpinLock;
-
+#[macro_export]
+macro_rules! current_task {
+    () => {
+    $crate::process::scheduler::SCHEDULER.get().current_task()
+    };
+}
 #[inline(never)]
 unsafe fn switch_context(old: &mut *mut TaskContext, new: *mut TaskContext) {
     asm!(

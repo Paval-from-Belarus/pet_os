@@ -1,26 +1,28 @@
+use core::{mem, ptr};
+use core::mem::MaybeUninit;
+use core::ops::{Deref, Range, RangeBounds};
+use core::ptr::NonNull;
+use core::slice::SliceIndex;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+use static_assertions::assert_eq_size;
+
+pub use allocators::PhysicalAllocator;
+pub use arch::*;
+pub use paging::PagingProperties;
+use paging::table::{DirEntry, RefTable};
+
+use crate::{bitflags, declare_constants, list_node, log, process, tiny_list_node};
+use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
+use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT};
+use crate::process::{TaskState, ThreadTask};
+use crate::utils::{LinkedList, ListNode, ListNodeData, TinyLinkedList, TinyListNode, TinyListNodeData};
+use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
+
 mod allocators;
 mod paging;
 mod arch;
 
-
-use core::ptr::{NonNull};
-use core::ops::{Deref, Range, RangeBounds};
-pub use allocators::PhysicalAllocator;
-pub use paging::PagingProperties;
-pub use arch::*;
-
-use crate::{bitflags, declare_constants, list_node, log, process, tiny_list_node};
-use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT, UnmapParamsFlag};
-use core::{mem, ptr};
-use core::mem::MaybeUninit;
-use core::slice::SliceIndex;
-use core::sync::atomic::{AtomicUsize, Ordering};
-use static_assertions::assert_eq_size;
-use paging::table::{DirEntry, RefTable};
-use crate::memory::allocators::{Alignment, SystemAllocator, SlabPiece};
-use crate::process::{TaskState, ThreadTask};
-use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
-use crate::utils::{LinkedList, ListNode, ListNodeData, TinyLinkedList, TinyListNode, TinyListNodeData};
 
 pub enum ZoneType {
     Usable,
@@ -304,9 +306,27 @@ pub struct Page {
 }
 
 assert_eq_size!(Page, [u8; 16]);
+pub enum AllocationStrategy {
+    #[doc = "Allocation for Kernel space when page cannot be swapped"]
+    NoSwap,
+    #[doc = "Allocation for Kernel space data structures;"]
+    Kernel,
+    User,
+    #[doc = "Allocation in DMA regions"]
+    Device,
+
+}
+
+pub fn alloc(size: usize, strategy: AllocationStrategy) -> *mut u8 {
+    ptr::null_mut()
+}
+
+pub fn dealloc(pointer: *mut u8) {
+    assert!(!pointer.is_null(), "Cannot dealloc null");
+}
 
 ///the kernel method to allocate structure in kernel slab pool
-pub fn slab_alloc<T>() -> &'static mut MaybeUninit<T> {
+pub fn slab_alloc<T>(strategy: AllocationStrategy) -> Option<&'static mut MaybeUninit<T>> {
     let size = mem::size_of::<T>();
     let piece = if size <= u16::MAX as usize {
         SlabPiece::with_capacity(size as u16)
@@ -315,7 +335,7 @@ pub fn slab_alloc<T>() -> &'static mut MaybeUninit<T> {
     };
     let offset = SLAB_ALLOCATOR.alloc(piece, Alignment::Page)
         .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
-    unsafe { &mut *(offset as *mut MaybeUninit<T>) }
+    Some(unsafe { &mut *(offset as *mut MaybeUninit<T>) })
 }
 
 pub fn slab_dealloc<T>(pointer: &mut T) {
@@ -496,6 +516,9 @@ extern "C" {
 static mut TASK_STATE: TaskState = TaskState::null();
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> = UnsafeLazyCell::empty();
 static SLAB_ALLOCATOR: UnsafeLazyCell<SystemAllocator> = UnsafeLazyCell::empty();
+#[cfg(not(test))]
+#[global_allocator]
+static RUST_ALLOCATOR: allocators::RustAllocator = allocators::RustAllocator;
 static KERNEL_MARKER: SpinLockLazyCell<PageMarker> = SpinLockLazyCell::empty();
 
 #[cfg(test)]
@@ -504,7 +527,8 @@ static mut MEMORY_MAP: MemoryMap = MemoryMap::empty();
 #[cfg(test)]
 mod tests {
     use core::mem;
-    use crate::memory::{MEMORY_MAP, MemoryMap, Page, PhysicalAddress, ToPhysicalAddress, VirtualAddress};
+
+    use crate::memory::{MEMORY_MAP, MemoryMap, Page, ToPhysicalAddress, VirtualAddress};
     use crate::utils::ListNode;
 
     #[test]

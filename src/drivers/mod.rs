@@ -9,7 +9,8 @@ mod vga;
 mod keyboard;
 
 #[export_symbolic]
-pub fn register_display_driver() {}
+pub fn register_display_driver() {
+}
 
 extern "Rust" {
     #[link_name = "symbol_table_start"]

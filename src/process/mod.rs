@@ -1,23 +1,24 @@
+use core::{mem, ptr};
+use core::arch::asm;
+use core::cell::UnsafeCell;
+use core::mem::{MaybeUninit, offset_of};
+use core::ptr::NonNull;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+
+use crate::{bitflags, declare_constants, interrupts, list_node, log, memory};
+use crate::file_system::{File, FileOpenMode, FilePath, MAX_FILES_COUNT, MountPoint};
+use crate::interrupts::CallbackInfo;
+use crate::memory::{Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress};
+use crate::memory::AllocationStrategy::Kernel;
+use crate::process::scheduler::TaskScheduler;
+use crate::utils::{BorrowingLinkedList, LinkedList, ListNode, Zeroed};
+use crate::utils::atomics::UnsafeLazyCell;
+
 mod clocks;
 mod scheduler;
 mod pid;
-
-use core::mem::{MaybeUninit, offset_of};
-use core::arch::{asm, global_asm};
-use core::{mem, ptr};
-use core::cell::UnsafeCell;
-use core::ptr::{NonNull};
-use core::slice::Iter;
-use core::sync::atomic::{AtomicUsize, Ordering};
-use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive};
-use spin::Once;
-use crate::{bitflags, declare_constants, interrupts, list_node, log, memory};
-use crate::interrupts::{CallbackInfo};
-use crate::memory::{Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress};
-use crate::process::scheduler::TaskScheduler;
-use crate::utils::{BorrowingLinkedList, LinkedList, ListNode, Zeroed, ListNodeData};
-use crate::utils::atomics::UnsafeLazyCell;
-
 
 #[derive(PartialOrd, PartialEq)]
 pub enum TaskStatus {
@@ -183,7 +184,16 @@ pub struct ThreadTask {
     pub start_time: usize,
     //the process context for thread
     pub parent: Option<&'static mut ProcessInfo>,
+    pub file_system: NonNull<TaskFileSystem>,
     pub files: NonNull<FilePool>,
+    //todo: consider to add namespace field
+}
+
+pub struct TaskFileSystem {
+    mask: FileOpenMode,
+    current_path: &'static FilePath,
+    file_system: &'static MountPoint,
+    use_count: AtomicUsize,
 }
 
 impl ThreadTask {
@@ -198,6 +208,7 @@ impl ThreadTask {
             start_time: 0,
             parent: None,
             files: NonNull::dangling(),
+            file_system: NonNull::dangling(),
             runnable: ListNode::empty(),
             sibling: ListNode::empty(),
         }
@@ -212,7 +223,7 @@ fn default_thread_routine(arg: *mut ()) {
 //todo: each task should have stub before running to enable interrupts
 pub fn new_task(routine: ThreadRoutine, arg: *mut (), priority: TaskPriority) -> &'static mut ThreadTask {
     let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
-    let raw_task = memory::slab_alloc::<ThreadTask>();
+    let raw_task = memory::slab_alloc::<ThreadTask>(Kernel).expect("Failed to alloc new task");
     let task_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
     let task = unsafe {
         let task_data = ThreadTask::new(task_id, kernel_stack, priority);
@@ -228,14 +239,14 @@ pub fn new_task(routine: ThreadRoutine, arg: *mut (), priority: TaskPriority) ->
 }
 
 pub fn submit_task(task: &'static mut ThreadTask) {
-    
+
     // let tiny_node = unsafe { task.as_sibling().as_mut() };
     // let raw_tiny_node = NonNull::from(tiny_node);
     SCHEDULER.get().add_task(task);
 }
-fn accept(task: &'static ThreadTask) {
 
-}
+fn accept(task: &'static ThreadTask) {}
+
 //run the kernel main loop
 pub fn run() -> ! {
     SCHEDULER.get().run();
@@ -284,7 +295,7 @@ pub struct Futex {
 
 impl Futex {
     pub fn new(capacity: usize) -> Self {
-        let raw_futex = memory::slab_alloc::<FutexInner>();
+        let raw_futex = memory::slab_alloc::<FutexInner>(Kernel).expect("Failed to alloc futex");
         let futex = raw_futex.write(FutexInner {
             count: AtomicUsize::new(0),
             max_count: capacity,
@@ -358,10 +369,9 @@ impl FutexInner {
     }
 }
 
-
 pub struct FilePool {
-    //the current count of open files
-    file_count: usize,
+    opened_files_count: usize,
     //the next index of file
-    next_file: usize,
+    next_index: Option<usize>,
+    files: [NonNull<File>; MAX_FILES_COUNT],
 }

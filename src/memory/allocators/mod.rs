@@ -1,7 +1,8 @@
+pub use physical::PhysicalAllocator;
+pub use system::{Alignment, SlabPiece, SystemAllocator};
+pub use global::RustAllocator;
+
 mod physical;
 mod system;
-mod utils;
+mod global;
 
-use core::mem;
-pub use system::{SystemAllocator, SlabPiece, Alignment};
-pub use physical::PhysicalAllocator;

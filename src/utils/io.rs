@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use core::arch::asm;
-use crate::utils::io;
+
 #[macro_export]
 macro_rules! syscall {
     ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?) => ({

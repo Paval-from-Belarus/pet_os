@@ -3,6 +3,7 @@ use crate::{bitflags, declare_constants, error_trap, get_eax, log, memory, naked
 use crate::interrupts::{CallbackInfo, IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT, pic};
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
+use crate::memory::AllocationStrategy::Kernel;
 use crate::utils::TinyLinkedList;
 
 //the common handlers
@@ -53,7 +54,8 @@ pub fn init_irq() -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
 }
 
 fn init_timer(info: CallbackInfo) -> &'static InterruptObject {
-    let raw_object = memory::slab_alloc::<InterruptObject>();
+    let raw_object = memory::slab_alloc::<InterruptObject>(Kernel)
+        .expect("Failed to init timer");
     let timer_object = raw_object.write(InterruptObject::new(IrqLine::SYS_TIMER.line));
     timer_object.add(info);
     timer_object

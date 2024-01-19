@@ -244,7 +244,7 @@ impl SlabAllocatorInner {
     }
     #[inline(never)]
     fn enlarge_pool(&mut self, free_entries: &mut TinyLinkedList<'static, SlabEntry>, entries_count: usize) -> Result<(), OsAllocationError> {
-        let free_entries_count = free_entries.size();
+        let free_entries_count = free_entries.iter().count();
         if free_entries_count < entries_count {
             let additional_pages = Page::upper_bound((entries_count - free_entries_count) * mem::size_of::<TinyListNode<SlabEntry>>());
             let pages = self.allocator.alloc_pages(additional_pages)?;

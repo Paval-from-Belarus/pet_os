@@ -6,12 +6,13 @@ mod singly_linked_list;
 mod spin_box;
 mod string;
 pub mod time;
+mod hash_table;
 
 use core::ptr::NonNull;
 pub use spin_box::SpinBox;
 pub use doubly_linked_list::{LinkedList, ListNode};
 pub use singly_linked_list::{TinyLinkedList, TinyListNode};
-pub use string::PString;
+pub use string::{MutString, QuickString};
 #[macro_export]
 macro_rules! from_list_node {
     ($target: ident, $source: ident, $field: tt) => {
@@ -106,6 +107,19 @@ macro_rules! tiny_list_node {
                 unsafe {core::ptr::NonNull::new_unchecked(value)}
         }
     }
+    };
+}
+#[macro_export]
+macro_rules! lambda_const_assert {
+    ($($list:ident : $ty:ty),* => $expr:expr) => {{
+        struct Assert<$(const $list: usize,)*>;
+        impl<$(const $list: $ty,)*> Assert<$($list,)*> {
+            const OK: u8 = 0 - !($expr) as u8;
+        }
+        Assert::<$($list,)*>::OK
+    }};
+    ($expr:expr) => {
+        const OK: u8 = 0 - !($expr) as u8;
     };
 }
 #[macro_export]
@@ -211,7 +225,7 @@ pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
         target
     }
     unsafe fn map_collect<I: IntoIterator<Item=&'a mut T::Item>, S: 'a, R: BorrowingLinkedList<'a, Item=S>, F>(self, iter: I, mut map: F) -> R
-        where F: FnMut(&'a mut T::Item) -> &'a mut S {
+                                                                                                               where F: FnMut(&'a mut T::Item) -> &'a mut S {
         let owner = self.parent().as_mut();
         let mut target = R::empty();
         for node in iter {

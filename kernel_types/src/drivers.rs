@@ -35,4 +35,7 @@ impl KernelSymbol {
         self.offset.as_ptr() as usize
     }
 }
+///the representation of any block device in system
+pub struct Device {
 
+}

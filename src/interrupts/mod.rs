@@ -12,6 +12,7 @@ use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
 use crate::utils::atomics::{SpinLock, SpinLockLazyCell};
 pub use lock::InterruptableLazyCell;
+use crate::memory::AllocationStrategy::Kernel;
 use crate::utils::TinyListNode;
 
 #[allow(unused)]
@@ -256,7 +257,8 @@ fn init_interceptors(table: &mut IDTable) {
         if object_option.is_none() {
             let line =
                 PicLine::try_from(index as u8).expect("index cannot exceed array size");
-            let raw_object = memory::slab_alloc::<InterruptObject>();
+            let raw_object = memory::slab_alloc::<InterruptObject>(Kernel)
+                .expect("Failed to alloc task struct");
             let object = raw_object.write(InterruptObject::new(line));
             *object_option = Some(object);
         }

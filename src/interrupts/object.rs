@@ -6,6 +6,7 @@ use crate::interrupts::{CallbackInfo, pic};
 use crate::{log, memory};
 use crate::drivers::Handle;
 use crate::interrupts::pic::{PicLine};
+use crate::memory::AllocationStrategy::Kernel;
 use crate::utils::{BorrowingLinkedList, TinyLinkedList};
 use crate::utils::atomics::{SpinLock};
 
@@ -49,7 +50,8 @@ impl InterruptObject {
     //the registration is appending callback to the end of sequence
     //to remove consider to add DriverHandle
     pub fn add(&self, stack_info: CallbackInfo) {
-        let raw_node = memory::slab_alloc::<CallbackInfo>();
+        let raw_node = memory::slab_alloc::<CallbackInfo>(Kernel)
+            .expect("Failed to alloc interrupt object info");
         let node = raw_node.write(stack_info);
         self.lock.acquire();
         unsafe {

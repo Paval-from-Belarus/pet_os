@@ -212,7 +212,6 @@ impl PhysicalAllocator {
     }
     unsafe fn merge_buddies(first: &'static mut Page, second: &'static mut Page, target_size: usize) -> &'static mut [Page] {
         assert!(!ptr::eq(first as *mut Page, second as *mut Page));
-
         let slice_offset = if ptr::from_ref(first).cmp(&ptr::from_ref(second)).is_lt() {
             ptr::from_mut(first)
         } else {

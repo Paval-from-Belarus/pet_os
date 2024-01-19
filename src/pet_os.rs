@@ -1,27 +1,35 @@
 #![no_std]
 #![crate_name = "pet_os"]
-//#![feature(lang_items)]
 #![feature(slice_ptr_get)]
 #![feature(let_chains)]
 #![feature(core_intrinsics)]
 #![feature(ptr_from_ref)]
 #![feature(const_trait_impl)]
 #![feature(abi_x86_interrupt)]
-#![feature(const_maybe_uninit_zeroed)]
 #![feature(allocator_api)]
 #![feature(pointer_byte_offsets)]
 #![feature(ptr_sub_ptr)]
-#![feature(maybe_uninit_uninit_array)]
 #![feature(offset_of)]
 #![feature(negative_impls)]
-#![feature(concat_idents)]
 #![feature(ascii_char)]
+// really raw features
+#![feature(maybe_uninit_uninit_array)]
+#![feature(const_maybe_uninit_zeroed)]
+#![feature(maybe_uninit_array_assume_init)]
+#![feature(const_maybe_uninit_uninit_array)]
+#![feature(const_maybe_uninit_array_assume_init)]
+#![feature(const_maybe_uninit_write)]
+#![feature(hasher_prefixfree_extras)]
+#![feature(fn_traits)]
+extern crate alloc;
+extern crate fallible_collections;
 extern crate num_enum;
 extern crate static_assertions;
-extern crate alloc;
 
 use core::arch::asm;
 use core::ptr;
+
+use fallible_collections::FallibleVec;
 
 use memory::PagingProperties;
 use utils::logging;
@@ -29,12 +37,10 @@ use utils::logging;
 use crate::process::TaskPriority;
 
 #[cfg(any(not(target_arch = "x86")))]
-compile_error!("Operation system is suitable for Intel i686");
+compile_error!("Operation system is suitable for x86 CPU only");
 
 
-#[cfg(not(test))]
 #[allow(dead_code)]
-#[macro_use]
 mod file_system;
 #[allow(dead_code)]
 mod interrupts;

@@ -13,58 +13,6 @@ pub struct TinyListNode<T: Sized> {
 }
 
 
-//SimpleListNodeData is automatically implemented for ListNodeData
-
-
-// impl<T: ListNodeData> ListNodePivots<T> {
-//     pub fn wrap_to_simple(&self) -> &TinyListNode<T> {
-//         unsafe { mem::transmute::<&NonNull<ListNode<T>>, &TinyListNode<T>>(&self.prev) }
-//     }
-//     pub fn wrap_mut_to_simple(&mut self) -> &mut TinyListNode<T> {
-//         unsafe { mem::transmute::<&mut NonNull<ListNode<T>>, &mut TinyListNode<T>>(&mut self.prev) }
-//     }
-// }
-//
-// impl<T: TinyListNodeData> ListNodePivot<T> {
-//     pub fn wrap_simple(&self) -> &TinyListNode<T> {
-//         unsafe { mem::transmute(self) }
-//     }
-//     pub fn wrap_mut_simple(&mut self) -> &mut TinyListNode<T> {
-//         unsafe { mem::transmute(self) }
-//     }
-// }
-//
-// impl<T: TinyListNodeData> TinyListNode<T> {
-//     pub fn unwrap_simple(&self) -> &T {
-//         unsafe { mem::transmute(self) }
-//     }
-//     pub fn unwrap_mut_simple(&self) -> &mut T {
-//         unsafe { mem::transmute(self) }
-//     }
-// }
-
-// impl<T: ListNodeData> TinyListNode<T> {
-//     // pub fn unwrap(&self) -> &T {
-//     //     unsafe {
-//     //         let pivots = self.cast_pivots();
-//     //         (&*pivots).unwrap()
-//     //     }
-//     // }
-//     // pub fn unwrap_mut(&self) -> &T {
-//     //     unsafe {
-//     //         let pivots = self.cast_pivots();
-//     //         (&mut *pivots).unwrap_mut()
-//     //     }
-//     // }
-//     // unsafe fn cast_pivots(&self) -> *mut ListNodePivots<T> {
-//     //     let byte_offset = mem::offset_of!(ListNodePivots, prev);
-//     //     (self as *const ListNodePivot<T>)
-//     //         .byte_sub(byte_offset)
-//     //         .cast::<ListNodePivots<T>>()
-//     //         .cast_mut()
-//     // }
-// }
-//
 impl<T: ListNodeData> TinyListNode<T> {
     pub fn node(&self) -> &ListNode<T> {
         unsafe { mem::transmute(self) }

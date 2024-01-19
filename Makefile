@@ -38,7 +38,7 @@ LD_FLAGS += -z max-page-size=0x1000
 LD_FLAGS += -melf_i386
 TARGET_SPEC := $(SCRIPTS_PATH)/target.json
 FILE_SYSTEM_BUILD_SCRIPT := $(SCRIPTS_PATH)/FileSystem.xml
-CARGO_FLAGS := -Z build-std=core,compiler_builtins
+CARGO_FLAGS := -Z build-std=core,alloc,compiler_builtins
 CARGO_FLAGS += -Z build-std-features=compiler-builtins-mem
 CARGO_FLAGS += --target=$(TARGET_SPEC)
 OBJECTS = $(TARGET_KERNEL_PATH)/entry.o $(TARGET_KERNEL_PATH)/interceptors.o
