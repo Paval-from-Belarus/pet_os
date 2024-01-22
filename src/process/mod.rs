@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::{bitflags, declare_constants, interrupts, list_node, log, memory};
-use crate::file_system::{File, FileOpenMode, FilePath, MAX_FILES_COUNT, MountPoint};
+use crate::file_system::{File, FileOpenMode, PathNode, MAX_FILES_COUNT, MountPoint};
 use crate::interrupts::CallbackInfo;
 use crate::memory::{Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::memory::AllocationStrategy::Kernel;
@@ -191,7 +191,7 @@ pub struct ThreadTask {
 
 pub struct TaskFileSystem {
     mask: FileOpenMode,
-    current_path: &'static FilePath,
+    current_path: &'static PathNode,
     file_system: &'static MountPoint,
     use_count: AtomicUsize,
 }

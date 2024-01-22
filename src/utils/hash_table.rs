@@ -1,11 +1,17 @@
 use alloc::borrow::ToOwned;
+use core::hash::Hasher;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ptr;
 
+use crate::lambda_const_assert;
 use crate::utils::{BorrowingLinkedList, TinyLinkedList, TinyListNode, TinyListNodeData};
-use crate::utils::string::{HashData, HashKey};
+
+struct HashBucket<'a, K: HashKey, V: TinyListNodeData<Item=V> + HashData<K>> {
+    list: TinyLinkedList<'a, V>,
+    _marker: PhantomData<(K, V)>,
+}
 
 pub struct HashTable<'a, K: HashKey, V: TinyListNodeData<Item=V> + HashData<K>, const N: usize> {
     table: [TinyLinkedList<'a, V>; N],
@@ -14,9 +20,12 @@ pub struct HashTable<'a, K: HashKey, V: TinyListNodeData<Item=V> + HashData<K>, 
 
 
 impl<'a, const N: usize, K: HashKey, V: TinyListNodeData<Item=V> + HashData<K>> HashTable<'a, K, V, N> {
-    pub const fn empty() -> Self {
+    pub fn empty() -> Self {
         let raw_table: [MaybeUninit<TinyLinkedList<'a, V>>; N] = MaybeUninit::uninit_array();
-        let table = unsafe { MaybeUninit::array_assume_init(raw_table) };
+        let table = raw_table.map(|mut raw_bucket| {
+            raw_bucket.write(TinyLinkedList::empty());
+            unsafe { raw_bucket.assume_init() }
+        });
         Self { table, _marker: PhantomData }
     }
     pub fn size(&self) -> usize {
@@ -56,7 +65,7 @@ mod tests {
 
     use crate::list_node;
     use crate::utils::{ListNode, ListNodeData};
-    use crate::utils::string::{HashCode, HashKey};
+    use crate::utils::hash_table::{HashCode, HashKey};
 
     list_node!(
         pub DataType(node)
@@ -83,5 +92,51 @@ mod tests {
     #[test]
     fn integrity_test() {
         let node = unsafe { DataType { node: ListNode::empty() } };
+    }
+}
+
+pub type HashCode = u32;
+
+pub trait FastHasher: Hasher {
+    fn fast_hash(&self) -> HashCode;
+}
+
+pub trait HashKey: Eq {
+    fn hash_code(&self) -> HashCode;
+}
+
+/// The basic concept of HashData is data by itself storing key
+pub trait HashData<T: HashKey> {
+    fn key(&self) -> &T;
+    fn equals_by_key(&self, key: &T) -> bool {
+        self.key().eq(key)
+    }
+}
+
+pub struct PolynomialHasher<const N: usize>(HashCode);
+
+impl<const N: usize> PolynomialHasher<N> {
+    pub fn new() -> Self {
+        lambda_const_assert!(N: usize => N < HashCode::MAX as usize);
+        Self(0)
+    }
+}
+
+impl<const N: usize> Hasher for PolynomialHasher<N> {
+    fn finish(&self) -> u64 {
+        self.0 as _
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.0 = bytes.iter()
+                      .fold(self.0, |sum, byte| {
+                          sum + (N as HashCode) * (*byte as HashCode)
+                      });
+    }
+}
+
+impl<const N: usize> FastHasher for PolynomialHasher<N> {
+    fn fast_hash(&self) -> HashCode {
+        self.0
     }
 }

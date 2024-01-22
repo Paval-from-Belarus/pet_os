@@ -14,11 +14,8 @@
 #![feature(ascii_char)]
 // really raw features
 #![feature(maybe_uninit_uninit_array)]
-#![feature(const_maybe_uninit_zeroed)]
+// #![feature(const_maybe_uninit_zeroed)]
 #![feature(maybe_uninit_array_assume_init)]
-#![feature(const_maybe_uninit_uninit_array)]
-#![feature(const_maybe_uninit_array_assume_init)]
-#![feature(const_maybe_uninit_write)]
 #![feature(hasher_prefixfree_extras)]
 #![feature(fn_traits)]
 extern crate alloc;

@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use core::cell::UnsafeCell;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 
@@ -8,7 +9,7 @@ use num_enum::FromPrimitive;
 use kernel_types::drivers::Device;
 
 use crate::{bitflags, declare_constants, list_node, tiny_list_node};
-use crate::utils::{LinkedList, ListNode, MutString, QuickString, TinyListNode};
+use crate::utils::{HashData, HashTable, LinkedList, ListNode, MutString, QuickString, TinyListNode};
 use crate::utils::atomics::SpinLock;
 use crate::utils::time::Timestamp;
 
@@ -96,7 +97,7 @@ impl IndexNode {}
 list_node!(pub File(node));
 pub struct File {
     file_system: NonNull<MountPoint>,
-    path: FilePath,
+    path: PathNode,
     //the next offset to be read
     offset: usize,
     mode: FileOpenMode,
@@ -107,9 +108,12 @@ pub struct File {
     data: *mut (),
     use_count: AtomicUsize,
 }
-
+list_node! {
+    pub PathNode(node)
+}
 ///alternative struct to linux `dentry`
-pub struct FilePath {
+pub struct PathNode {
+    node: ListNode<PathNode>,
     file_system: NonNull<MountPoint>,
     //linux also support ptr::null for invalid file names
     inode: NonNull<IndexNode>,
@@ -119,7 +123,7 @@ pub struct FilePath {
 }
 
 struct SearchResult {
-    path: NonNull<FilePath>,
+    path: NonNull<PathNode>,
     name: QuickString<'static>,
 
 }
@@ -131,9 +135,19 @@ pub fn file_name_lookup(name: &str) {
                      .try_collect::<Vec<QuickString>>().unwrap();
 }
 
-impl FilePath {}
+impl HashData<QuickString<'static>> for PathNode {
+    fn key(&self) -> &QuickString<'static> {
+        &self.name
+    }
+}
+declare_constants! {
+    pub usize,
+    HASHTABLE_CAPACITY = 500
+}
+pub struct FilePathHashTable {
+    table: UnsafeCell<HashTable<'static, QuickString<'static>, PathNode, HASHTABLE_CAPACITY>>,
+}
 
-pub struct FilePathHashTable {}
 list_node!(pub MountPoint(node));
 pub struct MountPoint {
     node: ListNode<MountPoint>,

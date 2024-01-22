@@ -11,6 +11,7 @@ mod hash_table;
 use core::ptr::NonNull;
 pub use spin_box::SpinBox;
 pub use doubly_linked_list::{LinkedList, ListNode};
+pub use hash_table::{HashTable, HashKey, HashData};
 pub use singly_linked_list::{TinyLinkedList, TinyListNode};
 pub use string::{MutString, QuickString};
 #[macro_export]

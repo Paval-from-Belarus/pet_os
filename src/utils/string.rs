@@ -2,23 +2,7 @@ use core::{ptr, slice};
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
 use core::str::from_utf8_unchecked;
-use crate::lambda_const_assert;
-
-pub type HashCode = u32;
-
-pub trait FastHasher: Hasher {
-    fn fast_hash(&self) -> HashCode;
-}
-
-pub trait HashKey: Eq {
-    fn hash_code(&self) -> HashCode;
-}
-
-/// The basic concept of HashData is data by itself storing key
-pub trait HashData<T: HashKey> {
-    fn key(&self) -> &T;
-    fn equals_by_key(&self, key: &T) -> bool;
-}
+use crate::utils::hash_table::{FastHasher, HashCode, HashKey, PolynomialHasher};
 
 //alternative to linux qstr
 #[derive(PartialEq, Eq)]
@@ -49,34 +33,6 @@ impl<'a> QuickString<'a> {
 impl<'a> HashKey for QuickString<'a> {
     fn hash_code(&self) -> HashCode {
         self.hash_code
-    }
-}
-
-pub struct PolynomialHasher<const N: usize>(HashCode);
-
-impl<const N: usize> PolynomialHasher<N> {
-    pub fn new() -> Self {
-        lambda_const_assert!(N: usize => N < HashCode::MAX as usize);
-        Self(0)
-    }
-}
-
-impl<const N: usize> Hasher for PolynomialHasher<N> {
-    fn finish(&self) -> u64 {
-        self.0 as _
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.0 = bytes.iter()
-                      .fold(self.0, |sum, byte| {
-                          sum + (N as HashCode) * (*byte as HashCode)
-                      });
-    }
-}
-
-impl<const N: usize> FastHasher for PolynomialHasher<N> {
-    fn fast_hash(&self) -> HashCode {
-        self.0
     }
 }
 
