@@ -110,7 +110,7 @@ impl TaskSchedulerInner {
             self.delayed.iter_mut().limit()
                 .filter(|task| task.status == TaskStatus::Killed);
         let list: TinyLinkedList<RunnableTask> = unsafe {
-            guard.map_collect(iter, |node| node.tiny_mut())
+            guard.collect_map(iter, |node| node.tiny_mut())
         };
         self.killed.splice(list);
         let list = unsafe { self.killed.clone() };

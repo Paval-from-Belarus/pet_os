@@ -225,7 +225,7 @@ pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
         }
         target
     }
-    unsafe fn map_collect<I: IntoIterator<Item=&'a mut T::Item>, S: 'a, R: BorrowingLinkedList<'a, Item=S>, F>(self, iter: I, mut map: F) -> R
+    unsafe fn collect_map<I: IntoIterator<Item=&'a mut T::Item>, S: 'a, R: BorrowingLinkedList<'a, Item=S>, F>(self, iter: I, mut map: F) -> R
                                                                                                                where F: FnMut(&'a mut T::Item) -> &'a mut S {
         let owner = self.parent().as_mut();
         let mut target = R::empty();
@@ -262,4 +262,3 @@ unsafe impl<T: ListNodeData> TinyListNodeData for T {
         ListNodeData::from(pivot)
     }
 }
-

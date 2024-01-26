@@ -49,7 +49,7 @@ pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
         }
         target
     }
-    unsafe fn map_collecto<I: IntoIterator<Item=&'a mut T::Item>,
+    unsafe fn collect_map<I: IntoIterator<Item=&'a mut T::Item>,
         S: 'a, R: BorrowingLinkedList<'a, Item=S>, F>
     (self, iter: I, mut map: F) -> R
      where F: FnMut(&'a mut T::Item) -> &'a mut S {

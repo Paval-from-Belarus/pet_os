@@ -5,6 +5,7 @@ use core::sync::atomic::AtomicUsize;
 
 use fallible_collections::{FallibleVec, TryCollect};
 use num_enum::FromPrimitive;
+use kernel_macro::ListNode;
 
 use kernel_types::drivers::Device;
 
@@ -27,11 +28,12 @@ bitflags! {
     pub FileSystemStatus(usize),
     READ_ONLY = 0b01,
 }
-tiny_list_node!(pub FileSystemType(node));
 ///Immutable object holding information about file system
+#[derive(ListNode)]
 pub struct FileSystemType {
     name: &'static str,
     read_super: Option<fn(&SuperBlock)>,
+    #[list_pivot(())]
     node: TinyListNode<FileSystemType>,
     status: FileSystemStatus,
 }
