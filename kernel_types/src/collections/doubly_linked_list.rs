@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
-use crate::utils::{BorrowingLinkedList, DanglingData, ListNodeData, UnlinkableListGuard};
+use crate::collections::{BorrowingLinkedList, DanglingData, ListNodeData, UnlinkableListGuard};
 
 #[repr(C)]
 pub struct ListNode<T: Sized> {
@@ -540,21 +540,14 @@ mod tests {
     extern crate std;
     extern crate alloc;
 
-    use alloc::boxed::Box;
-    use alloc::rc::Rc;
-    use alloc::string::String;
-    use alloc::sync::Arc;
     use alloc::vec;
-    use alloc::vec::Vec;
-    use core::cell::RefCell;
     use core::ptr::NonNull;
     use std::println;
 
     use static_assertions::const_assert_eq;
 
-    use crate::list_node;
-    use crate::utils::{BorrowingLinkedList, ListNodeData, TinyListNodeData, UnlinkableListGuard};
-    use crate::utils::doubly_linked_list::{LinkedList, ListNode};
+    use crate::{BorrowingLinkedList, DanglingData, ListNodeData, TinyListNodeData, UnlinkableListGuard};
+    use crate::collections::{LinkedList, ListNode};
 
     fn has_data(node: Option<&ListNode<TestStruct>>, value: usize) -> bool {
         if node.is_none() {
@@ -562,10 +555,15 @@ mod tests {
         }
         node.unwrap().value == value
     }
-    list_node!(
-        pub TestStruct(node);
-        AnotherStruct(one);
-    );
+
+    pub struct AnotherStruct;
+
+    unsafe impl ListNodeData for TestStruct {}
+
+    unsafe impl ListNodeData for AnotherStruct {}
+
+    unsafe impl DanglingData for TestStruct {}
+
     pub struct TestStruct {
         node: ListNode<TestStruct>,
         one: ListNode<AnotherStruct>,
@@ -582,6 +580,12 @@ mod tests {
                     value,
                 }
             }
+        }
+        pub fn as_node(&mut self) -> &mut ListNode<TestStruct> {
+            &mut self.node;
+        }
+        pub fn as_one(&mut self) -> &mut ListNode<AnotherStruct> {
+            &mut self.one
         }
     }
 
@@ -676,7 +680,7 @@ mod tests {
             println!("backward test passed");
             let guard = list.link_guard();
             let iter = list.iter_mut()
-                .skip_while(|node| node.value > 0);
+                           .skip_while(|node| node.value > 0);
             let another = guard.collect(iter);
         }
         unsafe {
@@ -697,7 +701,7 @@ mod tests {
             );
             //each node should support next/prevent invariant; list_node! macro to such stuff
             nodes.iter_mut()
-                .for_each(|node| node.as_node().as_mut().self_link());
+                 .for_each(|node| node.as_node().as_mut().self_link());
             let mut first = NonNull::from(nodes.get_mut(0).unwrap());
             let mut last = NonNull::from(nodes.get_mut(2).unwrap());
             let mut any = NonNull::from(nodes.get_mut(1).unwrap());

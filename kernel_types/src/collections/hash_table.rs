@@ -1,5 +1,5 @@
-use std::marker::PhantomData;
-use std::ptr::NonNull;
+use core::marker::PhantomData;
+use core::ptr::NonNull;
 
 pub struct HashTable<'a, T: Sized +> {
     capacity: usize,

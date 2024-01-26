@@ -4,7 +4,8 @@ use core::mem;
 
 use core::ops::Deref;
 use core::ops::DerefMut;
-use crate::utils::{BorrowingLinkedList, ListNode, ListNodeData, TinyListNodeData, UnlinkableListGuard};
+use crate::collections::{BorrowingLinkedList, ListNodeData, TinyListNodeData, UnlinkableListGuard};
+use crate::collections::{ListNode};
 
 #[repr(C)]
 pub struct TinyListNode<T: Sized> {
@@ -299,9 +300,16 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
     use core::ptr::NonNull;
-    use crate::tiny_list_node;
-    use crate::utils::{BorrowingLinkedList, TinyLinkedList, TinyListNode};
-    tiny_list_node!(pub TestStruct(node));
+    use crate::collections::{BorrowingLinkedList, TinyListNodeData};
+    use crate::collections::{TinyLinkedList, TinyListNode};
+
+    unsafe impl TinyListNodeData for TestStruct {
+        type Item = TestStruct;
+        fn from(node: NonNull<TinyListNode<Self>>) -> NonNull<Self::Item> {
+            todo!()
+        }
+    }
+
     pub struct TestStruct {
         node: TinyListNode<TestStruct>,
         value: usize,
@@ -310,6 +318,9 @@ mod tests {
     impl TestStruct {
         pub fn new(value: usize) -> Self {
             Self { node: TinyListNode::empty(), value }
+        }
+        pub fn as_node(&mut self) -> &mut TinyListNode<TestStruct> {
+            &mut self.node
         }
     }
 

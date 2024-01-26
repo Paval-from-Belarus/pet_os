@@ -76,6 +76,7 @@ name = "kernel-macro"
 version = "0.1.0"
 dependencies = [
  "kernel-types",
+ "proc-macro2",
  "quote",
  "syn 2.0.39",
 ]
@@ -83,6 +84,12 @@ dependencies = [
 [[package]]
 name = "kernel-types"
 version = "0.1.0"
+dependencies = [
+ "failure",
+ "fallible_collections",
+ "num_enum",
+ "static_assertions",
+]
 
 [[package]]
 name = "lock_api"
@@ -151,9 +158,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.69"
+version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "134c189feb4956b20f6f547d2cf727d4c0fe06722b20a0eec87ed445a97f92da"
+checksum = "e2422ad645d89c99f8f3e6b88a9fdeca7fabeac836b1002371c4367c8f984aae"
 dependencies = [
  "unicode-ident",
 ]

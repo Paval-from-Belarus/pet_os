@@ -263,4 +263,3 @@ unsafe impl<T: ListNodeData> TinyListNodeData for T {
     }
 }
 
-fn test() {}
