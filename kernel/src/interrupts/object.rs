@@ -7,7 +7,7 @@ use crate::{log, memory};
 use crate::drivers::Handle;
 use crate::interrupts::pic::{PicLine};
 use crate::memory::AllocationStrategy::Kernel;
-use crate::utils::{BorrowingLinkedList, TinyLinkedList};
+use kernel_types::collections::{BorrowingLinkedList, TinyLinkedList};
 use crate::utils::atomics::{SpinLock};
 
 ///The manager struct that handle all request for given interrupt.
@@ -55,7 +55,7 @@ impl InterruptObject {
         let node = raw_node.write(stack_info);
         self.lock.acquire();
         unsafe {
-            (*self.callbacks.get()).push_back(node.as_next().as_mut());
+            (*self.callbacks.get()).push_back(node.as_next());
         }
         self.lock.release();
     }

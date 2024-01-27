@@ -5,7 +5,6 @@ use core::ptr::NonNull;
 
 use crate::collections::{BorrowingLinkedList, DanglingData, ListNodeData, UnlinkableListGuard};
 
-
 #[repr(C)]
 pub struct ListNode<T: Sized> {
     next: NonNull<ListNode<T>>,
@@ -115,13 +114,13 @@ impl<T: ListNodeData> Deref for ListNode<T> {
     type Target = T::Item;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { ListNodeData::from(NonNull::from(self)).as_ref() }
+        unsafe { ListNodeData::from_node_unchecked(NonNull::from(self)).as_ref() }
     }
 }
 
 impl<T: ListNodeData> DerefMut for ListNode<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { ListNodeData::from(NonNull::from(self)).as_mut() }
+        ListNodeData::from_node(self)
     }
 }
 
@@ -539,12 +538,12 @@ impl<'a, I: DoubleEndedIterator> DoubleEndedIterator for LimitedIterator<'a, I> 
 #[macro_export]
 macro_rules! from_list_node {
     ($target: ident, $source: ident, $field: tt) => {
-        unsafe impl $crate::utils::ListNodeData for $source {
+        unsafe impl $crate::collections::ListNodeData for $source {
             type Item = $target;
             fn from(node: core::ptr::NonNull<ListNode<Self>>) -> core::ptr::NonNull<Self::Item> {
                 let pointer = node.as_ptr();
                 let field_offset = core::mem::offset_of!($target, $field);
-                let struct_offset = unsafe { (pointer as *mut u8).byte_sub(field_offset) };
+                let struct_offset = unsafe { (pointer as *mut u8).sub(field_offset) };
                 let value = unsafe { core::mem::transmute::<*mut u8, *mut $target>(struct_offset) };
                 unsafe {core::ptr::NonNull::new_unchecked(value)}
             }
@@ -583,20 +582,20 @@ macro_rules! list_node {
             $crate::from_list_node!($target, $name, $field);
             $(
                 $(
-                    impl $crate::utils::$marker for $name {}
+                    impl $crate::collections::$marker for $name {}
                 )*
             )?
 
         )*
         impl $target {
-            pub fn from_node<T: $crate::utils::ListNodeData<Item=$target>>(node: core::ptr::NonNull<ListNode<T>>) -> core::ptr::NonNull<$target> {
-                $crate::utils::ListNodeData::from(node)
+            pub fn from_node<T: $crate::collections::ListNodeData<Item=$target>>(node: core::ptr::NonNull<ListNode<T>>) -> core::ptr::NonNull<$target> {
+                $crate::collections::ListNodeData::from(node)
             }
-            pub fn from_mut<T: $crate::utils::ListNodeData<Item=$target>>(node: &mut ListNode<T>) -> &mut $target {
-                unsafe { $crate::utils::ListNodeData::from(core::ptr::NonNull::from(node)).as_mut() }
+            pub fn from_mut<T: $crate::collections::ListNodeData<Item=$target>>(node: &mut ListNode<T>) -> &mut $target {
+                unsafe { $crate::collections::ListNodeData::from(core::ptr::NonNull::from(node)).as_mut() }
             }
-            pub fn from_ref<T: $crate::utils::ListNodeData<Item=$target>>(node: &ListNode<T>) -> &$target {
-                unsafe { $crate::utils::ListNodeData::from(core::ptr::NonNull::from(node)).as_ref() }
+            pub fn from_ref<T: $crate::collections::ListNodeData<Item=$target>>(node: &ListNode<T>) -> &$target {
+                unsafe { $crate::collections::ListNodeData::from(core::ptr::NonNull::from(node)).as_ref() }
             }
         }
     };
@@ -612,7 +611,7 @@ mod tests {
 
     use static_assertions::const_assert_eq;
 
-    use crate::collections::{BorrowingLinkedList, DanglingData, ListNodeData, TinyListNodeData, UnlinkableListGuard};
+    use crate::collections::{BorrowingLinkedList, UnlinkableListGuard};
     use crate::collections::{LinkedList, ListNode};
 
     fn has_data(node: Option<&ListNode<TestStruct>>, value: usize) -> bool {
@@ -622,8 +621,10 @@ mod tests {
         node.unwrap().value == value
     }
 
-    pub struct AnotherStruct;
-
+    list_node! {
+        pub TestStruct(node);
+        AnotherStruct(one)
+    }
     pub struct TestStruct {
         node: ListNode<TestStruct>,
         one: ListNode<AnotherStruct>,
@@ -640,12 +641,6 @@ mod tests {
                     value,
                 }
             }
-        }
-        pub fn as_node(&mut self) -> &mut ListNode<TestStruct> {
-            &mut self.node;
-        }
-        pub fn as_one(&mut self) -> &mut ListNode<AnotherStruct> {
-            &mut self.one
         }
     }
 

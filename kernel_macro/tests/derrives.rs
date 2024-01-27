@@ -9,7 +9,7 @@ mod tests {
     extern crate std;
     extern crate alloc;
 
-    use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode, TinyLinkedList, TinyListNode};
+    use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode, TinyLinkedList, TinyListNode, TinyListNodeData, ListNodeData};
 
     pub struct AnotherStruct;
 
@@ -22,6 +22,7 @@ mod tests {
         tiny_node: TinyListNode<TestStruct>,
         payload: usize,
     }
+
 
     #[test]
     fn list_node_test() {
@@ -39,8 +40,12 @@ mod tests {
                 tiny_node: TinyListNode::empty(),
                 payload: 42,
             };
-            list.push_back(test.as_node());
-            tiny_list.push_back(test.as_tiny_node());
+            let node = test.as_node();
+            let first_struct = TestStruct::from_node(node);
+            let tiny_node = first_struct.as_tiny_node();
+            let second_struct = TestStruct::from_tiny_node(tiny_node);
+            // list.push_back(test.as_node());
+            // tiny_list.push_back(test.as_tiny_node());
             // array.push(&test);
         }
     }

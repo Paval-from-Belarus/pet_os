@@ -1,11 +1,11 @@
-use core::ptr::NonNull;
 use core::marker::PhantomData;
 use core::mem;
-
 use core::ops::Deref;
 use core::ops::DerefMut;
+use core::ptr::NonNull;
+
 use crate::collections::{BorrowingLinkedList, ListNodeData, TinyListNodeData, UnlinkableListGuard};
-use crate::collections::{ListNode};
+use crate::collections::ListNode;
 
 #[repr(C)]
 pub struct TinyListNode<T: Sized> {
@@ -64,13 +64,13 @@ impl<T: TinyListNodeData> Deref for TinyListNode<T> {
     type Target = T::Item;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { TinyListNodeData::from(NonNull::from(self)).as_ref() }
+        unsafe { TinyListNodeData::from_node_unchecked(NonNull::from(self)).as_ref() }
     }
 }
 
 impl<T: TinyListNodeData> DerefMut for TinyListNode<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { TinyListNodeData::from(NonNull::from(self)).as_mut() }
+        TinyListNodeData::from_node(self)
     }
 }
 
@@ -300,6 +300,7 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
     use core::ptr::NonNull;
+
     use crate::collections::{BorrowingLinkedList, TinyListNodeData};
     use crate::collections::{TinyLinkedList, TinyListNode};
 

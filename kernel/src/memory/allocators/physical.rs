@@ -8,8 +8,9 @@ use crate::memory::paging::{CaptureAllocator, PageMarkerError};
 use crate::memory::{ProcessInfo, Page, PhysicalAddress, VirtualAddress, ToPhysicalAddress, OsAllocationError, MEMORY_MAP_SIZE};
 use crate::memory::OsAllocationError::NoMemory;
 
-use crate::utils::{BorrowingLinkedList, LinkedList, ListNode, SpinBox};
-use crate::utils::atomics::SpinLock;
+use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
+use crate::utils::SpinBox;
+use crate::utils::atomics::{SpinLock};
 declare_constants!(
     pub usize,
     MAX_UNIT_SIZE = 64, "The maximal count of pages for continuous memory layout";
@@ -135,7 +136,7 @@ impl PhysicalAllocator {
                 let page_slice = self.find_page_slice(raw_page.as_mut());
                 mem_offset += Page::SIZE * page_slice.len();
                 let buddy_index = BuddyPiece::power_of(page_slice.len());
-                let page_node = page_slice[0].as_node().as_mut();
+                let page_node = page_slice[0].as_node();
                 (*self.buddies_cell.get())[buddy_index].push_front(page_node);
             }
         }
@@ -145,9 +146,9 @@ impl PhysicalAllocator {
         loop {
             let page_slice = page.as_slice_mut(expected_slice_size);
             let effective_slice_size = page_slice.iter()
-                .filter(|page| !page.is_used())
-                .take(expected_slice_size)
-                .count();
+                                                 .filter(|page| !page.is_used())
+                                                 .take(expected_slice_size)
+                                                 .count();
             if effective_slice_size == expected_slice_size {
                 return page_slice;
             }
@@ -172,7 +173,7 @@ impl PhysicalAllocator {
                 let merged_page_slice = Self::merge_buddies(raw_page.as_mut(), buddy, page_slice.len() * 2);
                 self.push_buddy(merged_page_slice, Some(buddies_lock));
             } else {
-                buddies[power].push_front(raw_page.as_mut().as_node().as_mut());
+                buddies[power].push_front(raw_page.as_mut().as_node());
             }
         }
     }
@@ -198,8 +199,8 @@ impl PhysicalAllocator {
         let buddy = &mut *(buddy_offset as *mut ListNode<Page>);
         if !buddy.is_used() {
             let buddy_free_pages_count = buddy.as_slice(page_slice_size).iter()
-                .filter(|page| !page.is_used())
-                .count();
+                                              .filter(|page| !page.is_used())
+                                              .count();
             //no other way when second is free, but this one is not -- merge required
             if buddy_free_pages_count == page_slice_size {
                 Some(buddy)
@@ -224,7 +225,7 @@ impl PhysicalAllocator {
         page.free();
         if !page.is_used() {
             let mut list = self.synchronized_pages();
-            unsafe { list.push_back(page.as_node().as_mut()); }
+            unsafe { list.push_back(page.as_node()); }
         }
     }
     pub fn fast_pages(&'static self, pages_count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
@@ -283,7 +284,7 @@ impl PhysicalAllocator {
         if let Some(first_page) = buddy_option {
             let piece = BuddyPiece::with_power(buddy_index, first_page);
             piece.pages().iter_mut()
-                .for_each(|page| page.take());
+                 .for_each(|page| page.take());
             Ok(piece)
         } else {
             Err(NoMemory)
@@ -296,8 +297,8 @@ impl PhysicalAllocator {
         let pages = piece.pages();
         pages.iter_mut().for_each(|page| page.free());
         let used_pages_count = pages.iter()
-            .filter(|page| page.is_used())
-            .count();
+                                    .filter(|page| page.is_used())
+                                    .count();
         if used_pages_count == 0 {
             self.push_buddy(pages, None);
             Ok(())

@@ -1,15 +1,16 @@
 use core::arch::asm;
 use core::cell::UnsafeCell;
-use core::intrinsics::truncf32;
 use core::ptr;
 use core::ptr::NonNull;
-use core::sync::atomic;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use core::sync::atomic::Ordering::{Relaxed, Release};
+use core::sync::atomic::Ordering::Relaxed;
+
+use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode, TinyLinkedList, UnlinkableListGuard};
+
 use crate::{interrupts, memory};
-use crate::process::{RunnableTask, SCHEDULER, TaskContext, TaskStatus, ThreadTask};
-use crate::utils::{BorrowingLinkedList, LinkedList, ListNode, ListNodeData, TinyLinkedList, TinyListNode, TinyListNodeData, UnlinkableListGuard};
+use crate::process::{RunnableTask, TaskContext, TaskStatus, ThreadTask};
 use crate::utils::atomics::SpinLock;
+
 #[macro_export]
 macro_rules! current_task {
     () => {
@@ -49,13 +50,14 @@ impl TaskSchedulerInner {
     ///task is simple idle task
     pub fn new(task: &'static mut ThreadTask) -> Self {
         task.status = TaskStatus::Active;//the status of idle task is never changed
+        let raw_task = NonNull::from(task.as_runnable());
         unsafe {
             Self {
                 delayed: LinkedList::empty(),
                 killed: TinyLinkedList::empty(),
                 sleeping: TinyLinkedList::empty(),
-                current: task.as_runnable(),
-                idle_task: task.as_runnable(),
+                current: raw_task,
+                idle_task: raw_task,
                 //set the linked list as empty
             }
         }
@@ -63,25 +65,23 @@ impl TaskSchedulerInner {
     pub fn add_task(&mut self, task: &'static mut ThreadTask) {
         task.status = TaskStatus::Delayed;
         unsafe {
-            self.delayed.push_back(task.as_runnable().as_mut());
+            self.delayed.push_back(task.as_runnable());
         }
     }
     pub fn add_sleeping(&mut self, task: &'static mut ThreadTask) {
         task.status = TaskStatus::Blocked;
-        let tiny_task = unsafe {
-            task.as_runnable().as_mut().tiny_mut()
-        };
+        let tiny_task = task.as_runnable().tiny_mut();
         self.sleeping.push_back(tiny_task);
     }
     ///try to move task from sleeping list
     pub fn awake_sleeping(&mut self, current_time: usize) {
         let guard = self.sleeping.link_guard();
         let iter = self.sleeping.iter_mut()
-            .filter(|task| task.start_time <= current_time);
+                       .filter(|task| task.start_time <= current_time);
         let mut list = unsafe { guard.collect(iter) };
         for tiny in list.iter_mut() {
             let node = tiny.node_mut();
-            self.add_task(ThreadTask::from_mut(node));
+            self.add_task(node as &mut ThreadTask);
         }
     }
     ///Try to fetch the next task
@@ -126,7 +126,7 @@ impl TaskSchedulerInner {
         }
         next.status = TaskStatus::Active;
         //if not current task is specified, simply set it
-        self.current = unsafe { next.as_runnable() };
+        self.current = NonNull::from(next.as_runnable());
     }
     //set status of current task and set idle task as current
     pub fn block_current(&mut self) -> &'static mut ListNode<RunnableTask> {

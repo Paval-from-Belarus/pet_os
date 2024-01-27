@@ -1,7 +1,9 @@
+use core::ptr;
 use core::ptr::NonNull;
 
 pub use singly_linked_list::{TinyLinkedList, TinyListNode};
 pub use doubly_linked_list::{LinkedList, ListNode};
+pub use hash_table::{HashTable, PolynomialHasher};
 
 mod hash_table;
 mod doubly_linked_list;
@@ -17,13 +19,13 @@ macro_rules! tiny_list_node {
                     core::ptr::NonNull::from(&self.$field)
                 }
                 $vis fn from_node<T: $crate::utils::TinyListNodeData<Item=$target>>(node: core::ptr::NonNull<TinyListNode<T>>) -> core::ptr::NonNull<$target> {
-                    $crate::utils::TinyListNodeData::from(node)
+                    $crate::utils::TinyListNodeData::from_unchecked(node)
                 }
                 $vis fn from_mut<T: $crate::utils::TinyListNodeData<Item=$target>>(node: &mut TinyListNode<T>) -> &mut $target {
-                    unsafe { $crate::utils::TinyListNodeData::from(core::ptr::NonNull::from(node)).as_mut() }
+                    unsafe { $crate::utils::TinyListNodeData::from_unchecked(core::ptr::NonNull::from(node)).as_mut() }
                 }
                 $vis fn from_ref<T: $crate::utils::TinyListNodeData<Item=$target>>(node: &TinyListNode<T>) -> & $target {
-                    unsafe {$crate::utils::TinyListNodeData::from(core::ptr::NonNull::from(node)).as_ref() }
+                    unsafe {$crate::utils::TinyListNodeData::from_unchecked(core::ptr::NonNull::from(node)).as_ref() }
                 }
             }
         }
@@ -104,7 +106,11 @@ pub unsafe trait DanglingData {}
 
 pub unsafe trait ListNodeData: Sized {
     type Item;
-    fn from(node: NonNull<ListNode<Self>>) -> NonNull<Self::Item>;
+    fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item;
+    unsafe fn from_node_unchecked(mut raw_node: NonNull<ListNode<Self>>) -> NonNull<Self::Item> {
+        let node = Self::from_node(raw_node.as_mut());
+        NonNull::from(node)
+    }
 }
 
 /// As `ListNodeData` allows any struct to be list node in singly linked list (`TinyLinkedList`)
@@ -113,13 +119,17 @@ pub unsafe trait ListNodeData: Sized {
 /// You should manually control the references
 pub unsafe trait TinyListNodeData: Sized {
     type Item;
-    fn from(node: NonNull<TinyListNode<Self>>) -> NonNull<Self::Item>;
+    fn from_node(node: &mut TinyListNode<Self>) -> &mut Self::Item;
+    unsafe fn from_node_unchecked(mut raw_node: NonNull<TinyListNode<Self>>) -> NonNull<Self::Item> {
+        let node = Self::from_node(raw_node.as_mut());
+        NonNull::from(node)
+    }
 }
 
 unsafe impl<T: ListNodeData> TinyListNodeData for T {
     type Item = T::Item;
-    fn from(node: NonNull<TinyListNode<Self>>) -> NonNull<Self::Item> {
-        let pivot = unsafe { core::mem::transmute::<NonNull<TinyListNode<T>>, NonNull<ListNode<T>>>(node) };
-        ListNodeData::from(pivot)
+    fn from_node(node: &mut TinyListNode<Self>) -> &mut Self::Item {
+        let pivot = unsafe { core::mem::transmute::<&mut TinyListNode<T>, &mut ListNode<T>>(node) };
+        ListNodeData::from_node(pivot)
     }
 }

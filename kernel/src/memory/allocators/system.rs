@@ -3,9 +3,12 @@ use core::cell::UnsafeCell;
 use core::ops::Add;
 use core::ptr::NonNull;
 use static_assertions::{const_assert};
-use crate::{declare_constants, log, memory, tiny_list_node};
+use kernel_macro::ListNode;
+use crate::{declare_constants, log, memory};
 use crate::memory::{MemoryMappingRegion, OsAllocationError, Page, PhysicalAddress, PhysicalAllocator, ToPhysicalAddress, VirtualAddress};
-use crate::utils::{LinkedList, ListNode, TinyLinkedList, TinyListNode, SpinBox, Zeroed, BorrowingLinkedList};
+use kernel_types::collections::{LinkedList, ListNode, TinyLinkedList, TinyListNode, BorrowingLinkedList};
+use kernel_types::{Zeroed};
+use crate::utils::SpinBox;
 use crate::utils::atomics::SpinLock;
 
 pub enum Alignment {
@@ -43,8 +46,9 @@ struct SlabAllocatorInner {
     heap_offset: VirtualAddress,//the next free virtual address
 }
 
-tiny_list_node!(pub SlabEntry(next));
+#[derive(ListNode)]
 struct SlabEntry {
+    #[list_pivot]
     next: TinyListNode<SlabEntry>,
     offset: VirtualAddress,
     count: usize,
@@ -198,8 +202,8 @@ impl SlabAllocatorInner {
     }
     fn dealloc(&mut self, offset: VirtualAddress) {
         let entry = self.page_pool.iter_mut()
-            .find(|entry| entry.holds(offset))
-            .expect("Failed to find not existing slab entry");
+                        .find(|entry| entry.holds(offset))
+                        .expect("Failed to find not existing slab entry");
         entry.release(offset);
         if entry.is_bloated() {
             //todo: release some pages
@@ -223,7 +227,7 @@ impl SlabAllocatorInner {
     }
     fn find_suitable_entry(&mut self, required_pages_count: usize) -> Result<Option<&'static mut SlabEntry>, OsAllocationError> {
         let entry_option = self.page_pool.iter_mut()
-            .find(|entry| entry.available() >= required_pages_count);
+                               .find(|entry| entry.available() >= required_pages_count);
         match entry_option {
             None => Ok(None),
             Some(entry) => unsafe {
@@ -264,9 +268,9 @@ impl SlabAllocatorInner {
                 cached_pages.push_front(page);
             }
             let physical_offset = cached_pages.iter()
-                .nth(0)
-                .expect("We simply push in list")
-                .as_physical();
+                                              .nth(0)
+                                              .expect("We simply push in list")
+                                              .as_physical();
             let slab_offset = self.commit(physical_offset, SlabEntry::DEFAULT_SLAB_SIZE) as VirtualAddress;
             entry.set(slab_offset, cached_pages, SlabEntry::DEFAULT_SLAB_SIZE);
             self.page_pool.push_front(entry);
@@ -302,9 +306,9 @@ impl SlabAllocatorInner {
                     current_node.write(entry);
                     &mut *current_node
                 };
-                next_node = node.as_next().as_ptr();
+                next_node = node.as_next() as _;
                 unsafe {
-                    entries.push_front(node.as_next().as_mut());
+                    entries.push_front(node.as_next());
                     current_node = current_node.sub(1);
                 }
             }

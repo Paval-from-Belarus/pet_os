@@ -9,14 +9,15 @@ use static_assertions::assert_eq_size;
 
 pub use allocators::PhysicalAllocator;
 pub use arch::*;
+use kernel_macro::ListNode;
+use kernel_types::collections::{LinkedList, ListNode, TinyLinkedList, TinyListNode};
 pub use paging::PagingProperties;
 use paging::table::{DirEntry, RefTable};
 
-use crate::{bitflags, declare_constants, list_node, log, process, tiny_list_node};
+use crate::{bitflags, declare_constants, log, process};
 use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
 use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT};
 use crate::process::{TaskState, ThreadTask};
-use crate::utils::{LinkedList, ListNode, ListNodeData, TinyLinkedList, TinyListNode, TinyListNodeData};
 use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
 
 mod allocators;
@@ -235,7 +236,7 @@ impl ProcessInfo {
                 prev_region = Some(region);
             }
         }
-        prev_region.map(|node| MemoryRegion::from_ref(node))
+        prev_region.map(|node| node as &MemoryRegion)
     }
     pub fn find_intersect_region(&mut self, range: Range<VirtualAddress>) -> Option<&'static MemoryRegion> {
         let option_region = self.find_region(range.start);
@@ -248,8 +249,10 @@ impl ProcessInfo {
     }
 }
 
-tiny_list_node!(pub MemoryRegion(node));
+#[derive(ListNode)]
+#[repr(C)]
 pub struct MemoryRegion {
+    #[list_pivot]
     node: TinyListNode<MemoryRegion>,
     parent: NonNull<ProcessInfo>,
     range: Range<VirtualAddress>,
@@ -284,9 +287,11 @@ pub struct AddressSpace {
     marker: PageMarker,
 }
 
-list_node!(pub MemoryMappingRegion(node));
+#[derive(ListNode)]
+#[repr(C)]
 ///the one represent meor
 pub struct MemoryMappingRegion {
+    #[list_pivots]
     node: ListNode<MemoryMappingRegion>,
     flags: MemoryMappingFlag,
     //used to copy
@@ -295,9 +300,10 @@ pub struct MemoryMappingRegion {
     page_count: usize,
 }
 
-list_node!(pub Page(node));
+#[derive(ListNode)]
 #[repr(C)]
 pub struct Page {
+    #[list_pivots]
     node: ListNode<Page>,
     flags: PageFlag,
     //it's easy to use in calculation, in future should be replace by macro
@@ -334,7 +340,7 @@ pub fn slab_alloc<T>(strategy: AllocationStrategy) -> Option<&'static mut MaybeU
         unreachable!("Slab piece too huge");
     };
     let offset = SLAB_ALLOCATOR.alloc(piece, Alignment::Page)
-        .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
+                               .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
     Some(unsafe { &mut *(offset as *mut MaybeUninit<T>) })
 }
 
@@ -527,9 +533,9 @@ static mut MEMORY_MAP: MemoryMap = MemoryMap::empty();
 #[cfg(test)]
 mod tests {
     use core::mem;
+    use kernel_types::collections::ListNode;
 
     use crate::memory::{MEMORY_MAP, MemoryMap, Page, ToPhysicalAddress, VirtualAddress};
-    use crate::utils::ListNode;
 
     #[test]
     fn check_page_conversation() {

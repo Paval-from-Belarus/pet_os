@@ -5,12 +5,14 @@ use core::sync::atomic::AtomicUsize;
 
 use fallible_collections::{FallibleVec, TryCollect};
 use num_enum::FromPrimitive;
-use kernel_macro::ListNode;
 
+use kernel_macro::ListNode;
+use kernel_types::collections::{LinkedList, ListNode, TinyListNode};
 use kernel_types::drivers::Device;
 
-use crate::{bitflags, declare_constants, list_node, tiny_list_node};
-use crate::utils::{HashData, HashTable, LinkedList, ListNode, MutString, QuickString, TinyListNode};
+use crate::{bitflags, declare_constants};
+use kernel_types::collections::{HashData, HashTable};
+use kernel_types::string::{MutString, QuickString};
 use crate::utils::atomics::SpinLock;
 use crate::utils::time::Timestamp;
 
@@ -33,15 +35,17 @@ bitflags! {
 pub struct FileSystemType {
     name: &'static str,
     read_super: Option<fn(&SuperBlock)>,
-    #[list_pivot(())]
+    #[list_pivot]
     node: TinyListNode<FileSystemType>,
     status: FileSystemStatus,
 }
-tiny_list_node!(pub SuperBlock(node));
+
+#[derive(ListNode)]
 pub struct SuperBlock {
     lock: SpinLock,
     files: LinkedList<'static, File>,
     mounts: LinkedList<'static, MountPoint>,
+    #[list_pivot]
     node: TinyListNode<SuperBlock>,
     //the size of elementary block in file system (for hard drive communication)
     //consider to add block_size_bits
@@ -96,13 +100,14 @@ pub fn file_close(handle: usize) -> Result<(), ()> {
 
 impl IndexNode {}
 
-list_node!(pub File(node));
+#[derive(ListNode)]
 pub struct File {
     file_system: NonNull<MountPoint>,
     path: PathNode,
     //the next offset to be read
     offset: usize,
     mode: FileOpenMode,
+    #[list_pivots]
     node: ListNode<File>,
     //copy of the IndexNode file operations
     operations: NonNull<FileOperations>,
@@ -110,11 +115,11 @@ pub struct File {
     data: *mut (),
     use_count: AtomicUsize,
 }
-list_node! {
-    pub PathNode(node)
-}
+
+#[derive(ListNode)]
 ///alternative struct to linux `dentry`
 pub struct PathNode {
+    #[list_pivots]
     node: ListNode<PathNode>,
     file_system: NonNull<MountPoint>,
     //linux also support ptr::null for invalid file names
@@ -150,8 +155,10 @@ pub struct FilePathHashTable {
     table: UnsafeCell<HashTable<'static, QuickString<'static>, PathNode, HASHTABLE_CAPACITY>>,
 }
 
-list_node!(pub MountPoint(node));
+#[derive(ListNode)]
+#[repr(C)]
 pub struct MountPoint {
+    #[list_pivots]
     node: ListNode<MountPoint>,
     parent: NonNull<SuperBlock>,
     device_name: &'static str,

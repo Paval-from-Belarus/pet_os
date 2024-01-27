@@ -2,7 +2,8 @@ use core::{ptr, slice};
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
 use core::str::from_utf8_unchecked;
-use crate::utils::hash_table::{FastHasher, HashCode, HashKey, PolynomialHasher};
+
+use crate::collections::{FastHasher, HashCode, HashKey, PolynomialHasher};
 
 //alternative to linux qstr
 #[derive(PartialEq, Eq)]
@@ -149,7 +150,7 @@ mod tests {
 
     use fallible_collections::FallibleVec;
 
-    use crate::utils::MutString;
+    use crate::string::MutString;
 
     fn new_string(value: &str) -> MutString {
         let string = value.to_owned();

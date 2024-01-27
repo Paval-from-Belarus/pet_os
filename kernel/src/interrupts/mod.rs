@@ -6,14 +6,15 @@ mod lock;
 use crate::memory::{InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, ToPhysicalAddress, VirtualAddress};
 use core::{mem, ptr};
 use core::arch::asm;
-use crate::{declare_constants, get_eax, memory, syscall, tiny_list_node};
+use kernel_macro::ListNode;
+use kernel_types::collections::TinyListNode;
+use crate::{declare_constants, get_eax, memory, syscall};
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
 use crate::utils::atomics::{SpinLock, SpinLockLazyCell};
 pub use lock::InterruptableLazyCell;
 use crate::memory::AllocationStrategy::Kernel;
-use crate::utils::TinyListNode;
 
 #[allow(unused)]
 #[repr(C)] //the wrapper on real stack frame
@@ -32,11 +33,12 @@ pub type ErrorExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFr
 ///the interrupt callback that return true if interrupt was handle (and no more handling is required)
 pub type Callback = fn(is_processed: bool, context: *mut ()) -> bool;
 
-tiny_list_node!(pub CallbackInfo(next));
+#[derive(ListNode)]
 pub struct CallbackInfo {
     driver: Handle,
     callback: Callback,
     context: *mut (),
+    #[list_pivot]
     next: TinyListNode<CallbackInfo>,
 }
 

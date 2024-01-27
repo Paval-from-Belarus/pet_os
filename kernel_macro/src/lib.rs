@@ -6,6 +6,7 @@ extern crate proc_macro2;
 
 use proc_macro::TokenStream;
 
+use proc_macro2::Span;
 use quote::quote;
 use syn::{Attribute, DeriveInput, Field, Ident, ItemFn, parse_macro_input, Type};
 
@@ -103,7 +104,7 @@ fn parse_access_method(field: Field) -> proc_macro2::TokenStream {
 }
 
 fn parse_markers_traits(field: Field, node_attr: &ListNodeAttribute, target_ident: &Ident) -> proc_macro2::TokenStream {
-    let meta_list_result = node_attr.attribyte().meta.require_list();
+    let meta_list_result = node_attr.attribute().meta.require_list();
     let mut markers = Vec::<Ident>::new();
     if let Ok(meta_list) = meta_list_result.map(Clone::clone) {
         for token in meta_list.tokens.into_iter() {
@@ -113,7 +114,7 @@ fn parse_markers_traits(field: Field, node_attr: &ListNodeAttribute, target_iden
         }
     } else {
         //if meta-list is not specified, try to find pure path
-        let path_result = node_attr.attribyte().meta.require_path_only();
+        let path_result = node_attr.attribute().meta.require_path_only();
         if path_result.is_err() {
             return token_stream_error!("Invalid syntax for helper attribute. Should be #[list_pivots(<marker>)].\n There are several markers:\n\t - dangling");
         } //otherwise no markers are specified
@@ -144,31 +145,47 @@ fn parse_markers_traits(field: Field, node_attr: &ListNodeAttribute, target_iden
 }
 
 fn define_node_data_marker(field: &Ident, target: &Ident, marker_type: &Ident) -> proc_macro2::TokenStream {
+    let method_name = Ident::new(&format!("from_{}", field), Span::call_site());
     quote! {
         unsafe impl kernel_types::collections::ListNodeData for #marker_type {
 
             type Item = #target;
-            fn from(node: core::ptr::NonNull<kernel_types::collections::ListNode<Self>>) -> core::ptr::NonNull<Self::Item> {
-                let pointer = node.as_ptr();
+            fn from_node(node: &mut kernel_types::collections::ListNode<Self>) -> &mut Self::Item {
+                let pointer = node as *mut kernel_types::collections::ListNode<Self>;
                 let field_offset = core::mem::offset_of!(#target, #field);
                 let struct_offset = unsafe { (pointer as *mut u8).sub(field_offset) };
                 let value = unsafe { core::mem::transmute::<*mut u8, *mut #target>(struct_offset) };
-                unsafe { core::ptr::NonNull::new_unchecked(value) }
+                unsafe { &mut *value }
+            }
+        }
+        impl #target {
+            #[doc = "Prefer explicit type casting"]
+            #[deprecated]
+            pub fn #method_name(node: &mut kernel_types::collections::ListNode<#marker_type>) -> &mut Self {
+                kernel_types::collections::ListNodeData::from_node(node)
             }
         }
     }
 }
 
 fn define_tiny_node_data_marker(field: &Ident, target: &Ident, marker_type: &Ident) -> proc_macro2::TokenStream {
+    let method_name = Ident::new(&format!("from_{}", field), Span::call_site());
     quote! {
         unsafe impl kernel_types::collections::TinyListNodeData for #marker_type {
             type Item = #target;
-            fn from(node: core::ptr::NonNull<kernel_types::collections::TinyListNode<Self>>) -> core::ptr::NonNull<Self::Item> {
-                let pointer = node.as_ptr();
+            fn from_node(node: &mut kernel_types::collections::TinyListNode<Self>) -> &mut Self::Item {
+                let pointer = node as *mut kernel_types::collections::TinyListNode<Self>;
                 let field_offset = core::mem::offset_of!(#target, #field);
                 let struct_offset = unsafe { (pointer as *mut u8).sub(field_offset) };
                 let value = unsafe { core::mem::transmute::<*mut u8, *mut #target>(struct_offset) };
-                unsafe { core::ptr::NonNull::new_unchecked(value ) }
+                unsafe { &mut *value }
+            }
+        }
+        impl #target {
+            #[doc = "Prefer explicit type casting"]
+            #[deprecated]
+            pub fn #method_name(node: &mut kernel_types::collections::TinyListNode<#marker_type>) -> &mut Self {
+                kernel_types::collections::TinyListNodeData::from_node(node)
             }
         }
     }
@@ -234,7 +251,7 @@ impl ListNodeAttribute {
     pub fn verify_wrapper(&self, wrapper: &Ident) -> bool {
         wrapper == self.wrapper_name
     }
-    pub fn attribyte(&self) -> &Attribute {
+    pub fn attribute(&self) -> &Attribute {
         self.attribyte.as_ref().expect("The ListNode Attribute should be initialized before use!")
     }
     pub fn define_marker(&self, field: &Ident, target: &Ident, marker_type: &Ident) -> proc_macro2::TokenStream {

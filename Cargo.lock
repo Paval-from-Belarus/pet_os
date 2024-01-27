@@ -112,6 +112,7 @@ dependencies = [
  "failure",
  "fallible_collections",
  "num_enum",
+ "paste",
  "static_assertions",
 ]
 

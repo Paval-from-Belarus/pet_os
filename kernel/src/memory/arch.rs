@@ -4,8 +4,7 @@ use bitfield::Bit;
 use static_assertions::{assert_eq_size};
 use crate::{bitflags, declare_constants};
 use crate::memory::{PhysicalAddress, ToPhysicalAddress, VirtualAddress};
-use crate::utils::Zeroed;
-
+use kernel_types::Zeroed;
 #[derive(Clone, Copy, Default)]
 #[repr(transparent)]
 pub struct SegmentSelector(u16);

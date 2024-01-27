@@ -6,14 +6,16 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use kernel_macro::ListNode;
+use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
+use kernel_types::Zeroed;
 
-use crate::{bitflags, declare_constants, interrupts, list_node, log, memory};
+use crate::{bitflags, declare_constants, interrupts, log, memory};
 use crate::file_system::{File, FileOpenMode, PathNode, MAX_FILES_COUNT, MountPoint};
 use crate::interrupts::CallbackInfo;
 use crate::memory::{Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::memory::AllocationStrategy::Kernel;
 use crate::process::scheduler::TaskScheduler;
-use crate::utils::{BorrowingLinkedList, LinkedList, ListNode, Zeroed};
 use crate::utils::atomics::UnsafeLazyCell;
 
 mod clocks;
@@ -159,15 +161,18 @@ impl TaskContext {
         }
     }
 }
-list_node!(
-    pub ThreadTask;
-    RunnableTask(runnable);
-    SiblingTask(sibling): DanglingData;
-);
+
+pub struct RunnableTask;
+
+pub struct SiblingTask;
+
+#[derive(ListNode)]
 #[repr(C)]
 pub struct ThreadTask {
     //the pivots in scheduler list
+    #[list_pivots]
     runnable: ListNode<RunnableTask>,
+    #[list_pivots(dangling)]
     sibling: ListNode<SiblingTask>,
     pub priority: TaskPriority,
     pub status: TaskStatus,
@@ -360,7 +365,7 @@ impl FutexInner {
     pub fn wait(&mut self, task: &'static mut ThreadTask) {
         task.status = TaskStatus::Blocked;
         unsafe {
-            self.waiting.push_back(task.as_runnable().as_mut())
+            self.waiting.push_back(task.as_runnable())
         };
     }
     fn release(&mut self) -> Option<&'static mut ListNode<RunnableTask>> {

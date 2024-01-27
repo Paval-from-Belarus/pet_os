@@ -11,7 +11,8 @@ use table::{RefTable, RefTableEntry};
 use crate::{bitflags, declare_constants};
 use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector, TaskGate, TaskStateDescriptor, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
 use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
-use crate::utils::{LinkedList, Zeroed};
+use kernel_types::collections::{LinkedList};
+use kernel_types::Zeroed;
 declare_constants!(
     pub usize,
     DIRECTORY_ENTRIES_COUNT = 1024;
