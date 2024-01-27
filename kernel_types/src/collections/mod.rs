@@ -7,6 +7,39 @@ mod hash_table;
 mod doubly_linked_list;
 mod singly_linked_list;
 
+
+#[macro_export]
+macro_rules! tiny_list_node {
+    ($vis: vis $target: ident ($field: tt)) => {
+        paste::paste!{
+            impl $target {
+                $vis fn [<as_ $field>](&self) -> core::ptr::NonNull<TinyListNode<$target>> {
+                    core::ptr::NonNull::from(&self.$field)
+                }
+                $vis fn from_node<T: $crate::utils::TinyListNodeData<Item=$target>>(node: core::ptr::NonNull<TinyListNode<T>>) -> core::ptr::NonNull<$target> {
+                    $crate::utils::TinyListNodeData::from(node)
+                }
+                $vis fn from_mut<T: $crate::utils::TinyListNodeData<Item=$target>>(node: &mut TinyListNode<T>) -> &mut $target {
+                    unsafe { $crate::utils::TinyListNodeData::from(core::ptr::NonNull::from(node)).as_mut() }
+                }
+                $vis fn from_ref<T: $crate::utils::TinyListNodeData<Item=$target>>(node: &TinyListNode<T>) -> & $target {
+                    unsafe {$crate::utils::TinyListNodeData::from(core::ptr::NonNull::from(node)).as_ref() }
+                }
+            }
+        }
+        unsafe impl $crate::utils::TinyListNodeData for $target {
+            type Item = $target;
+            fn from(node: core::ptr::NonNull<TinyListNode<Self>>) -> core::ptr::NonNull<Self::Item> {
+                let pointer = node.as_ptr();
+                let field_offset = core::mem::offset_of!($target, $field);
+                let struct_offset = unsafe { (pointer as *mut u8).byte_sub(field_offset) };
+                let value = unsafe { core::mem::transmute::<*mut u8, *mut $target>(struct_offset) };
+                unsafe {core::ptr::NonNull::new_unchecked(value)}
+        }
+    }
+    };
+}
+
 pub type HashCode = u32;
 
 pub trait FastHasher: core::hash::Hasher {
@@ -36,18 +69,8 @@ pub trait BorrowingLinkedList<'a> {
 
 pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
     fn parent(&self) -> NonNull<T>;
-    unsafe fn collect<I: IntoIterator<Item=&'a mut T::Item>>(mut self, iter: I) -> T {
-        let owner = self.parent().as_mut();
-        let mut target = T::empty();
-        for node in iter {
-            if owner.is_empty() {
-                break;
-            }
-            let mut raw_node = NonNull::from(node);
-            owner.remove(raw_node.as_mut());
-            target.push_back(raw_node.as_mut());
-        }
-        target
+    unsafe fn collect<I: IntoIterator<Item=&'a mut T::Item>>(self, iter: I) -> T {
+        self.collect_map(iter, |node| node)
     }
     unsafe fn collect_map<I: IntoIterator<Item=&'a mut T::Item>,
         S: 'a, R: BorrowingLinkedList<'a, Item=S>, F>
@@ -68,13 +91,26 @@ pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
     }
 }
 
+/// Mnemonic trait that allow any kind of list node be independent (without head element of list).
+/// This trait (by ideas) should export some methods
+/// # Safety
+/// Please doesn't no implement such trait manualy. Prefer macro. Moreover, it can lead mistake by list organization
+/// Be carefull, when use this trait
 pub unsafe trait DanglingData {}
+
+/// Conventional trait allowing any struct be list node in doubly linked list (`LinkedList`)
+/// # Safety
+/// Be careful using this trait. It violates rust memory rules while unappropriate using
 
 pub unsafe trait ListNodeData: Sized {
     type Item;
     fn from(node: NonNull<ListNode<Self>>) -> NonNull<Self::Item>;
 }
 
+/// As `ListNodeData` allows any struct to be list node in singly linked list (`TinyLinkedList`)
+/// # Safety
+/// Violate rust memory rules allowing several mutable reference (conceptually, using any linked list)
+/// You should manually control the references
 pub unsafe trait TinyListNodeData: Sized {
     type Item;
     fn from(node: NonNull<TinyListNode<Self>>) -> NonNull<Self::Item>;

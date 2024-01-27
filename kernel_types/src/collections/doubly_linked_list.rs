@@ -5,6 +5,7 @@ use core::ptr::NonNull;
 
 use crate::collections::{BorrowingLinkedList, DanglingData, ListNodeData, UnlinkableListGuard};
 
+
 #[repr(C)]
 pub struct ListNode<T: Sized> {
     next: NonNull<ListNode<T>>,
@@ -535,6 +536,71 @@ impl<'a, I: DoubleEndedIterator> DoubleEndedIterator for LimitedIterator<'a, I> 
     }
 }
 
+#[macro_export]
+macro_rules! from_list_node {
+    ($target: ident, $source: ident, $field: tt) => {
+        unsafe impl $crate::utils::ListNodeData for $source {
+            type Item = $target;
+            fn from(node: core::ptr::NonNull<ListNode<Self>>) -> core::ptr::NonNull<Self::Item> {
+                let pointer = node.as_ptr();
+                let field_offset = core::mem::offset_of!($target, $field);
+                let struct_offset = unsafe { (pointer as *mut u8).byte_sub(field_offset) };
+                let value = unsafe { core::mem::transmute::<*mut u8, *mut $target>(struct_offset) };
+                unsafe {core::ptr::NonNull::new_unchecked(value)}
+            }
+        }
+    };
+}
+#[macro_export]
+macro_rules! pivots_field {
+    ($vis: vis, $type: ident, $field: tt,  $field_type: ident) => {
+        paste::paste! {
+            impl $type {
+                $vis unsafe fn [<as_ $field>](&self) -> core::ptr::NonNull<ListNode<$field_type>> {
+                    core::ptr::NonNull::from(&self.$field)
+                }
+                // $vis fn [<as_ $field>] (&self) -> &ListNode<$field_type> {
+                //     self.$field
+                // }
+                // $vis fn [<as_ $field _mut>](&mut self) -> &mut ListNode<$field_type> {
+                //     self.$field
+                // }
+            }
+        }
+    };
+}
+///The general idea of list_node macro is to allow implements several ListNode types from single structure (by corresponding fields in derived struct)
+#[macro_export]
+macro_rules! list_node {
+    ($vis: vis $target: ident $( ($self_field:tt))? $(;)? $( $name: ident  ($field: tt) $(: $( $marker: ident )* )? );* $(;)?) => {
+        $(
+            $crate::pivots_field!($vis, $target, $self_field, $target);
+            $crate::from_list_node!($target, $target, $self_field);
+        )?
+        $(
+            $vis struct $name();
+            $crate::pivots_field!($vis, $target, $field, $name);
+            $crate::from_list_node!($target, $name, $field);
+            $(
+                $(
+                    impl $crate::utils::$marker for $name {}
+                )*
+            )?
+
+        )*
+        impl $target {
+            pub fn from_node<T: $crate::utils::ListNodeData<Item=$target>>(node: core::ptr::NonNull<ListNode<T>>) -> core::ptr::NonNull<$target> {
+                $crate::utils::ListNodeData::from(node)
+            }
+            pub fn from_mut<T: $crate::utils::ListNodeData<Item=$target>>(node: &mut ListNode<T>) -> &mut $target {
+                unsafe { $crate::utils::ListNodeData::from(core::ptr::NonNull::from(node)).as_mut() }
+            }
+            pub fn from_ref<T: $crate::utils::ListNodeData<Item=$target>>(node: &ListNode<T>) -> &$target {
+                unsafe { $crate::utils::ListNodeData::from(core::ptr::NonNull::from(node)).as_ref() }
+            }
+        }
+    };
+}
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -546,7 +612,7 @@ mod tests {
 
     use static_assertions::const_assert_eq;
 
-    use crate::{BorrowingLinkedList, DanglingData, ListNodeData, TinyListNodeData, UnlinkableListGuard};
+    use crate::collections::{BorrowingLinkedList, DanglingData, ListNodeData, TinyListNodeData, UnlinkableListGuard};
     use crate::collections::{LinkedList, ListNode};
 
     fn has_data(node: Option<&ListNode<TestStruct>>, value: usize) -> bool {
@@ -557,12 +623,6 @@ mod tests {
     }
 
     pub struct AnotherStruct;
-
-    unsafe impl ListNodeData for TestStruct {}
-
-    unsafe impl ListNodeData for AnotherStruct {}
-
-    unsafe impl DanglingData for TestStruct {}
 
     pub struct TestStruct {
         node: ListNode<TestStruct>,

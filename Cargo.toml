@@ -1,10 +1,8 @@
-[package]
-name = "pet_os"
-version = "0.1.0"
-edition = "2021"
-[lib]
-crate-type = ["staticlib"]
-path = "src/pet_os.rs"
+[workspace]
+members = [
+    "kernel_macro", "kernel_types", "kernel"
+]
+resolver = "2"
 #build-std = ["core", "compiler_builtins"]
 #[dependencies]
 #compiler_builtins = { version = "0.1.101", features = ["mem"] }
@@ -15,19 +13,23 @@ panic = "abort"
 incremental = true
 codegen-units = 1
 opt-level = 's'
-[dependencies]
+[workspace.dependencies]
+
+kernel-types = { path = "kernel_types" }
+kernel-macro = { path = "kernel_macro" }
+
 spin = "0.9.8"
+strum_macros = { version = "0.25.0" }
 failure = { version = "0.1", features = ["failure_derive"], default-features = false }
 static_assertions = "1.1.0"
-volatile = "0.2.6"#don't remove such dependency
+volatile = "0.2.6"
 bitfield = "0.14.0"
 pc-keyboard = "0.7.0"
 paste = "1.0.14"
-num_enum = { version = "0.7.0", default-features = false }
+num_enum = { version = "0.7.2", default-features = false }
 fallible_collections = { version = "0.4.9", features = ["hashbrown"] }
+
 #generic-array = { version = "1.0.0", features = ["const-default"]}
-kernel-macro = { path = "kernel_macro" }
-kernel-types = { path = "kernel_types" }
 #bitflags = "2.3.3"
 ##alloca = "0.3.4"
 #impl_ops = "0.1.1"

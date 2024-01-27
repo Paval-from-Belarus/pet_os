@@ -5,6 +5,7 @@ extern crate kernel_macro;
 #[cfg(test)]
 mod tests {
     extern crate kernel_macro;
+    extern crate kernel_types;
     extern crate std;
     extern crate alloc;
 
