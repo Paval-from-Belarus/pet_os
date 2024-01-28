@@ -62,14 +62,21 @@ pub struct SuperBlock {
     private: *mut (),
 }
 
+
 impl SuperBlock {}
 
 pub enum NodeState {
     Locked,
 }
 
+pub struct SuperBlockChild;
+
 ///the i-node implementation
+#[derive(ListNode)]
+#[repr(C)]
 pub struct IndexNode {
+    super_child: ListNode<SuperBlockChild>,
+    parent: NonNull<SuperBlock>,
     //the unique id of the node
     id: usize,
     permissions: FilePermissions,
@@ -157,11 +164,12 @@ struct SearchResult {
     name: QuickString<'static>,
 }
 
-pub fn file_name_lookup(path: &str, mount_point: &mut MountPoint) {
+pub fn file_name_lookup(path: &str, mut mount_point: &MountPoint) {
     let path_iter = resolve_wildcards(path)
         .split('/')
         .filter(|path| !path.is_empty())
         .map(QuickString::from);
+    let fs = mount_point.fs();
     let mut table = PATH_TABLE.get().table();
     let mut parent_inode_option = Option::<&IndexNode>::None;
     for path in path_iter {
@@ -220,15 +228,27 @@ pub struct MountPoint {
     #[list_pivots]
     node: ListNode<MountPoint>,
     lock: SpinLock,
-    parent: NonNull<SuperBlock>,
-    device_name: &'static str,
+    mounted_fs: NonNull<SuperBlock>,
+    mounted_root: NonNull<PathNode>,
+    parent_child: NonNull<PathNode>,
+    parent_mount: Option<NonNull<MountPoint>>,//the vfs' root doesn't have parent
+    //child_mounts: LinkedList<'static, MountPoint>,
+    //each mount_point is storing in HashTable
+    //hash_node: TinyListNode<HashedMountPoint>,
     mount_count: AtomicUsize,
+    device_name: &'static str,
 }
 
 impl MountPoint {
     pub fn fs(&mut self) -> SpinBox<SuperBlock> {
-        let fs = unsafe { self.parent.as_mut() };
-        SpinBox::new(&self.lock, fs)
+        // let fs = unsafe { self.parent_fs.as_mut() };
+        // SpinBox::new(&self.lock, fs)
+        todo!()
+    }
+    pub fn root(&mut self) -> SpinBox<MountPoint> {
+        // let root = unsafe { self.root.as_mut() };
+        // SpinBox::new(&self.lock, )
+        todo!()
     }
 }
 

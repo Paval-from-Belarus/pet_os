@@ -1,6 +1,7 @@
 use core::marker::Tuple;
 use core::mem;
 use core::ptr::NonNull;
+use num_enum::FromPrimitive;
 
 #[repr(C)]
 pub struct KernelSymbol {
@@ -35,7 +36,15 @@ impl KernelSymbol {
         self.offset.as_ptr() as usize
     }
 }
-///the representation of any block device in system
-pub struct Device {
 
+/// the representation of any device in system
+///
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct Device(usize);
+
+impl Device {
+    pub fn new(number: usize) -> Self {
+        Self(number)
+    }
 }
