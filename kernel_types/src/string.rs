@@ -1,6 +1,7 @@
 use core::{ptr, slice};
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
+use core::ptr::NonNull;
 use core::str::from_utf8_unchecked;
 
 use crate::collections::{FastHasher, HashCode, HashKey, PolynomialHasher};
@@ -16,22 +17,28 @@ pub struct QuickString<'a> {
 impl<'a> QuickString<'a> {
     ///Save instance of string and manually set HashCode
     pub fn new(data: &'a str, hash_code: HashCode) -> Self {
+        // let data = NonNull::from(data);
         Self { data, hash_code }
     }
     ///recalculate the HashCode via data
-    fn rehash<T: FastHasher>(&mut self, state: &mut T) {
+    pub fn rehash<T: FastHasher>(&mut self, state: &mut T) {
         self.data.hash(state);
         self.hash_code = state.fast_hash();
     }
     pub fn as_str(&self) -> &str {
         self.data
+        // unsafe { self.data.as_ref() }
     }
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.as_str().len()
     }
 }
 
+pub struct QuickStringKey;
+
 impl<'a> HashKey for QuickString<'a> {
+    // type Item = QuickStringKey;
+
     fn hash_code(&self) -> HashCode {
         self.hash_code
     }
@@ -150,7 +157,19 @@ mod tests {
 
     use fallible_collections::FallibleVec;
 
-    use crate::string::MutString;
+    use crate::string::{MutString, QuickString};
+
+    #[test]
+    fn lifetime_test() {
+        fn get_q_string<'a>() -> QuickString<'a> {
+            let quick_str = {
+                let string = "value".to_owned();
+                QuickString::new(string.leak(), 42)
+            };
+            quick_str
+        }
+        assert_eq!(get_q_string().as_str(), "value");
+    }
 
     fn new_string(value: &str) -> MutString {
         let string = value.to_owned();

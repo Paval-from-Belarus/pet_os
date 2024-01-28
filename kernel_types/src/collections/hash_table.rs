@@ -7,18 +7,18 @@ use core::ptr;
 use crate::collections::{BorrowingLinkedList, FastHasher, HashCode, HashData, HashKey, TinyLinkedList, TinyListNode, TinyListNodeData};
 use crate::lambda_const_assert;
 
-struct HashBucket<'a, K: HashKey, V: TinyListNodeData<Item=V> + HashData<K>> {
+struct HashBucket<'a, V: TinyListNodeData<Item = V> + HashData> {
     list: TinyLinkedList<'a, V>,
-    _marker: PhantomData<(K, V)>,
+    _marker: PhantomData<(V)>,
 }
 
-pub struct HashTable<'a, K: HashKey, V: TinyListNodeData<Item=V> + HashData<K>, const N: usize> {
+pub struct HashTable<'a, V: TinyListNodeData<Item = V> + HashData, const N: usize> {
     table: [TinyLinkedList<'a, V>; N],
-    _marker: PhantomData<[(K, V); N]>,
+    _marker: PhantomData<[V; N]>,
 }
 
 
-impl<'a, const N: usize, K: HashKey, V: TinyListNodeData<Item=V> + HashData<K>> HashTable<'a, K, V, N> {
+impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData> HashTable<'a, V, N> {
     pub fn empty() -> Self {
         let raw_table: [MaybeUninit<TinyLinkedList<'a, V>>; N] = MaybeUninit::uninit_array();
         let table = raw_table.map(|mut raw_bucket| {
@@ -41,18 +41,21 @@ impl<'a, const N: usize, K: HashKey, V: TinyListNodeData<Item=V> + HashData<K>> 
         let bucket = self.find_bucket(node.key());
         bucket.remove(node)
     }
-    pub fn find<P>(&mut self, key: &K, mut predicate: P) -> Option<&'a mut V>
-                   where P: FnMut(&V) -> bool {
+    pub fn find<'b, P, K>(&mut self, key: &K, mut predicate: P) -> Option<&'a mut V>
+                          where P: FnMut(&V) -> bool,
+                                K: HashKey,
+                                V: HashData<Item<'b> = K> {
         let bucket = self.find_bucket(key);
         bucket.iter_mut()
               .find(|entry| entry.equals_by_key(key) && predicate(entry))
               .map(|entry| entry as &mut V)
     }
-    fn find_bucket(&mut self, key: &K) -> &mut TinyLinkedList<'a, V> {
+    fn find_bucket<'b, K>(&mut self, key: &K) -> &mut TinyLinkedList<'a, V>
+                          where K: HashKey, V: HashData<Item<'b> = K> {
         let index = self.calc_bucket_index(key);
         &mut self.table[index]
     }
-    fn calc_bucket_index(&self, key: &K) -> usize {
+    fn calc_bucket_index<K>(&self, key: &K) -> usize where K: HashKey {
         (key.hash_code() as usize) / self.size()
     }
 }
@@ -81,6 +84,8 @@ mod tests {
     }
 
     impl HashKey for DataType {
+        type Item = DataType;
+
         fn hash_code(&self) -> HashCode {
             todo!()
         }

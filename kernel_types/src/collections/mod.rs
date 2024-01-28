@@ -1,4 +1,3 @@
-use core::ptr;
 use core::ptr::NonNull;
 
 pub use singly_linked_list::{TinyLinkedList, TinyListNode};
@@ -53,10 +52,14 @@ pub trait HashKey: Eq {
 }
 
 /// The basic concept of HashData is data by itself storing key
-pub trait HashData<T: HashKey> {
-    fn key(&self) -> &T;
-    fn equals_by_key(&self, key: &T) -> bool {
-        self.key().eq(key)
+pub trait HashData {
+    //The lifetime to specify how much time key is living
+    type Item<'a>: HashKey;
+    fn key<'a>(&self) -> &Self::Item<'a>;
+    fn equals_by_key<'a, K>(&self, other_key: &K) -> bool
+                            where K: HashKey,
+                                  Self: HashData<Item<'a> = K> {
+        self.key().eq(other_key)
     }
 }
 
@@ -71,11 +74,11 @@ pub trait BorrowingLinkedList<'a> {
 
 pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
     fn parent(&self) -> NonNull<T>;
-    unsafe fn collect<I: IntoIterator<Item=&'a mut T::Item>>(self, iter: I) -> T {
+    unsafe fn collect<I: IntoIterator<Item = &'a mut T::Item>>(self, iter: I) -> T {
         self.collect_map(iter, |node| node)
     }
-    unsafe fn collect_map<I: IntoIterator<Item=&'a mut T::Item>,
-        S: 'a, R: BorrowingLinkedList<'a, Item=S>, F>
+    unsafe fn collect_map<I: IntoIterator<Item = &'a mut T::Item>,
+        S: 'a, R: BorrowingLinkedList<'a, Item = S>, F>
     (self, iter: I, mut map: F) -> R
      where F: FnMut(&'a mut T::Item) -> &'a mut S {
         let owner = self.parent().as_mut();

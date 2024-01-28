@@ -1,5 +1,6 @@
-use alloc::vec::Vec;
 use core::cell::UnsafeCell;
+use core::hash::Hash;
+use core::ptr;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 
@@ -7,13 +8,14 @@ use fallible_collections::{FallibleVec, TryCollect};
 use num_enum::FromPrimitive;
 
 use kernel_macro::ListNode;
-use kernel_types::collections::{LinkedList, ListNode, TinyListNode};
+use kernel_types::collections::{HashKey, LinkedList, ListNode, TinyListNode};
+use kernel_types::collections::{HashData, HashTable};
 use kernel_types::drivers::Device;
+use kernel_types::string::{MutString, QuickString, QuickStringKey};
 
 use crate::{bitflags, declare_constants};
-use kernel_types::collections::{HashData, HashTable};
-use kernel_types::string::{MutString, QuickString};
-use crate::utils::atomics::SpinLock;
+use crate::utils::atomics::{SpinLock, UnsafeLazyCell};
+use crate::utils::SpinBox;
 use crate::utils::time::Timestamp;
 
 mod fat;
@@ -32,6 +34,7 @@ bitflags! {
 }
 ///Immutable object holding information about file system
 #[derive(ListNode)]
+#[repr(C)]
 pub struct FileSystemType {
     name: &'static str,
     read_super: Option<fn(&SuperBlock)>,
@@ -41,6 +44,7 @@ pub struct FileSystemType {
 }
 
 #[derive(ListNode)]
+#[repr(C)]
 pub struct SuperBlock {
     lock: SpinLock,
     files: LinkedList<'static, File>,
@@ -57,6 +61,8 @@ pub struct SuperBlock {
     device: NonNull<Device>,
     private: *mut (),
 }
+
+impl SuperBlock {}
 
 pub enum NodeState {
     Locked,
@@ -76,7 +82,6 @@ pub struct IndexNode {
     node_operations: NonNull<IndexNodeOperations>,
     file_operations: Option<NonNull<FileOperations>>,
 }
-
 
 pub fn file_read(handle: usize) -> Result<(), ()> {
     todo!()
@@ -101,6 +106,7 @@ pub fn file_close(handle: usize) -> Result<(), ()> {
 impl IndexNode {}
 
 #[derive(ListNode)]
+#[repr(C)]
 pub struct File {
     file_system: NonNull<MountPoint>,
     path: PathNode,
@@ -117,6 +123,7 @@ pub struct File {
 }
 
 #[derive(ListNode)]
+#[repr(C)]
 ///alternative struct to linux `dentry`
 pub struct PathNode {
     #[list_pivots]
@@ -125,34 +132,86 @@ pub struct PathNode {
     //linux also support ptr::null for invalid file names
     inode: NonNull<IndexNode>,
     name: QuickString<'static>,
+    #[doc = "The parent of corresponding inode"]
     parent: NonNull<IndexNode>,
     use_count: AtomicUsize,
+}
+
+impl PathNode {
+    pub fn is_parent(&self, other_parent: &IndexNode) -> bool {
+        ptr::eq(self.parent.as_ptr(), other_parent)
+    }
+    pub fn is_root(&self) -> bool {
+        ptr::eq(self.parent.as_ptr(), self.inode.as_ptr())
+    }
+}
+
+impl PartialEq<IndexNode> for PathNode {
+    fn eq(&self, other: &IndexNode) -> bool {
+        ptr::eq(self.inode.as_ptr(), other)
+    }
 }
 
 struct SearchResult {
     path: NonNull<PathNode>,
     name: QuickString<'static>,
-
 }
 
-pub fn file_name_lookup(name: &str) {
-    let pieces = name.split('/')
-                     .filter(|path| !path.is_empty())
-                     .map(QuickString::from)
-                     .try_collect::<Vec<QuickString>>().unwrap();
+pub fn file_name_lookup(path: &str, mount_point: &mut MountPoint) {
+    let path_iter = resolve_wildcards(path)
+        .split('/')
+        .filter(|path| !path.is_empty())
+        .map(QuickString::from);
+    let mut table = PATH_TABLE.get().table();
+    let mut parent_inode_option = Option::<&IndexNode>::None;
+    for path in path_iter {
+        let found_node = table.find(&path, |node| -> bool {
+            parent_inode_option
+                .map(|parent| node.is_parent(parent))
+                //the node should be in root it no parent
+                .unwrap_or_else(|| node.is_root())
+        });
+        // }).unwrap_or_else(|| fs.)
+    }
 }
 
-impl HashData<QuickString<'static>> for PathNode {
-    fn key(&self) -> &QuickString<'static> {
+fn resolve_wildcards(path: &str) -> &str {
+    //todo: really check wildcards
+    path
+}
+
+impl HashData for PathNode {
+    type Item<'a> = QuickString<'a>;
+
+    fn key<'a>(&self) -> &QuickString<'a> {
         &self.name
     }
 }
+
 declare_constants! {
     pub usize,
     HASHTABLE_CAPACITY = 500
 }
+pub type PathNodeHashTable = HashTable<'static, PathNode, HASHTABLE_CAPACITY>;
+
 pub struct FilePathHashTable {
-    table: UnsafeCell<HashTable<'static, QuickString<'static>, PathNode, HASHTABLE_CAPACITY>>,
+    table: UnsafeCell<PathNodeHashTable>,
+    lock: SpinLock,
+}
+
+unsafe impl Sync for FilePathHashTable {}
+
+impl FilePathHashTable {
+    pub fn table(&self) -> SpinBox<PathNodeHashTable> {
+        let table = unsafe { &mut *self.table.get() };
+        SpinBox::new(&self.lock, table)
+    }
+}
+
+static PATH_TABLE: UnsafeLazyCell<FilePathHashTable> = UnsafeLazyCell::empty();
+
+pub fn init() {
+    todo!()
 }
 
 #[derive(ListNode)]
@@ -160,9 +219,17 @@ pub struct FilePathHashTable {
 pub struct MountPoint {
     #[list_pivots]
     node: ListNode<MountPoint>,
+    lock: SpinLock,
     parent: NonNull<SuperBlock>,
     device_name: &'static str,
     mount_count: AtomicUsize,
+}
+
+impl MountPoint {
+    pub fn fs(&mut self) -> SpinBox<SuperBlock> {
+        let fs = unsafe { self.parent.as_mut() };
+        SpinBox::new(&self.lock, fs)
+    }
 }
 
 #[repr(C)]
@@ -173,6 +240,7 @@ pub struct FileOperations {
     read: fn(&mut File, *mut u8, usize),
     write: fn(&mut File, *const u8, usize),
     seek: fn(&mut File, mode: FileSeekMode, offset: usize),
+    #[doc = "for devices only"]
     ioctl: fn(&mut IndexNode, &mut File, usize),
     //consider additionally implement file_lock and mmap handler
 }
@@ -187,7 +255,7 @@ bitflags! {
 pub struct IndexNodeOperations {
     create_directory: fn(&mut IndexNode),
     remove_directory: fn(&mut IndexNode),
-    rename: fn(&mut IndexNode, &mut IndexNode, flags: FileRenameFlag),
+    rename: fn(&mut IndexNode, &mut IndexNode, FileRenameFlag),
     check_permissions: fn(&mut IndexNode) -> bool,
     truncate: fn(&mut IndexNode, size: usize),
 }

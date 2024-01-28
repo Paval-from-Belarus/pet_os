@@ -13,7 +13,6 @@ pub struct TinyListNode<T: Sized> {
     _marker: PhantomData<T>,
 }
 
-
 impl<T: ListNodeData> TinyListNode<T> {
     pub fn node(&self) -> &ListNode<T> {
         unsafe { mem::transmute(self) }
@@ -299,6 +298,8 @@ mod tests {
 
     use alloc::vec;
     use alloc::vec::Vec;
+    use core::mem;
+    use core::mem::offset_of;
     use core::ptr::NonNull;
 
     use crate::collections::{BorrowingLinkedList, TinyListNodeData};
@@ -306,14 +307,24 @@ mod tests {
 
     unsafe impl TinyListNodeData for TestStruct {
         type Item = TestStruct;
-        fn from(node: NonNull<TinyListNode<Self>>) -> NonNull<Self::Item> {
-            todo!()
+        fn from_node(node: &mut TinyListNode<Self>) -> &mut Self::Item {
+            let pointer = node as *mut TinyListNode<Self>;
+            let field_offset = offset_of!(TestStruct, node);
+            let struct_offset = unsafe { (pointer as *mut u8).sub(field_offset) };
+            let value = unsafe { mem::transmute::<*mut u8, *mut TestStruct>(struct_offset) };
+            unsafe { &mut *value }
         }
     }
 
     pub struct TestStruct {
         node: TinyListNode<TestStruct>,
         value: usize,
+    }
+
+    impl PartialEq for TestStruct {
+        fn eq(&self, other: &Self) -> bool {
+            self.value == other.value
+        }
     }
 
     impl TestStruct {
@@ -339,6 +350,14 @@ mod tests {
         assert_eq!(number_iter.next(), Some(&mut 4));
     }
 
+    //this macro assume that struct has field naming node
+    macro_rules! fetch_unchecked {
+        ($array: ident, $index: expr) => ({
+            let value = $array.get_unchecked($index);
+            let mut raw_node = NonNull::from(value);
+            raw_node.as_mut().as_node()
+        });
+    }
     #[test]
     fn splice_test() {
         let mut list = TinyLinkedList::<TestStruct>::empty();
@@ -351,21 +370,20 @@ mod tests {
                 TestStruct::new(14),
             );
             for number in numbers[0..3].iter() {
-                list.push_back(number.as_node().as_mut())
+                let mut raw_node = NonNull::from(number);
+                list.push_back(raw_node.as_mut().as_node())
             }
             let mut other_list = TinyLinkedList::<TestStruct>::empty();
-            other_list.push_back(numbers.get_unchecked(3).as_node().as_mut());
-            other_list.push_back(numbers.get_unchecked(4).as_node().as_mut());
+            other_list.push_back(fetch_unchecked!(numbers, 3));
+            other_list.push_back(fetch_unchecked!(numbers, 4));
             list.splice(other_list);
             assert!(
-                list.first.unwrap().eq(&numbers.get_unchecked(3).as_node()) &&
-                    numbers.get_unchecked(4).as_node().eq(&numbers.get_unchecked(0).as_node()));
-            list.remove(numbers.get_unchecked(3).as_node().as_mut());
-            assert_eq!(list.first, Some(numbers.get_unchecked(4).as_node()));
-            list.remove(numbers.get_unchecked(1).as_node().as_mut());
-            assert!(
-                numbers.get_unchecked(0).as_node().eq(&numbers.get_unchecked(2).as_node())
+                list.first.unwrap().eq(&NonNull::from(fetch_unchecked!(numbers, 3))) &&
+                    NonNull::from(fetch_unchecked!(numbers, 4)).eq(&NonNull::from(fetch_unchecked!(numbers, 0)))
             );
+            list.remove(fetch_unchecked!(numbers, 3));
+            assert_eq!(list.first, Some(NonNull::from(fetch_unchecked!(numbers, 4))));
+            list.remove(fetch_unchecked!(numbers, 1));
         }
     }
 }

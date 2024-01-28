@@ -8,6 +8,8 @@
 #![feature(hasher_prefixfree_extras)]
 
 
+extern crate alloc;
+
 pub mod drivers;
 pub mod collections;
 pub mod string;

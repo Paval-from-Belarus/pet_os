@@ -6,7 +6,7 @@ use core::ptr::NonNull;
 use crate::collections::{BorrowingLinkedList, DanglingData, ListNodeData, UnlinkableListGuard};
 
 #[repr(C)]
-pub struct ListNode<T: Sized> {
+pub struct ListNode<T: Sized + ListNodeData> {
     next: NonNull<ListNode<T>>,
     prev: NonNull<ListNode<T>>,
     _marker: PhantomData<T>,
@@ -540,12 +540,12 @@ macro_rules! from_list_node {
     ($target: ident, $source: ident, $field: tt) => {
         unsafe impl $crate::collections::ListNodeData for $source {
             type Item = $target;
-            fn from(node: core::ptr::NonNull<ListNode<Self>>) -> core::ptr::NonNull<Self::Item> {
-                let pointer = node.as_ptr();
+            fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item {
+                let pointer = node as *mut ListNode<Self>;
                 let field_offset = core::mem::offset_of!($target, $field);
                 let struct_offset = unsafe { (pointer as *mut u8).sub(field_offset) };
                 let value = unsafe { core::mem::transmute::<*mut u8, *mut $target>(struct_offset) };
-                unsafe {core::ptr::NonNull::new_unchecked(value)}
+                unsafe {&mut *value }
             }
         }
     };
@@ -587,17 +587,6 @@ macro_rules! list_node {
             )?
 
         )*
-        impl $target {
-            pub fn from_node<T: $crate::collections::ListNodeData<Item=$target>>(node: core::ptr::NonNull<ListNode<T>>) -> core::ptr::NonNull<$target> {
-                $crate::collections::ListNodeData::from(node)
-            }
-            pub fn from_mut<T: $crate::collections::ListNodeData<Item=$target>>(node: &mut ListNode<T>) -> &mut $target {
-                unsafe { $crate::collections::ListNodeData::from(core::ptr::NonNull::from(node)).as_mut() }
-            }
-            pub fn from_ref<T: $crate::collections::ListNodeData<Item=$target>>(node: &ListNode<T>) -> &$target {
-                unsafe { $crate::collections::ListNodeData::from(core::ptr::NonNull::from(node)).as_ref() }
-            }
-        }
     };
 }
 #[cfg(test)]

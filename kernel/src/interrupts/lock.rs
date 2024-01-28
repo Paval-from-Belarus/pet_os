@@ -5,8 +5,6 @@ use core::ptr::NonNull;
 use crate::interrupts;
 
 
-
-
 ///should be used only in single cpu architectures
 pub struct InterruptableLazyCell<T> {
     cell: UnsafeCell<Option<T>>,
@@ -26,6 +24,8 @@ impl<T> InterruptableLazyCell<T> {
         let cell = unsafe { &mut *self.cell.get() };
         if cell.is_none() {
             cell.replace(value);
+        } else {
+            unreachable!("Attempt to init second time");
         }
     }
     pub fn get(&self) -> InterruptableLock<T> {
