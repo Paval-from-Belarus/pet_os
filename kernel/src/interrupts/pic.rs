@@ -1,8 +1,8 @@
 use core::arch::asm;
 
 use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive, UnsafeFromPrimitive};
+use kernel_types::declare_constants;
 
-use crate::declare_constants;
 use crate::utils::io;
 
 declare_constants!(

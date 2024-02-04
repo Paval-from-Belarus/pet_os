@@ -2,14 +2,17 @@ use core::{mem, ptr};
 use core::cell::UnsafeCell;
 use core::ops::Add;
 use core::ptr::NonNull;
-use static_assertions::{const_assert};
+
+use static_assertions::const_assert;
+
 use kernel_macro::ListNode;
-use crate::{declare_constants, log, memory};
+use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode, TinyLinkedList, TinyListNode};
+use kernel_types::{declare_constants, Zeroed};
+
+use crate::memory;
 use crate::memory::{MemoryMappingRegion, OsAllocationError, Page, PhysicalAddress, PhysicalAllocator, ToPhysicalAddress, VirtualAddress};
-use kernel_types::collections::{LinkedList, ListNode, TinyLinkedList, TinyListNode, BorrowingLinkedList};
-use kernel_types::{Zeroed};
-use crate::utils::SpinBox;
 use crate::utils::atomics::SpinLock;
+use crate::utils::SpinBox;
 
 pub enum Alignment {
     Word,

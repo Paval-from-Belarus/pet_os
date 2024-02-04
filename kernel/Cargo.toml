@@ -14,7 +14,6 @@ path = "src/pet_os.rs"
 #opt-level = 's'
 [dependencies]
 spin = { workspace = true }
-failure = { workspace = true }
 static_assertions = { workspace = true }
 volatile = { workspace = true }
 bitfield = { workspace = true }
@@ -22,7 +21,8 @@ pc-keyboard = { workspace = true }
 paste = { workspace = true }
 num_enum = { workspace = true }
 fallible_collections = { workspace = true }
-strum_macros = {workspace = true}
+crc = { workspace = true }
+strum_macros = { workspace = true }
 kernel-macro = { workspace = true }
 kernel-types = { workspace = true }
 ##generic-array = { version = "1.0.0", features = ["const-default"]}

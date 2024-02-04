@@ -1,5 +1,6 @@
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
+
 use crate::utils::atomics::SpinLock;
 
 pub struct SpinBox<'a, 'b, T> {

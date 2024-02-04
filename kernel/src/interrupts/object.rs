@@ -1,14 +1,14 @@
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 
+use kernel_types::collections::{BorrowingLinkedList, TinyLinkedList};
 
-use crate::interrupts::{CallbackInfo, pic};
 use crate::{log, memory};
 use crate::drivers::Handle;
-use crate::interrupts::pic::{PicLine};
+use crate::interrupts::{CallbackInfo, pic};
+use crate::interrupts::pic::PicLine;
 use crate::memory::AllocationStrategy::Kernel;
-use kernel_types::collections::{BorrowingLinkedList, TinyLinkedList};
-use crate::utils::atomics::{SpinLock};
+use crate::utils::atomics::SpinLock;
 
 ///The manager struct that handle all request for given interrupt.
 pub struct InterruptObject {

@@ -6,12 +6,13 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+
 use kernel_macro::ListNode;
 use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
-use kernel_types::Zeroed;
+use kernel_types::{bitflags, declare_constants, Zeroed};
 
-use crate::{bitflags, declare_constants, interrupts, log, memory};
-use crate::file_system::{File, FileOpenMode, PathNode, MAX_FILES_COUNT, MountPoint};
+use crate::{interrupts, log, memory};
+use crate::file_system::{File, FileOpenMode, MAX_FILES_COUNT, MountPoint, PathNode};
 use crate::interrupts::CallbackInfo;
 use crate::memory::{Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::memory::AllocationStrategy::Kernel;

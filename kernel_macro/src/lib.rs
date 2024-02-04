@@ -32,12 +32,27 @@ pub fn export_symbolic(_: TokenStream, item: TokenStream) -> TokenStream {
     let export_symbol = Ident::new(&format!("SYMTAB_{}", name), name.span());
     let entry_name = Ident::new(&format!("SYMTAB_{}_kernel_entry", name), name.span());
     let output = quote!(
-        #[allow(unused, non_upper_case_globals)]
-        #[link_section = "symbol_table_strings"]
-        static #export_symbol: &str = stringify!(#name);
-         #[allow(unused, non_upper_case_globals)]
-        #[link_section = "symbol_table"]
-        static #entry_name: kernel_types::drivers::KernelSymbol = kernel_types::drivers::KernelSymbol::new(&#name, #export_symbol);
+        #[allow(
+            non_upper_case_globals,
+        )]
+        const _: () = {
+            union Transmute<T: Copy, U: Copy> {
+                from: T,
+                to: U,
+            }
+            const TN: &str = stringify!(#name);
+            #[used]
+            #[link_section = ".symbol_table_strings"]
+            static #export_symbol: [u8; TN.as_bytes().len()] = unsafe {
+                   *Transmute::<*const [u8; TN.as_bytes().len()], &[u8; TN.as_bytes().len()]> {
+                      from: TN.as_ptr() as *const [u8; TN.as_bytes().len()],
+                  }
+                  .to
+              };
+            #[used]
+            #[link_section = ".symbol_table"]
+            static #entry_name: kernel_types::drivers::KernelSymbol = kernel_types::drivers::KernelSymbol::new(&#name, &#export_symbol);
+        };
         #[no_mangle]
         #[allow(unused)] //it's possible that kernel api function is not used internally
         #item

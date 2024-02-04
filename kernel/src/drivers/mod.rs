@@ -1,16 +1,24 @@
 use core::{mem, slice};
-use kernel_macro::export_symbolic;
-use kernel_types::drivers::KernelSymbol;
 
-use crate::declare_constants;
+use kernel_macro::export_symbolic;
+use kernel_types::{declare_constants, declare_types};
+use kernel_types::drivers::{Device, KernelSymbol};
+
 use crate::memory::VirtualAddress;
+use crate::utils::atomics::SpinLockLazyCell;
 
 mod vga;
 mod keyboard;
 
 #[export_symbolic]
-pub fn register_display_driver() {
-}
+pub fn register_display_driver() {}
+
+#[export_symbolic]
+pub fn io_remap() {}
+
+#[export_symbolic]
+pub fn io_unmap() {}
+
 
 extern "Rust" {
     #[link_name = "symbol_table_start"]
@@ -26,7 +34,7 @@ pub fn init() {
     }
 }
 
-fn find_symbol(name: &str) -> bool {
+fn find_symbol(name: &str) -> Option<VirtualAddress> {
     let table_size = unsafe {
         SYMBOL_TABLE_END.sub_ptr(SYMBOL_TABLE_START)
     };
@@ -34,11 +42,23 @@ fn find_symbol(name: &str) -> bool {
         slice::from_raw_parts(SYMBOL_TABLE_START, table_size)
     };
     symbol_table.iter()
-        .any(|entry| entry.has_same_name(name))
+                .find(|entry| entry.has_same_name(name))
+                .map(|entry| entry.offset())
 }
+declare_constants! {
+    pub usize,
+    MAX_DEVICE_COUNT = 128;
+}
+declare_types! {
+    pub Device as new,
+    TTY = 4 , "The terminal";
+    SCSI = 8, "The hard drive";
+}
+static DRIVERS_TABLE: SpinLockLazyCell<[VirtualAddress; MAX_DEVICE_COUNT]> = SpinLockLazyCell::empty();
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq)]
+#[deprecated]
 pub struct Handle(VirtualAddress);
 
 impl Handle {

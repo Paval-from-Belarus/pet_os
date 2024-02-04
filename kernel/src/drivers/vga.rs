@@ -1,4 +1,10 @@
+use core::fmt;
+
 use volatile::Volatile;
+use kernel_types::declare_constants;
+
+use crate::memory::PhysicalAddress;
+
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -142,13 +148,6 @@ impl Writer {
 //     });
 // }
 
-
-use core::fmt;
-use core::ptr::NonNull;
-use crate::declare_constants;
-use crate::drivers::Handle;
-
-use crate::memory::PhysicalAddress;
 
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {

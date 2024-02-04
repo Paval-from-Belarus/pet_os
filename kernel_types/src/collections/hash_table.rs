@@ -84,8 +84,6 @@ mod tests {
     }
 
     impl HashKey for DataType {
-        type Item = DataType;
-
         fn hash_code(&self) -> HashCode {
             todo!()
         }

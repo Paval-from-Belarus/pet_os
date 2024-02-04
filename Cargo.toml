@@ -20,7 +20,8 @@ kernel-macro = { path = "kernel_macro" }
 
 spin = "0.9.8"
 strum_macros = { version = "0.25.0" }
-failure = { version = "0.1", features = ["failure_derive"], default-features = false }
+thiserror = {version = "1.0.56", features = []}
+crc = "3.0.1"
 static_assertions = "1.1.0"
 volatile = "0.2.6"
 bitfield = "0.14.0"

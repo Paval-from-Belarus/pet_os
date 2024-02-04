@@ -1,8 +1,10 @@
 use core::fmt;
 use core::fmt::Write;
-use crate::{declare_constants};
+use kernel_types::declare_constants;
+
 use crate::utils::atomics::SpinLock;
 use crate::utils::io;
+
 #[macro_export]
 macro_rules! log {
 	( $($arg:tt)* ) => ({

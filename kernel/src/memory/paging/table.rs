@@ -1,7 +1,8 @@
 use core::{mem, slice};
-use crate::bitflags;
-use crate::memory::paging::{CommonError, TABLE_ENTRIES_COUNT};
+use kernel_types::bitflags;
+
 use crate::memory::{PhysicalAddress, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
+use crate::memory::paging::{CommonError, TABLE_ENTRIES_COUNT};
 
 pub struct RefTable<T> {
     entries: *mut T,
@@ -202,7 +203,3 @@ impl TableEntryFlag {
         DirEntryFlag(self.0 & !(TableEntryFlag::GLOBAL | TableEntryFlag::DIRTY))
     }
 }
-
-
-
-

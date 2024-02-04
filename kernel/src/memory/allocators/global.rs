@@ -1,7 +1,8 @@
 use core::alloc::{GlobalAlloc, Layout};
-use crate::memory;
 
-use crate::memory::{AllocationStrategy, PhysicalAllocator, ProcessInfo};
+use crate::memory;
+use crate::memory::AllocationStrategy;
+
 ///By current ideas, all rust collection (fallible collection) should be used in movable memory (that is collection's elements can be freely swapped)
 pub struct RustAllocator;
 

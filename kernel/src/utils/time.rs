@@ -1,5 +1,4 @@
-use core::intrinsics::likely;
-use crate::declare_constants;
+use kernel_types::declare_constants;
 
 pub struct Timestamp {
     secs: u64,

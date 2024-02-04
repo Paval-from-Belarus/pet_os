@@ -11,10 +11,11 @@ pub use allocators::PhysicalAllocator;
 pub use arch::*;
 use kernel_macro::ListNode;
 use kernel_types::collections::{LinkedList, ListNode, TinyLinkedList, TinyListNode};
+use kernel_types::{bitflags, declare_constants};
 pub use paging::PagingProperties;
 use paging::table::{DirEntry, RefTable};
 
-use crate::{bitflags, declare_constants, log, process};
+use crate::{log, process};
 use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
 use crate::memory::paging::{CaptureAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT};
 use crate::process::{TaskState, ThreadTask};

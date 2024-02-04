@@ -1,6 +1,7 @@
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::SeqCst;
-use crate::{declare_constants};
+use kernel_types::declare_constants;
+
 use crate::interrupts::pic;
 use crate::utils::io;
 use crate::utils::time::Timestamp;

@@ -161,7 +161,7 @@ impl<'a, T: ListNodeData> BorrowingLinkedList<'a> for LinkedList<'a, T> {
             _marker: PhantomData,
         }
     }
-    fn push_back(&mut self, node: &mut ListNode<T>) {
+    fn push_back(&mut self, node: &'a mut ListNode<T>) {
         let raw_node = NonNull::from(node);
         unsafe {
             if self.is_empty() {
@@ -172,7 +172,7 @@ impl<'a, T: ListNodeData> BorrowingLinkedList<'a> for LinkedList<'a, T> {
         }
         self.last = Some(raw_node);//we already changed last in list
     }
-    fn push_front(&mut self, node: &mut ListNode<T>) {
+    fn push_front(&mut self, node: &'a mut ListNode<T>) {
         let raw_node = NonNull::from(node);
         unsafe {
             if self.is_empty() {
@@ -823,10 +823,13 @@ mod tests {
             assert_eq!(13, list.remove_first().unwrap().value);
             assert!(list.remove_first().is_none());
         }
+        let _ = list.iter();
     }
 
     #[test]
-    fn limit_test() {}
+    fn limit_test() {
+        let mut list = LinkedList::<TestStruct>::empty();
+    }
 
     #[test]
     fn conversation_test() {

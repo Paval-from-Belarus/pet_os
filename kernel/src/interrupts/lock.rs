@@ -2,8 +2,8 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
-use crate::interrupts;
 
+use crate::interrupts;
 
 ///should be used only in single cpu architectures
 pub struct InterruptableLazyCell<T> {

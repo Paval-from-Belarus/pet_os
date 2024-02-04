@@ -1,18 +1,21 @@
-pub(crate) mod table;
-
 use core::arch::asm;
 use core::cell::UnsafeCell;
-use core::{slice};
 use core::intrinsics::unreachable;
 use core::mem::MaybeUninit;
-use core::ptr::{NonNull};
+use core::ptr::NonNull;
+use core::slice;
+
 use static_assertions::assert_eq_size;
+
+use kernel_types::collections::LinkedList;
+use kernel_types::{bitflags, declare_constants, Zeroed};
 use table::{RefTable, RefTableEntry};
-use crate::{bitflags, declare_constants};
-use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector, TaskGate, TaskStateDescriptor, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
+
+use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector, TaskStateDescriptor, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
 use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
-use kernel_types::collections::{LinkedList};
-use kernel_types::Zeroed;
+
+pub(crate) mod table;
+
 declare_constants!(
     pub usize,
     DIRECTORY_ENTRIES_COUNT = 1024;

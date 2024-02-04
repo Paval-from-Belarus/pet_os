@@ -1,16 +1,18 @@
+use core::{mem, ptr, slice};
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use core::{mem, ptr, slice};
-
-use core::ptr::{addr_of_mut, NonNull};
-use crate::{declare_constants, log};
-use crate::memory::paging::{CaptureAllocator, PageMarkerError};
-use crate::memory::{ProcessInfo, Page, PhysicalAddress, VirtualAddress, ToPhysicalAddress, OsAllocationError, MEMORY_MAP_SIZE};
-use crate::memory::OsAllocationError::NoMemory;
+use core::ptr::NonNull;
 
 use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
+use kernel_types::declare_constants;
+
+use crate::{log};
+use crate::memory::{MEMORY_MAP_SIZE, OsAllocationError, Page, PhysicalAddress, ProcessInfo, ToPhysicalAddress, VirtualAddress};
+use crate::memory::OsAllocationError::NoMemory;
+use crate::memory::paging::{CaptureAllocator, PageMarkerError};
+use crate::utils::atomics::SpinLock;
 use crate::utils::SpinBox;
-use crate::utils::atomics::{SpinLock};
+
 declare_constants!(
     pub usize,
     MAX_UNIT_SIZE = 64, "The maximal count of pages for continuous memory layout";

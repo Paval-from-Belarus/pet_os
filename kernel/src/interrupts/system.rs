@@ -1,6 +1,7 @@
 use core::{u8, usize};
+use kernel_types::{bitflags, declare_constants};
 
-use crate::{bitflags, declare_constants, error_trap, get_eax, log, memory, naked_trap, process, set_eax};
+use crate::{error_trap, get_eax, log, memory, naked_trap, process, set_eax};
 use crate::interrupts::{CallbackInfo, IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT, pic};
 use crate::interrupts::object::InterruptObject;
 use crate::memory::AllocationStrategy::Kernel;

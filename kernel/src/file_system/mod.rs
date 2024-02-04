@@ -10,10 +10,10 @@ use num_enum::FromPrimitive;
 use kernel_macro::ListNode;
 use kernel_types::collections::{HashKey, LinkedList, ListNode, TinyListNode};
 use kernel_types::collections::{HashData, HashTable};
+use kernel_types::{bitflags, declare_constants};
 use kernel_types::drivers::Device;
-use kernel_types::string::{MutString, QuickString, QuickStringKey};
+use kernel_types::string::{MutString, QuickString};
 
-use crate::{bitflags, declare_constants};
 use crate::utils::atomics::{SpinLock, UnsafeLazyCell};
 use crate::utils::SpinBox;
 use crate::utils::time::Timestamp;
@@ -75,6 +75,7 @@ pub struct SuperBlockChild;
 #[derive(ListNode)]
 #[repr(C)]
 pub struct IndexNode {
+    #[list_pivots]
     super_child: ListNode<SuperBlockChild>,
     parent: NonNull<SuperBlock>,
     //the unique id of the node
@@ -164,7 +165,7 @@ struct SearchResult {
     name: QuickString<'static>,
 }
 
-pub fn file_name_lookup(path: &str, mut mount_point: &MountPoint) {
+pub fn file_name_lookup(path: &str, mut mount_point: &mut MountPoint) {
     let path_iter = resolve_wildcards(path)
         .split('/')
         .filter(|path| !path.is_empty())
@@ -231,7 +232,8 @@ pub struct MountPoint {
     mounted_fs: NonNull<SuperBlock>,
     mounted_root: NonNull<PathNode>,
     parent_child: NonNull<PathNode>,
-    parent_mount: Option<NonNull<MountPoint>>,//the vfs' root doesn't have parent
+    parent_mount: Option<NonNull<MountPoint>>,
+    //the vfs' root doesn't have parent
     //child_mounts: LinkedList<'static, MountPoint>,
     //each mount_point is storing in HashTable
     //hash_node: TinyListNode<HashedMountPoint>,
