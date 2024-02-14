@@ -30,7 +30,6 @@ pub enum Color {
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 struct ColorAttribute(u8);
-
 impl ColorAttribute {
     const fn new(foreground: Color, background: Color) -> ColorAttribute {
         ColorAttribute((background as u8) << 4 | (foreground as u8))

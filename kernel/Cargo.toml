@@ -13,6 +13,7 @@ path = "src/pet_os.rs"
 #codegen-units = 1
 #opt-level = 's'
 [dependencies]
+thiserror-no-std = { workspace = true }
 spin = { workspace = true }
 static_assertions = { workspace = true }
 volatile = { workspace = true }
@@ -25,6 +26,7 @@ crc = { workspace = true }
 strum_macros = { workspace = true }
 kernel-macro = { workspace = true }
 kernel-types = { workspace = true }
+log = "0.4.20"
 ##generic-array = { version = "1.0.0", features = ["const-default"]}
 
 #failure = { version = "0.1", features = ["failure_derive"], default-features = false }

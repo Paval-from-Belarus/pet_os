@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-failure = { version = "0.1", features = ["failure_derive"], default-features = false }
-static_assertions = "1.1.0"
-num_enum = { version = "0.7.0", default-features = false }
-fallible_collections = { version = "0.4.9", features = ["hashbrown"] }
+thiserror-no-std = { workspace = true }
+static_assertions = { workspace = true }
+num_enum = { workspace = true }
+fallible_collections = { workspace = true }
+bitfield = { workspace = true }
 paste = { workspace = true }

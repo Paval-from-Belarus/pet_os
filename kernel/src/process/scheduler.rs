@@ -64,9 +64,7 @@ impl TaskSchedulerInner {
     }
     pub fn add_task(&mut self, task: &'static mut ThreadTask) {
         task.status = TaskStatus::Delayed;
-        unsafe {
-            self.delayed.push_back(task.as_runnable());
-        }
+        self.delayed.push_back(task.as_runnable());
     }
     pub fn add_sleeping(&mut self, task: &'static mut ThreadTask) {
         task.status = TaskStatus::Blocked;

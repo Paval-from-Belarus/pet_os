@@ -7,6 +7,9 @@
 #![feature(maybe_uninit_uninit_array)]
 #![feature(hasher_prefixfree_extras)]
 
+
+use thiserror_no_std::Error;
+
 pub mod drivers;
 pub mod collections;
 pub mod string;
@@ -17,7 +20,8 @@ macro_rules! declare_types {
         paste::paste! {
             $(
                 $(#[doc = $comment])?
-                $vis const $name: $t = $t::$method($value);
+                #[allow(unused_unsafe)]
+                $vis const $name: $t = unsafe { $t::$method($value) };
             )*
         }
     };
@@ -32,19 +36,25 @@ macro_rules! declare_constants {
         )*
     };
 }
-
+#[derive(Debug, Error)]
+#[error("Invalid value {0} for bitflag")]
+pub struct BitflagFormatError<T: Sized>(pub T);
 #[macro_export]
 macro_rules! bitflags {
     ($vis:vis $s:ident($t:ty), $($name:ident = $value:expr),* $(,)?) => {
-        #[derive(Clone, Copy)]
+        #[derive(Clone, Copy, PartialEq, Eq)]
         #[repr(transparent)]
         $vis struct $s($t);
-
-        impl From<$t> for $s {
-            fn from(item: $t) -> Self {
-                $s(item)
+        impl TryFrom<$t> for $s {
+            type Error = $crate::BitflagFormatError<$t>;
+            fn try_from(item: $t) -> Result<Self, Self::Error> {
+                match item {
+                    $(Self:: $name => unsafe { Ok(Self::wrap(Self::$name)) } )*
+                    _ => { Err($crate::BitflagFormatError(item)) }
+                }
             }
         }
+
         impl From<$s> for $t {
             fn from(item: $s) -> Self {
                 item.0
@@ -55,18 +65,18 @@ macro_rules! bitflags {
             $vis const $name: $t = $value;
         )*
             const BITS_COUNT: usize = core::mem::size_of::<$t>() * 8;
-            pub const fn wrap(value: $t) -> Self {
+            pub const unsafe fn wrap(value: $t) -> Self {
                 Self(value)
          }
-           pub const fn bits(&self) -> $t {
-             self.0
-         }
+            pub const fn bits(&self) -> $t {
+              self.0
+            }
             pub const fn contains_with_mask(&self, mask: $t, flag: $t) -> bool {
              self.0 & mask == flag
-         }
+            }
             pub const fn test_with(&self, bit: $t) -> bool {
              self.0 & bit == bit
-         }
+            }
         }
     };
 }
@@ -134,5 +144,21 @@ pub trait ReferableResource {
     fn is_used(&self) -> bool;
     fn is_free(&self) -> bool {
         !self.is_used()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+    extern crate alloc;
+    bitflags! {
+        pub MyBestFlag(u8),
+        ONE = 0x1,
+        TWO = 0x02,
+    }
+    #[test]
+    fn bitflag_test() {
+        assert!(MyBestFlag::try_from(0x00).is_err());
+        assert!(MyBestFlag::try_from(MyBestFlag::ONE).is_ok());
     }
 }

@@ -37,6 +37,7 @@ declare_constants!(
     pub usize,
     LINES_COUNT = 16;
 );
+
 #[derive(IntoPrimitive, TryFromPrimitive, Debug, Copy, Clone)]
 #[repr(u8)]
 pub enum PicLine {

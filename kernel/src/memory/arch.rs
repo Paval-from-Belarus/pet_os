@@ -45,7 +45,7 @@ impl SegmentSelector {
     }
     pub const fn get_ring(&self) -> PrivilegeLevel {
         let bits = (self.0 & 0x03) as u8;
-        PrivilegeLevel::wrap(bits)
+        unsafe { PrivilegeLevel::wrap(bits) }
     }
 }
 
@@ -84,7 +84,7 @@ bitflags!(
     TSS_FREE_32BIT = SystemType::RESERVED | 0b1001,
     TSS_BUSY_32BIT = SystemType::RESERVED | 0b1011,
     CALL_32BIT = SystemType::RESERVED | 0b1100,
-    INTERRUPT_32BIT = SystemType::RESERVED | 0b1110
+    INTERRUPT_32BIT = SystemType::RESERVED | 0b1110,
 );
 pub trait DescriptorType {
     fn bits(&self) -> u8;
@@ -120,7 +120,7 @@ impl<T: DescriptorType> DescriptorFlags<T> {
         (self.value >> 1) & 1 == 1
     }
     pub const fn ring(&self) -> PrivilegeLevel {
-        PrivilegeLevel::wrap(self.value >> 6)
+        unsafe { PrivilegeLevel::wrap(self.value >> 6) }
     }
     pub fn set_present(&mut self, present: bool) {
         let present_bit = if present { 1 } else { 0 };
@@ -153,7 +153,7 @@ impl Descriptor for MemoryDescriptor {}
 
 impl MemoryDescriptor {
     pub fn default(base: VirtualAddress, limit: usize, memory_type: MemoryType) -> Self {
-        let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
+        let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
         let flags = DescriptorFlags::new(false, ring, memory_type);
         let mut instance = MemoryDescriptor::null();
         instance.set_granularity(false);
@@ -211,8 +211,8 @@ pub struct TaskStateDescriptor {
 assert_eq_size!(TaskStateDescriptor, [u32; 2]);
 impl TaskStateDescriptor {
     pub fn active(base: VirtualAddress, limit: usize) -> Self {
-        let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
-        let system_type = SystemType::wrap(SystemType::TSS_FREE_32BIT);
+        let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
+        let system_type = unsafe { SystemType::wrap(SystemType::TSS_FREE_32BIT) };
         let flags = DescriptorFlags::new(true, ring, system_type);
         let mut instance = TaskStateDescriptor::null();
         instance.set_base(base.as_physical());
@@ -243,7 +243,7 @@ impl TaskStateDescriptor {
         } else {
             SystemType::TSS_FREE_32BIT
         };
-        self.flags.set_type(SystemType::wrap(system_type));
+        unsafe { self.flags.set_type(SystemType::wrap(system_type)) };
     }
     pub fn is_busy(&self) -> bool {
         self.flags.value.bit(1)
@@ -268,8 +268,8 @@ impl Descriptor for TaskGate {}
 
 impl TaskGate {
     pub fn default(task: SegmentSelector) -> Self {
-        let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
-        let task_type = SystemType::wrap(SystemType::TASK);
+        let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
+        let task_type = unsafe { SystemType::wrap(SystemType::TASK) };
         let flags = DescriptorFlags::new(false, ring, task_type);
         Self {
             task,
@@ -301,7 +301,7 @@ impl InterruptGate {
         // let physical_offset = handler_offset.as_physical();
         let lower_offset = (handler_offset & 0xFFFF) as u16;
         let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
-        let ring = PrivilegeLevel::wrap(PrivilegeLevel::KERNEL);
+        let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
         InterruptGate {
             lower_offset,
             selector,

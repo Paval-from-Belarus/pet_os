@@ -20,7 +20,7 @@ kernel-macro = { path = "kernel_macro" }
 
 spin = "0.9.8"
 strum_macros = { version = "0.25.0" }
-thiserror = {version = "1.0.56", features = []}
+thiserror-no-std = { version = "2.0.2" }
 crc = "3.0.1"
 static_assertions = "1.1.0"
 volatile = "0.2.6"

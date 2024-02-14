@@ -10,8 +10,8 @@ use static_assertions::assert_eq_size;
 pub use allocators::PhysicalAllocator;
 pub use arch::*;
 use kernel_macro::ListNode;
-use kernel_types::collections::{LinkedList, ListNode, TinyLinkedList, TinyListNode};
 use kernel_types::{bitflags, declare_constants};
+use kernel_types::collections::{LinkedList, ListNode, TinyLinkedList, TinyListNode};
 pub use paging::PagingProperties;
 use paging::table::{DirEntry, RefTable};
 
@@ -437,11 +437,11 @@ pub fn user_commit(region: MemoryMappingRegion) -> Result<(), PageMarkerError> {
 }
 
 impl Page {
-    declare_constants!(
+    declare_constants! {
         pub usize,
         SHIFT = 12, "the offset of page";
         SIZE = 1 << Page::SHIFT, "the size in bytes of page";
-    );
+    }
     pub fn flags(&self) -> PageFlag {
         self.flags
     }
@@ -451,7 +451,7 @@ impl Page {
 
     pub const fn empty() -> Self {
         Self {
-            flags: PageFlag::wrap(PageFlag::UNUSED),
+            flags: unsafe { PageFlag::wrap(PageFlag::UNUSED) },
             ref_count: AtomicUsize::new(0),
             node: unsafe { ListNode::empty() },
         }
@@ -534,6 +534,7 @@ static mut MEMORY_MAP: MemoryMap = MemoryMap::empty();
 #[cfg(test)]
 mod tests {
     use core::mem;
+
     use kernel_types::collections::ListNode;
 
     use crate::memory::{MEMORY_MAP, MemoryMap, Page, ToPhysicalAddress, VirtualAddress};

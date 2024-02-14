@@ -130,7 +130,7 @@ pub extern "x86-interrupt" fn general_protection(frame: &mut InterruptStackFrame
 }
 
 pub extern "x86-interrupt" fn page_fault(_frame: &mut InterruptStackFrame, error_code: usize) {
-    let fault_code = PageFaultError::wrap(error_code);
+    let fault_code = unsafe { PageFaultError::wrap(error_code) };
     let _code = fault_code.contains_with_mask(PageFaultError::CAUSE_MASK, PageFaultError::MODE_MASK);
 }
 

@@ -26,11 +26,16 @@ macro_rules! warning {
 
 // static entry: kernel_types::drivers::KernelSymbol = kernel_types::drivers::KernelSymbol {offset: }
 #[proc_macro_attribute]
-pub fn export_symbolic(_: TokenStream, item: TokenStream) -> TokenStream {
+pub fn export_symbolic(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    let name = &item.sig.ident;
-    let export_symbol = Ident::new(&format!("SYMTAB_{}", name), name.span());
-    let entry_name = Ident::new(&format!("SYMTAB_{}_kernel_entry", name), name.span());
+    let code_name = &item.sig.ident;
+    let export_name = if attr.to_string().is_empty() {
+        code_name.to_string()
+    } else {
+        attr.to_string()
+    };
+    let export_symbol = Ident::new(&format!("SYMTAB_{}", &export_name), Span::call_site());
+    let entry_name = Ident::new(&format!("SYMTAB_{}_kernel_entry", &export_name), Span::call_site());
     let output = quote!(
         #[allow(
             non_upper_case_globals,
@@ -40,7 +45,7 @@ pub fn export_symbolic(_: TokenStream, item: TokenStream) -> TokenStream {
                 from: T,
                 to: U,
             }
-            const TN: &str = stringify!(#name);
+            const TN: &str = #export_name;
             #[used]
             #[link_section = ".symbol_table_strings"]
             static #export_symbol: [u8; TN.as_bytes().len()] = unsafe {
@@ -51,9 +56,8 @@ pub fn export_symbolic(_: TokenStream, item: TokenStream) -> TokenStream {
               };
             #[used]
             #[link_section = ".symbol_table"]
-            static #entry_name: kernel_types::drivers::KernelSymbol = kernel_types::drivers::KernelSymbol::new(&#name, &#export_symbol);
+            static #entry_name: kernel_types::drivers::KernelSymbol = kernel_types::drivers::KernelSymbol::new(&#code_name, &#export_symbol);
         };
-        #[no_mangle]
         #[allow(unused)] //it's possible that kernel api function is not used internally
         #item
     );

@@ -2,8 +2,8 @@ use core::{mem, ptr};
 use core::arch::asm;
 
 use kernel_macro::ListNode;
+use kernel_types::{declare_constants, declare_types};
 use kernel_types::collections::TinyListNode;
-use kernel_types::declare_constants;
 pub use lock::InterruptableLazyCell;
 
 use crate::{get_eax, memory, syscall};
@@ -124,11 +124,11 @@ impl IrqLine {
     IRQ_SLAVE_OFFSET = 41, "The first interrupt for slave"
     );
 }
-declare_constants!(
-    pub SystemType,
-    INTERRUPT = SystemType::wrap(SystemType::INTERRUPT_32BIT);
-    TRAP = SystemType::wrap(SystemType::TRAP_32BIT);
-);
+declare_types! {
+    pub SystemType as wrap,
+    INTERRUPT = SystemType::INTERRUPT_32BIT;
+    TRAP = SystemType::TRAP_32BIT;
+}
 
 #[macro_export]
 macro_rules! naked_trap {
@@ -161,7 +161,7 @@ impl InterruptGate {
         let offset = handler as *const NakedExceptionHandler as VirtualAddress;
         let mut instance = InterruptGate::default(offset, SegmentSelector::CODE, INTERRUPT);
         instance.flags.set_present(true);
-        instance.flags.set_ring(PrivilegeLevel::wrap(PrivilegeLevel::USER));
+        unsafe { instance.flags.set_ring(PrivilegeLevel::wrap(PrivilegeLevel::USER)) };
         instance
     }
 }
@@ -400,10 +400,7 @@ mod tests {
 
     #[test]
     fn integrity_tests() {
-        assert!(
-            mem::size_of::<InterruptGate>() == 8,
-            "Invalid size of IDTEntry"
-        );
+        assert_eq!(mem::size_of::<InterruptGate>(), 8, "Invalid size of IDTEntry");
         let table = IDTable::empty();
         assert_eq!(table.byte_size() <= u16::MAX as usize, true);
         assert_eq!(mem::size_of::<IDTHandle>(), 6);

@@ -9,7 +9,7 @@ use crate::lambda_const_assert;
 
 struct HashBucket<'a, V: TinyListNodeData<Item = V> + HashData> {
     list: TinyLinkedList<'a, V>,
-    _marker: PhantomData<(V)>,
+    _marker: PhantomData<V>,
 }
 
 pub struct HashTable<'a, V: TinyListNodeData<Item = V> + HashData, const N: usize> {

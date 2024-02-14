@@ -208,10 +208,10 @@ macro_rules! entry_index {
 
 impl MemoryMappingFlag {
     pub fn as_table_flag(&self) -> TableEntryFlag {
-        TableEntryFlag::from(self.0)
+        unsafe { TableEntryFlag::wrap(self.0) }
     }
     pub fn as_directory_flag(&self) -> DirEntryFlag {
-        DirEntryFlag::from(self.0)
+        unsafe { DirEntryFlag::wrap(self.0) }
     }
 }
 bitflags!(

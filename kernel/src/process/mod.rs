@@ -365,9 +365,7 @@ impl FutexInner {
     }
     pub fn wait(&mut self, task: &'static mut ThreadTask) {
         task.status = TaskStatus::Blocked;
-        unsafe {
-            self.waiting.push_back(task.as_runnable())
-        };
+        self.waiting.push_back(task.as_runnable())
     }
     fn release(&mut self) -> Option<&'static mut ListNode<RunnableTask>> {
         self.count.fetch_sub(1, Ordering::Release);

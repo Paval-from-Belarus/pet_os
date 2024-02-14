@@ -8,12 +8,13 @@ use fallible_collections::{FallibleVec, TryCollect};
 use num_enum::FromPrimitive;
 
 use kernel_macro::ListNode;
+use kernel_types::{bitflags, declare_constants};
 use kernel_types::collections::{HashKey, LinkedList, ListNode, TinyListNode};
 use kernel_types::collections::{HashData, HashTable};
-use kernel_types::{bitflags, declare_constants};
-use kernel_types::drivers::Device;
+use kernel_types::drivers::{Device};
 use kernel_types::string::{MutString, QuickString};
 
+use crate::drivers::{BlockDevice, CharDevice};
 use crate::utils::atomics::{SpinLock, UnsafeLazyCell};
 use crate::utils::SpinBox;
 use crate::utils::time::Timestamp;
@@ -58,7 +59,7 @@ pub struct SuperBlock {
     max_file_size: usize,
     system_type: &'static FileSystemType,
     operations: NonNull<SuperBlockOperations>,
-    device: NonNull<Device>,
+    device: Device,
     private: *mut (),
 }
 
@@ -71,12 +72,16 @@ pub enum NodeState {
 
 pub struct SuperBlockChild;
 
+pub struct DeviceChild;
+
 ///the i-node implementation
 #[derive(ListNode)]
 #[repr(C)]
 pub struct IndexNode {
     #[list_pivots]
     super_child: ListNode<SuperBlockChild>,
+    #[list_pivots]
+    device_child: ListNode<DeviceChild>,
     parent: NonNull<SuperBlock>,
     //the unique id of the node
     id: usize,
@@ -89,8 +94,22 @@ pub struct IndexNode {
     modify_time: Timestamp,
     node_operations: NonNull<IndexNodeOperations>,
     file_operations: Option<NonNull<FileOperations>>,
+    //for block/chart file devices only
+    device_ty: NodeType,
+    device: Device,
+    // real_device: Option<RealDevice>,
 }
 
+union RealDevice {
+    block: NonNull<BlockDevice>,
+    char: NonNull<CharDevice>,
+}
+bitflags! {
+    pub NodeType(usize),
+    FILE = 0x1,
+    BLOCK = 0x2,
+    CHAR = 0x4
+}
 pub fn file_read(handle: usize) -> Result<(), ()> {
     todo!()
 }
