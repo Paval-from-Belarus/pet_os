@@ -14,7 +14,6 @@ pub fn any_function() {
     // let value = MemoryType::DATA.bitand(MemoryType::CODE);
 }
 
-
 pub struct MyStruct(usize);
 
 impl MyStruct {
@@ -28,9 +27,9 @@ impl TryFrom<usize> for MyStruct {
     type Error = ();
     fn try_from(value: usize) -> Result<Self, Self::Error> {
         match value {
-            1 => { Ok(MyStruct(1)) }
-            2 => { Ok(MyStruct(2)) }
-            _ => { Err(()) }
+            1 => Ok(MyStruct(1)),
+            2 => Ok(MyStruct(2)),
+            _ => Err(()),
         }
     }
 }

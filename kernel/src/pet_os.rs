@@ -7,10 +7,10 @@
 #![feature(const_trait_impl)]
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
+
 #![feature(pointer_byte_offsets)]
 #![feature(ptr_sub_ptr)]
 #![feature(offset_of)]
-#![feature(negative_impls)]
 #![feature(ascii_char)]
 // really raw features
 #![feature(maybe_uninit_uninit_array)]
@@ -18,6 +18,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(hasher_prefixfree_extras)]
 #![feature(fn_traits)]
+
 extern crate alloc;
 extern crate fallible_collections;
 extern crate num_enum;
@@ -84,6 +85,8 @@ pub fn rust_main(properties: &PagingProperties) {
     process::run();
 }
 
+pub fn multi_boot_main(magic: u32, lp_header: *const u32) {
+}
 fn task1(_context: *mut ()) {
     log!("task 1 started");
     loop {

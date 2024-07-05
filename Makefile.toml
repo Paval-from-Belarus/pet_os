@@ -1,0 +1,71 @@
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+OUTPUT_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target"
+IMAGES_PATH = "${OUTPUT_PATH}/images"
+LOGS_PATH = "${OUTPUT_PATH}/logs"
+OBJECTS_PATH = "${OUTPUT_PATH}/shared"
+
+KERNEL_BIN_NAME = "kernel"
+# the output image file location
+HDD_IMAGE = "${IMAGES_PATH}/petos.img"
+
+[config]
+default_to_workspace = false
+
+[tasks.layout]
+command = "mkdir"
+args = ["-p", "${IMAGES_PATH}", "${LOGS_PATH}", "${OBJECTS_PATH}"]
+
+[tasks.clean]
+condition = { files_exist = ["${OUTPUT_PATH}"] }
+command = "rm"
+args = ["-r", "${OUTPUT_PATH}"]
+
+[tasks.kernel]
+dependencies = ["layout"]
+script = '''
+    echo "Binary" > "${OBJECTS_PATH}/${KERNEL_BIN_NAME}"
+'''
+
+[tasks.create_hdd_image]
+dependencies = ["layout"]
+script = '''
+    # 1 MiB
+    dd if=/dev/zero of=${HDD_IMAGE} bs=1024 count=10240
+    sed -e 's/\s*\([\+0-9a-zA-Z]*\).*/\1/' << EOF | fdisk ${HDD_IMAGE} 
+      n # new partition
+      p # primary partition
+      1 # partition number 1
+        # use default start sector 
+        # use default last sector
+      a # make it bootable
+      w # write to disk
+    EOF
+'''
+
+[tasks.image]
+dependencies = ["layout", "kernel", "create_hdd_image"]
+workspace = false
+script = '''
+    sudo losetup /dev/loop0 ${HDD_IMAGE} 
+    sudo losetup /dev/loop1 ${HDD_IMAGE} -o 1048576
+
+    sudo mkfs.fat -F16 /dev/loop1
+
+    sudo mkdir -p /mnt/petos_build
+    sudo sudo mount /dev/loop1 /mnt/petos_build
+
+    sudo grub2-install --root-directory=/mnt/petos_build --no-floppy \
+    --modules = "normal part_msdos multiboot biosdev" /dev/loop0
+
+    sudo mkdir -p \
+    /mnt/petos_build/boot/grub \
+    /mnt/petos_bulld/sys
+
+    sudo cp ${OBJECTS_PATH}/${KERNEL_BIN_NAME} /mnt/petos_build/sys/${KERNEL_BIN_NAME}
+    sync
+
+    sudo rmdir /mnt/petos_build
+    sudu losetup -d /dev/loop1
+    sudu losetup -d /dev/loop0
+'''

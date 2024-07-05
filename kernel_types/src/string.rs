@@ -1,8 +1,8 @@
-use core::{ptr, slice};
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 use core::str::from_utf8_unchecked;
+use core::{ptr, slice};
 
 use crate::collections::{FastHasher, HashCode, HashKey, PolynomialHasher};
 
@@ -65,14 +65,28 @@ pub struct MutString<'a> {
 impl<'a> MutString<'a> {
     pub unsafe fn with_capacity(capacity: usize, data: *mut u8) -> Self {
         let len = 0;
-        Self { capacity, len, data, _marker: PhantomData }
+        Self {
+            capacity,
+            len,
+            data,
+            _marker: PhantomData,
+        }
     }
     //create the
     pub unsafe fn new(len: usize, capacity: usize, data: *mut u8) -> Self {
-        Self { len, capacity, data, _marker: PhantomData }
+        Self {
+            len,
+            capacity,
+            data,
+            _marker: PhantomData,
+        }
     }
     pub unsafe fn copy_to(&self, dest: *mut u8, capacity: usize) -> Self {
-        assert!(!dest.is_null(), "failed to copy {:?} to ptr::null with {capacity}", self);
+        assert!(
+            !dest.is_null(),
+            "failed to copy {:?} to ptr::null with {capacity}",
+            self
+        );
         let copy_len = usize::min(self.len(), capacity);
         ptr::copy(self.data, dest, copy_len);
         Self::new(copy_len, capacity, dest)
@@ -94,7 +108,10 @@ impl<'a> MutString<'a> {
     ///change the current length of PString
     ///If length exceeds the capacity, method will panic
     pub unsafe fn set_length(&mut self, length: usize) {
-        assert!(length <= self.len(), "New length of PString cannot exceed previous");
+        assert!(
+            length <= self.len(),
+            "New length of PString cannot exceed previous"
+        );
         self.len = length;
     }
     pub fn as_str(&self) -> &str {
@@ -113,12 +130,12 @@ impl<'a> MutString<'a> {
     }
     pub unsafe fn push_unchecked(&mut self, letter: char) {
         match letter.len_utf8() {
-            1 => { self.push_byte_unchecked(letter as u8) }
-            _ => {
-                letter.encode_utf8(&mut [0; 4]).as_bytes()
-                      .iter()
-                      .for_each(|byte| self.push_byte_unchecked(*byte))
-            }
+            1 => self.push_byte_unchecked(letter as u8),
+            _ => letter
+                .encode_utf8(&mut [0; 4])
+                .as_bytes()
+                .iter()
+                .for_each(|byte| self.push_byte_unchecked(*byte)),
         }
     }
     pub unsafe fn push_byte_unchecked(&mut self, byte: u8) {
@@ -149,8 +166,8 @@ impl PartialEq for MutString<'_> {
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
     extern crate alloc;
+    extern crate std;
 
     use alloc::borrow::ToOwned;
     use alloc::vec::Vec;
@@ -190,8 +207,10 @@ mod tests {
         let mut value = MutString::from(mutable.as_mut_slice());
         unsafe { value.set_length(0) };
         let template = MutString::from(immutable.as_mut_slice());
-        template.as_bytes().iter()
-                .for_each(|byte| unsafe { value.push_byte_unchecked(*byte) });
+        template
+            .as_bytes()
+            .iter()
+            .for_each(|byte| unsafe { value.push_byte_unchecked(*byte) });
         assert_eq!(value, template);
     }
 

@@ -3,12 +3,11 @@
 extern crate proc_macro;
 extern crate proc_macro2;
 
-
 use proc_macro::TokenStream;
 
 use proc_macro2::Span;
 use quote::quote;
-use syn::{Attribute, DeriveInput, Field, Ident, ItemFn, parse_macro_input, Type};
+use syn::{parse_macro_input, Attribute, DeriveInput, Field, Ident, ItemFn, Type};
 
 macro_rules! token_stream_error {
     ($pattern: expr $(, $($arg:tt)*)? ) => ({
@@ -35,7 +34,10 @@ pub fn export_symbolic(attr: TokenStream, item: TokenStream) -> TokenStream {
         attr.to_string()
     };
     let export_symbol = Ident::new(&format!("SYMTAB_{}", &export_name), Span::call_site());
-    let entry_name = Ident::new(&format!("SYMTAB_{}_kernel_entry", &export_name), Span::call_site());
+    let entry_name = Ident::new(
+        &format!("SYMTAB_{}_kernel_entry", &export_name),
+        Span::call_site(),
+    );
     let output = quote!(
         #[allow(
             non_upper_case_globals,
@@ -69,12 +71,18 @@ pub fn list_node(input: TokenStream) -> TokenStream {
     let struct_ast = parse_macro_input!(input as DeriveInput);
     let struct_info: syn::DataStruct = match struct_ast.data {
         syn::Data::Struct(data) => data,
-        _ => return token_stream_error!("#[derive(ListNode)] can be used only under struct")
+        _ => return token_stream_error!("#[derive(ListNode)] can be used only under struct"),
     };
     let struct_name = struct_ast.ident;
     match &struct_info.fields {
-        syn::Fields::Unnamed(_) => warning!("Unnamed types are not supported #[derive(ListNode)] for {}", struct_name),
-        syn::Fields::Unit => warning!("Unit types are not supported #[derive(ListNode)] for {}", struct_name ),
+        syn::Fields::Unnamed(_) => warning!(
+            "Unnamed types are not supported #[derive(ListNode)] for {}",
+            struct_name
+        ),
+        syn::Fields::Unit => warning!(
+            "Unit types are not supported #[derive(ListNode)] for {}",
+            struct_name
+        ),
         syn::Fields::Named(_) => {} //macro process only named
     }
     let mut methods = Vec::<proc_macro2::TokenStream>::new();
@@ -103,8 +111,7 @@ struct NodeDefinition {
 }
 
 fn extract_node_definition(field: Field, target_ident: &Ident) -> Option<NodeDefinition> {
-    let node_attr = field.attrs.iter()
-                         .find_map(ListNodeAttribute::try_new)?;
+    let node_attr = field.attrs.iter().find_map(ListNodeAttribute::try_new)?;
     let method = parse_access_method(field.clone());
     let traits = parse_markers_traits(field.clone(), &node_attr, target_ident);
     Some(NodeDefinition { method, traits })
@@ -122,7 +129,11 @@ fn parse_access_method(field: Field) -> proc_macro2::TokenStream {
     }
 }
 
-fn parse_markers_traits(field: Field, node_attr: &ListNodeAttribute, target_ident: &Ident) -> proc_macro2::TokenStream {
+fn parse_markers_traits(
+    field: Field,
+    node_attr: &ListNodeAttribute,
+    target_ident: &Ident,
+) -> proc_macro2::TokenStream {
     let meta_list_result = node_attr.attribute().meta.require_list();
     let mut markers = Vec::<Ident>::new();
     if let Ok(meta_list) = meta_list_result.map(Clone::clone) {
@@ -138,18 +149,19 @@ fn parse_markers_traits(field: Field, node_attr: &ListNodeAttribute, target_iden
             return token_stream_error!("Invalid syntax for helper attribute. Should be #[list_pivots(<marker>)].\n There are several markers:\n\t - dangling");
         } //otherwise no markers are specified
     }
-    let field_type_option = get_field_type(&field, node_attr)
-        .and_then(|ty| map_type_to_ident(&ty));
+    let field_type_option = get_field_type(&field, node_attr).and_then(|ty| map_type_to_ident(&ty));
     if field_type_option.is_none() {
-        return token_stream_error!("Field doesn't have wrapper type. For example, ListNode<T> or TinyListNode<T>");
+        return token_stream_error!(
+            "Field doesn't have wrapper type. For example, ListNode<T> or TinyListNode<T>"
+        );
     }
     let field_type_ident = field_type_option.expect("Already checked");
     let mut traits = Vec::<proc_macro2::TokenStream>::new();
     for marker_ident in markers {
         let trait_ident = get_trait_name(&marker_ident);
         let marker_trait = quote! {
-                    unsafe impl kernel_types::collections::#trait_ident for #field_type_ident {}
-                };
+            unsafe impl kernel_types::collections::#trait_ident for #field_type_ident {}
+        };
         traits.push(marker_trait);
     }
     let node_data_marker = node_attr.define_marker(
@@ -163,7 +175,11 @@ fn parse_markers_traits(field: Field, node_attr: &ListNodeAttribute, target_iden
     }
 }
 
-fn define_node_data_marker(field: &Ident, target: &Ident, marker_type: &Ident) -> proc_macro2::TokenStream {
+fn define_node_data_marker(
+    field: &Ident,
+    target: &Ident,
+    marker_type: &Ident,
+) -> proc_macro2::TokenStream {
     let method_name = Ident::new(&format!("from_{}", field), Span::call_site());
     quote! {
         unsafe impl kernel_types::collections::ListNodeData for #marker_type {
@@ -187,7 +203,11 @@ fn define_node_data_marker(field: &Ident, target: &Ident, marker_type: &Ident) -
     }
 }
 
-fn define_tiny_node_data_marker(field: &Ident, target: &Ident, marker_type: &Ident) -> proc_macro2::TokenStream {
+fn define_tiny_node_data_marker(
+    field: &Ident,
+    target: &Ident,
+    marker_type: &Ident,
+) -> proc_macro2::TokenStream {
     let method_name = Ident::new(&format!("from_{}", field), Span::call_site());
     quote! {
         unsafe impl kernel_types::collections::TinyListNodeData for #marker_type {
@@ -223,7 +243,9 @@ fn get_field_type(field: &Field, node_attr: &ListNodeAttribute) -> Option<Type> 
 
 fn parse_generic_type(arguments: &syn::PathArguments) -> Option<Type> {
     if let syn::PathArguments::AngleBracketed(args) = arguments {
-        if let Some(inner_type) = args.args.first() && let syn::GenericArgument::Type(inner_type) = inner_type {
+        if let Some(inner_type) = args.args.first()
+            && let syn::GenericArgument::Type(inner_type) = inner_type
+        {
             return Some(inner_type.clone());
         }
     }
@@ -232,7 +254,8 @@ fn parse_generic_type(arguments: &syn::PathArguments) -> Option<Type> {
 
 fn map_type_to_ident(ty: &Type) -> Option<Ident> {
     if let Type::Path(syn::TypePath { path, .. }) = ty
-        && let Some(segment) = path.segments.last() {
+        && let Some(segment) = path.segments.last()
+    {
         Some(segment.ident.clone())
     } else {
         None
@@ -246,7 +269,6 @@ fn get_trait_name(marker_ident: &Ident) -> Option<Ident> {
     }
     None
 }
-
 
 type TokenStreamSupplier = fn(&Ident, &Ident, &Ident) -> proc_macro2::TokenStream;
 
@@ -271,19 +293,37 @@ impl ListNodeAttribute {
         wrapper == self.wrapper_name
     }
     pub fn attribute(&self) -> &Attribute {
-        self.attribyte.as_ref().expect("The ListNode Attribute should be initialized before use!")
+        self.attribyte
+            .as_ref()
+            .expect("The ListNode Attribute should be initialized before use!")
     }
-    pub fn define_marker(&self, field: &Ident, target: &Ident, marker_type: &Ident) -> proc_macro2::TokenStream {
+    pub fn define_marker(
+        &self,
+        field: &Ident,
+        target: &Ident,
+        marker_type: &Ident,
+    ) -> proc_macro2::TokenStream {
         let callable = &self.supplier;
         callable(field, target, marker_type)
     }
-    unsafe fn new(attr_name: &'static str, wrapper_name: &'static str, supplier: TokenStreamSupplier) -> Self {
-        Self { attr_name, supplier, wrapper_name, attribyte: None }
+    unsafe fn new(
+        attr_name: &'static str,
+        wrapper_name: &'static str,
+        supplier: TokenStreamSupplier,
+    ) -> Self {
+        Self {
+            attr_name,
+            supplier,
+            wrapper_name,
+            attribyte: None,
+        }
     }
     fn values() -> Vec<ListNodeAttribute> {
         unsafe {
-            vec![ListNodeAttribute::new("list_pivots", "ListNode", define_node_data_marker),
-                 ListNodeAttribute::new("list_pivot", "TinyListNode", define_tiny_node_data_marker)]
+            vec![
+                ListNodeAttribute::new("list_pivots", "ListNode", define_node_data_marker),
+                ListNodeAttribute::new("list_pivot", "TinyListNode", define_tiny_node_data_marker),
+            ]
         }
     }
 }

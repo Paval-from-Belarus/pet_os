@@ -2,14 +2,13 @@ use core::ptr::NonNull;
 
 pub use doubly_linked_list::{LinkedList, ListNode};
 pub use hash_table::{HashTable, PolynomialHasher};
+pub use queue::Queue;
 pub use singly_linked_list::{TinyLinkedList, TinyListNode};
-pub use queue::{Queue};
 
-mod hash_table;
 mod doubly_linked_list;
-mod singly_linked_list;
+mod hash_table;
 mod queue;
-
+mod singly_linked_list;
 
 #[macro_export]
 macro_rules! tiny_list_node {
@@ -59,8 +58,10 @@ pub trait HashData {
     type Item<'a>: HashKey;
     fn key<'a>(&self) -> &Self::Item<'a>;
     fn equals_by_key<'a, K>(&self, other_key: &K) -> bool
-                            where K: HashKey,
-                                  Self: HashData<Item<'a> = K> {
+    where
+        K: HashKey,
+        Self: HashData<Item<'a> = K>,
+    {
         self.key().eq(other_key)
     }
 }
@@ -79,10 +80,19 @@ pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
     unsafe fn collect<I: IntoIterator<Item = &'a mut T::Item>>(self, iter: I) -> T {
         self.collect_map(iter, |node| node)
     }
-    unsafe fn collect_map<I: IntoIterator<Item = &'a mut T::Item>,
-        S: 'a, R: BorrowingLinkedList<'a, Item = S>, F>
-    (self, iter: I, mut map: F) -> R
-     where F: FnMut(&'a mut T::Item) -> &'a mut S {
+    unsafe fn collect_map<
+        I: IntoIterator<Item = &'a mut T::Item>,
+        S: 'a,
+        R: BorrowingLinkedList<'a, Item = S>,
+        F,
+    >(
+        self,
+        iter: I,
+        mut map: F,
+    ) -> R
+    where
+        F: FnMut(&'a mut T::Item) -> &'a mut S,
+    {
         let owner = self.parent().as_mut();
         let mut target = R::empty();
         for node in iter {
@@ -125,7 +135,9 @@ pub unsafe trait ListNodeData: Sized {
 pub unsafe trait TinyListNodeData: Sized {
     type Item;
     fn from_node(node: &mut TinyListNode<Self>) -> &mut Self::Item;
-    unsafe fn from_node_unchecked(mut raw_node: NonNull<TinyListNode<Self>>) -> NonNull<Self::Item> {
+    unsafe fn from_node_unchecked(
+        mut raw_node: NonNull<TinyListNode<Self>>,
+    ) -> NonNull<Self::Item> {
         let node = Self::from_node(raw_node.as_mut());
         NonNull::from(node)
     }

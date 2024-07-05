@@ -3,6 +3,6 @@
 
 [toolchain]
 channel = "nightly"
-# equals to rust nightly 1.54 as of the release day 2021-05-10
+
 targets = ["i686-unknown-linux-gnu"]
-components = [ "rust-src", "rustc", "cargo", "rust-std", "clippy"]
+components = [ "rust-src", "rustc", "cargo", "rust-std", "clippy", "rust_analyzer"]

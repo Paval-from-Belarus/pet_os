@@ -2,19 +2,14 @@
 members = [
     "kernel_macro", "kernel_types", "kernel"
 ]
+
 resolver = "2"
 #build-std = ["core", "compiler_builtins"]
 #[dependencies]
 #compiler_builtins = { version = "0.1.101", features = ["mem"] }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[profile.release]
-lto = true
-panic = "abort"
-incremental = true
-codegen-units = 1
-opt-level = 's'
-[workspace.dependencies]
 
+[workspace.dependencies]
 kernel-types = { path = "kernel_types" }
 kernel-macro = { path = "kernel_macro" }
 
@@ -29,7 +24,10 @@ pc-keyboard = "0.7.0"
 paste = "1.0.14"
 num_enum = { version = "0.7.2", default-features = false }
 fallible_collections = { version = "0.4.9", features = ["hashbrown"] }
-
+elf_rs = { version = "0.3.1" }
+multiboot2 = { version = "0.20" }
+multiboot = { version = "0.8" }
+log = { version = "0.4.20" }
 #generic-array = { version = "1.0.0", features = ["const-default"]}
 #bitflags = "2.3.3"
 ##alloca = "0.3.4"

@@ -7,11 +7,10 @@
 #![feature(maybe_uninit_uninit_array)]
 #![feature(hasher_prefixfree_extras)]
 
-
 use thiserror_no_std::Error;
 
-pub mod drivers;
 pub mod collections;
+pub mod drivers;
 pub mod string;
 
 #[macro_export]
@@ -95,9 +94,15 @@ pub struct MinMax<T: Sized + Ord> {
 impl<T: Sized + Ord> MinMax<T> {
     pub fn new(first: T, second: T) -> Self {
         if first.le(&second) {
-            MinMax { min: first, max: second }
+            MinMax {
+                min: first,
+                max: second,
+            }
         } else {
-            MinMax { min: second, max: first }
+            MinMax {
+                min: second,
+                max: first,
+            }
         }
     }
     pub fn min(&self) -> &T {
@@ -149,8 +154,8 @@ pub trait ReferableResource {
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
     extern crate alloc;
+    extern crate std;
     bitflags! {
         pub MyBestFlag(u8),
         ONE = 0x1,

@@ -29,10 +29,7 @@ impl PartialEq for KernelSymbol {
 impl KernelSymbol {
     pub const fn new<Args: Tuple, T: Fn<Args>>(function: &'static T, value: &'static [u8]) -> Self {
         let offset: NonNull<()> = unsafe { mem::transmute(function) };
-        Self {
-            offset,
-            value,
-        }
+        Self { offset, value }
     }
     pub fn has_same_name(&self, name: &str) -> bool {
         let value = unsafe { core::str::from_utf8_unchecked(self.value) };
@@ -75,7 +72,10 @@ bitfield! {
 
 impl Device {
     pub fn new(driver: u32, device: u32) -> Self {
-        assert!(driver & 0x2FF == driver && device < (u32::MAX >> 12), "Invalid parameters");
+        assert!(
+            driver & 0x2FF == driver && device < (u32::MAX >> 12),
+            "Invalid parameters"
+        );
         Self(driver | (device << 12))
     }
     //the id of driver responsible for given device

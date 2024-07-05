@@ -4,7 +4,10 @@ use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ptr;
 
-use crate::collections::{BorrowingLinkedList, FastHasher, HashCode, HashData, HashKey, TinyLinkedList, TinyListNode, TinyListNodeData};
+use crate::collections::{
+    BorrowingLinkedList, FastHasher, HashCode, HashData, HashKey, TinyLinkedList, TinyListNode,
+    TinyListNodeData,
+};
 use crate::lambda_const_assert;
 
 struct HashBucket<'a, V: TinyListNodeData<Item = V> + HashData> {
@@ -17,7 +20,6 @@ pub struct HashTable<'a, V: TinyListNodeData<Item = V> + HashData, const N: usiz
     _marker: PhantomData<[V; N]>,
 }
 
-
 impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData> HashTable<'a, V, N> {
     pub fn empty() -> Self {
         let raw_table: [MaybeUninit<TinyLinkedList<'a, V>>; N] = MaybeUninit::uninit_array();
@@ -25,15 +27,20 @@ impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData> HashTable<'a,
             raw_bucket.write(TinyLinkedList::empty());
             unsafe { raw_bucket.assume_init() }
         });
-        Self { table, _marker: PhantomData }
+        Self {
+            table,
+            _marker: PhantomData,
+        }
     }
     pub fn size(&self) -> usize {
         N
     }
     pub fn put(&mut self, node: &'a mut TinyListNode<V>) {
         let key = node.key();
-        assert!(self.find(key, |found| ptr::eq(found, node as &V)).is_none(),
-                "Failed to put already present entry");
+        assert!(
+            self.find(key, |found| ptr::eq(found, node as &V)).is_none(),
+            "Failed to put already present entry"
+        );
         let bucket = self.find_bucket(key);
         bucket.push_front(node);
     }
@@ -42,28 +49,37 @@ impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData> HashTable<'a,
         bucket.remove(node)
     }
     pub fn find<'b, P, K>(&mut self, key: &K, mut predicate: P) -> Option<&'a mut V>
-                          where P: FnMut(&V) -> bool,
-                                K: HashKey,
-                                V: HashData<Item<'b> = K> {
+    where
+        P: FnMut(&V) -> bool,
+        K: HashKey,
+        V: HashData<Item<'b> = K>,
+    {
         let bucket = self.find_bucket(key);
-        bucket.iter_mut()
-              .find(|entry| entry.equals_by_key(key) && predicate(entry))
-              .map(|entry| entry as &mut V)
+        bucket
+            .iter_mut()
+            .find(|entry| entry.equals_by_key(key) && predicate(entry))
+            .map(|entry| entry as &mut V)
     }
     fn find_bucket<'b, K>(&mut self, key: &K) -> &mut TinyLinkedList<'a, V>
-                          where K: HashKey, V: HashData<Item<'b> = K> {
+    where
+        K: HashKey,
+        V: HashData<Item<'b> = K>,
+    {
         let index = self.calc_bucket_index(key);
         &mut self.table[index]
     }
-    fn calc_bucket_index<K>(&self, key: &K) -> usize where K: HashKey {
+    fn calc_bucket_index<K>(&self, key: &K) -> usize
+    where
+        K: HashKey,
+    {
         (key.hash_code() as usize) / self.size()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
     extern crate alloc;
+    extern crate std;
 
     use crate::collections::{HashCode, HashKey, ListNode};
     use crate::list_node;
@@ -89,10 +105,13 @@ mod tests {
         }
     }
 
-
     #[test]
     fn integrity_test() {
-        let node = unsafe { DataType { node: ListNode::empty() } };
+        let node = unsafe {
+            DataType {
+                node: ListNode::empty(),
+            }
+        };
     }
 }
 
@@ -110,10 +129,9 @@ impl<const N: usize> Hasher for PolynomialHasher<N> {
         self.0 as _
     }
     fn write(&mut self, bytes: &[u8]) {
-        self.0 = bytes.iter()
-                      .fold(self.0, |sum, byte| {
-                          sum + (N as HashCode) * (*byte as HashCode)
-                      });
+        self.0 = bytes.iter().fold(self.0, |sum, byte| {
+            sum + (N as HashCode) * (*byte as HashCode)
+        });
     }
 }
 

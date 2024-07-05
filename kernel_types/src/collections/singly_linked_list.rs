@@ -4,8 +4,10 @@ use core::ops::Deref;
 use core::ops::DerefMut;
 use core::ptr::NonNull;
 
-use crate::collections::{BorrowingLinkedList, ListNodeData, TinyListNodeData, UnlinkableListGuard};
 use crate::collections::ListNode;
+use crate::collections::{
+    BorrowingLinkedList, ListNodeData, TinyListNodeData, UnlinkableListGuard,
+};
 
 #[repr(C)]
 pub struct TinyListNode<T: Sized> {
@@ -33,23 +35,28 @@ impl<T: ListNodeData> ListNode<T> {
 
 impl<T: TinyListNodeData> From<*mut TinyListNode<T>> for TinyListNode<T> {
     fn from(value: *mut TinyListNode<T>) -> Self {
-        let next =
-            if value.is_null() {
-                None
-            } else {
-                unsafe { Some(&mut *value) }
-            };
+        let next = if value.is_null() {
+            None
+        } else {
+            unsafe { Some(&mut *value) }
+        };
         Self::new(next)
     }
 }
 
 impl<T: TinyListNodeData> TinyListNode<T> {
     pub const fn empty() -> Self {
-        Self { next: None, _marker: PhantomData }
+        Self {
+            next: None,
+            _marker: PhantomData,
+        }
     }
     pub fn new(next: Option<&mut TinyListNode<T>>) -> TinyListNode<T> {
         let next = next.map(|node| NonNull::from(node));
-        Self { next, _marker: PhantomData }
+        Self {
+            next,
+            _marker: PhantomData,
+        }
     }
     pub fn set_next(&mut self, next: &mut TinyListNode<T>) {
         self.next.replace(NonNull::from(next));
@@ -79,13 +86,13 @@ pub struct TinyLinkedList<'a, T: TinyListNodeData + Sized> {
     _marker: PhantomData<&'a mut T>,
 }
 
-
 pub struct UnlinkableGuard<'a, T: TinyListNodeData> {
     parent: NonNull<TinyLinkedList<'a, T>>,
 }
 
-
-impl<'a, T: TinyListNodeData> UnlinkableListGuard<'a, TinyLinkedList<'a, T>> for UnlinkableGuard<'a, T> {
+impl<'a, T: TinyListNodeData> UnlinkableListGuard<'a, TinyLinkedList<'a, T>>
+    for UnlinkableGuard<'a, T>
+{
     fn parent(&self) -> NonNull<TinyLinkedList<'a, T>> {
         self.parent
     }
@@ -132,7 +139,9 @@ impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a> for TinyLinkedList<'a, T> 
     fn remove(&mut self, node: &'a mut TinyListNode<T>) {
         assert!(!self.is_empty());
         let mut raw_node = NonNull::from(node);
-        if let Some(raw_first) = self.first && let Some(raw_last) = self.last {
+        if let Some(raw_first) = self.first
+            && let Some(raw_last) = self.last
+        {
             if raw_first.eq(&raw_node) {
                 self.first = unsafe { raw_node.as_mut().next };
                 if raw_last.eq(&raw_node) {
@@ -141,15 +150,17 @@ impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a> for TinyLinkedList<'a, T> 
                 }
                 return;
             }
-            let before_option = self.iter_mut()
-                                    .find(|node| -> bool {
-                                        if let Some(next) = node.next {
-                                            next.eq(&raw_node)
-                                        } else {
-                                            false
-                                        }
-                                    });
-            assert!(self.is_empty() && before_option.is_none() || !self.is_empty() && before_option.is_some());
+            let before_option = self.iter_mut().find(|node| -> bool {
+                if let Some(next) = node.next {
+                    next.eq(&raw_node)
+                } else {
+                    false
+                }
+            });
+            assert!(
+                self.is_empty() && before_option.is_none()
+                    || !self.is_empty() && before_option.is_some()
+            );
             if let Some(before) = before_option {
                 before.next = unsafe { raw_node.as_mut().next };
                 if raw_last.eq(&raw_node) {
@@ -198,16 +209,22 @@ impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
             self.last = other.last;
             return;
         }
-        if let Some(first) = other.first && let Some(last) = other.last {
+        if let Some(first) = other.first
+            && let Some(last) = other.last
+        {
             unsafe { self.splice_bounds(first, last) };
         } else {
             assert!(other.is_empty());
         }
     }
-    unsafe fn splice_bounds(&mut self,
-                            other_first: NonNull<TinyListNode<T>>,
-                            mut other_last: NonNull<TinyListNode<T>>) {
-        if let Some(mut first) = self.first && let Some(_) = self.last {
+    unsafe fn splice_bounds(
+        &mut self,
+        other_first: NonNull<TinyListNode<T>>,
+        mut other_last: NonNull<TinyListNode<T>>,
+    ) {
+        if let Some(mut first) = self.first
+            && let Some(_) = self.last
+        {
             other_last.as_mut().set_next(first.as_mut());
             self.first = Some(other_first);
         } else {
@@ -220,7 +237,6 @@ pub struct ListIterator<'a, T: TinyListNodeData> {
     next: Option<NonNull<TinyListNode<T>>>,
     _marker: PhantomData<&'a T>,
 }
-
 
 impl<'a, T: TinyListNodeData> ListIterator<'a, T> {
     pub fn new(list: &TinyLinkedList<T>) -> Self {
@@ -251,7 +267,6 @@ pub struct MutListIterator<'a, 'b, T: TinyListNodeData> {
     watched: Option<NonNull<TinyListNode<T>>>,
     parent: &'b mut TinyLinkedList<'a, T>,
     _marker: PhantomData<&'a mut T>,
-
 }
 
 impl<'a, 'b, T: TinyListNodeData> MutListIterator<'a, 'b, T> {
@@ -269,7 +284,7 @@ impl<'a, 'b, T: TinyListNodeData> MutListIterator<'a, 'b, T> {
             Some(mut watched) => unsafe {
                 self.parent.remove(watched.as_mut());
                 Some(watched.as_mut())
-            }
+            },
         };
         self.watched = None;
         unlinked
@@ -293,8 +308,8 @@ impl<'a, 'b, T: TinyListNodeData> Iterator for MutListIterator<'a, 'b, T> {
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
     extern crate alloc;
+    extern crate std;
 
     use alloc::vec;
     use alloc::vec::Vec;
@@ -329,7 +344,10 @@ mod tests {
 
     impl TestStruct {
         pub fn new(value: usize) -> Self {
-            Self { node: TinyListNode::empty(), value }
+            Self {
+                node: TinyListNode::empty(),
+                value,
+            }
         }
         pub fn as_node(&mut self) -> &mut TinyListNode<TestStruct> {
             &mut self.node
@@ -340,9 +358,7 @@ mod tests {
     fn iteration_test() {
         let mut numbers = [1, 2, 3, 4, 5, 6];
         let mut number_iter = numbers.iter_mut();
-        let _ = number_iter.by_ref()
-                           .take(2)
-                           .count();
+        let _ = number_iter.by_ref().take(2).count();
         assert_eq!(number_iter.next(), Some(&mut 3));
         // assert_eq!(iter.next(), Some(&mut 6));
         std::println!("Hello");
@@ -352,23 +368,23 @@ mod tests {
 
     //this macro assume that struct has field naming node
     macro_rules! fetch_unchecked {
-        ($array: ident, $index: expr) => ({
+        ($array: ident, $index: expr) => {{
             let value = $array.get_unchecked($index);
             let mut raw_node = NonNull::from(value);
             raw_node.as_mut().as_node()
-        });
+        }};
     }
     #[test]
     fn splice_test() {
         let mut list = TinyLinkedList::<TestStruct>::empty();
         unsafe {
-            let numbers: Vec<TestStruct> = vec!(
+            let numbers: Vec<TestStruct> = vec![
                 TestStruct::new(10),
                 TestStruct::new(11),
                 TestStruct::new(12),
                 TestStruct::new(13),
                 TestStruct::new(14),
-            );
+            ];
             for number in numbers[0..3].iter() {
                 let mut raw_node = NonNull::from(number);
                 list.push_back(raw_node.as_mut().as_node())
@@ -378,11 +394,17 @@ mod tests {
             other_list.push_back(fetch_unchecked!(numbers, 4));
             list.splice(other_list);
             assert!(
-                list.first.unwrap().eq(&NonNull::from(fetch_unchecked!(numbers, 3))) &&
-                    NonNull::from(fetch_unchecked!(numbers, 4)).eq(&NonNull::from(fetch_unchecked!(numbers, 0)))
+                list.first
+                    .unwrap()
+                    .eq(&NonNull::from(fetch_unchecked!(numbers, 3)))
+                    && NonNull::from(fetch_unchecked!(numbers, 4))
+                        .eq(&NonNull::from(fetch_unchecked!(numbers, 0)))
             );
             list.remove(fetch_unchecked!(numbers, 3));
-            assert_eq!(list.first, Some(NonNull::from(fetch_unchecked!(numbers, 4))));
+            assert_eq!(
+                list.first,
+                Some(NonNull::from(fetch_unchecked!(numbers, 4)))
+            );
             list.remove(fetch_unchecked!(numbers, 1));
         }
     }

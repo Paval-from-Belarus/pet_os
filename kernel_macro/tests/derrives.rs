@@ -4,12 +4,15 @@ extern crate kernel_macro;
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     extern crate kernel_macro;
     extern crate kernel_types;
     extern crate std;
-    extern crate alloc;
 
-    use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode, ListNodeData, TinyLinkedList, TinyListNode, TinyListNodeData};
+    use kernel_types::collections::{
+        BorrowingLinkedList, LinkedList, ListNode, ListNodeData, TinyLinkedList, TinyListNode,
+        TinyListNodeData,
+    };
 
     pub struct AnotherStruct;
 
@@ -22,7 +25,6 @@ mod tests {
         tiny_node: TinyListNode<TestStruct>,
         payload: usize,
     }
-
 
     #[test]
     fn list_node_test() {

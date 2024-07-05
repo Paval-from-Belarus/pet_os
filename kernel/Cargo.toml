@@ -2,31 +2,41 @@
 name = "kernel"
 version = "0.1.0"
 edition = "2021"
+
 [lib]
 crate-type = ["staticlib"]
 path = "src/pet_os.rs"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-#[profile.release]
-#lto = true
-#panic = "abort"
-#incremental = true
-#codegen-units = 1
-#opt-level = 's'
+
+[profile.release]
+lto = true
+panic = "abort"
+strip = "none"
+incremental = true
+codegen-units = 1
+opt-level = 'z'
+debug = false
+
 [dependencies]
 thiserror-no-std = { workspace = true }
 spin = { workspace = true }
 static_assertions = { workspace = true }
+
 volatile = { workspace = true }
 bitfield = { workspace = true }
 pc-keyboard = { workspace = true }
+
 paste = { workspace = true }
 num_enum = { workspace = true }
 fallible_collections = { workspace = true }
+
 crc = { workspace = true }
 strum_macros = { workspace = true }
 kernel-macro = { workspace = true }
 kernel-types = { workspace = true }
-log = "0.4.20"
+
+multiboot2 = { workspace = true }
+multiboot = { workspace = true }
+log = { workspace = true } 
 ##generic-array = { version = "1.0.0", features = ["const-default"]}
 
 #failure = { version = "0.1", features = ["failure_derive"], default-features = false }
