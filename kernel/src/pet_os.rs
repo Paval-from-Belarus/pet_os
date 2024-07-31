@@ -12,12 +12,12 @@
 #![feature(ptr_sub_ptr)]
 #![feature(offset_of)]
 #![feature(ascii_char)]
+
 // really raw features
 #![feature(maybe_uninit_uninit_array)]
 #![feature(const_maybe_uninit_zeroed)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(hasher_prefixfree_extras)]
-#![feature(fn_traits)]
 
 extern crate alloc;
 extern crate fallible_collections;
@@ -68,6 +68,11 @@ pub unsafe extern "C" fn main() {
     unsafe { rust_main(&*properties) };
 }
 
+#[no_mangle]
+pub extern "C" fn _start() {
+    logging::init();
+    log!("Working");
+}
 
 pub fn rust_main(properties: &PagingProperties) {
     logging::init();

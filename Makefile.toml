@@ -1,11 +1,26 @@
 [env]
 CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+ASM_SOURCE_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/asm"
+SCRIPTS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/scripts"
 OUTPUT_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target"
+
+
 IMAGES_PATH = "${OUTPUT_PATH}/images"
 LOGS_PATH = "${OUTPUT_PATH}/logs"
 OBJECTS_PATH = "${OUTPUT_PATH}/shared"
 
-KERNEL_BIN_NAME = "kernel"
+KERNEL_LIB = "${OUTPUT_PATH}/target/release/libkernel.a"
+TARGET_SPEC = "${SCRIPTS_PATH}/target.json"
+LD_SCRIPT = "${SCRIPTS_PATH}/kernel.ld"
+MAP_FILE = "${LOGS_PATH}/mapping-info.txt"
+
+# assumed that wine is installed in system
+# compiler accept two args: source code and output binary name
+ASM_COMPILER = "wine ${SCRIPTS_PATH}/fasm.exe"
+#fixme: conventional way to include specific macros
+INCLUDE="/home/Paval/Triggers/ASM/petOS"
+
+KERNEL_BIN_NAME = "kernel.o"
 # the output image file location
 HDD_IMAGE = "${IMAGES_PATH}/petos.img"
 
@@ -21,11 +36,33 @@ condition = { files_exist = ["${OUTPUT_PATH}"] }
 command = "rm"
 args = ["-r", "${OUTPUT_PATH}"]
 
-[tasks.kernel]
-dependencies = ["layout"]
+[tasks.asm]
 script = '''
-    echo "Binary" > "${OBJECTS_PATH}/${KERNEL_BIN_NAME}"
+    ${ASM_COMPILER} ${ASM_SOURCE_PATH}/interceptors.asm ${OBJECTS_PATH}/interceptors.o
 '''
+
+[tasks.kernel_lib]
+command = "cargo"
+args = [
+    "build",
+    "-Z", "build-std=core,alloc,compiler_builtins",
+    "-Z", "build-std-features=compiler-builtins-mem",
+    "--target=${TARGET_SPEC}",
+    "--release", 
+    # "--target-dir", "${OBJECTS_PATH}"
+]
+[tasks.kernel]
+dependencies = ["layout", "asm", "kernel_lib"]
+script = '''
+    ld -n --gc-sections \
+    -Map=${MAP_FILE} \
+    -T ${LD_SCRIPT} \
+    -z max-page-size=0x1000 \
+    -melf_i386 \
+    -o ${OBJECTS_PATH}/${KERNEL_BIN_NAME} \
+    ${KERNEL_LIB} ${OBJECTS_PATH}/interceptors.o
+'''
+
 
 [tasks.create_hdd_image]
 dependencies = ["layout"]
@@ -53,19 +90,21 @@ script = '''
     sudo mkfs.fat -F16 /dev/loop1
 
     sudo mkdir -p /mnt/petos_build
-    sudo sudo mount /dev/loop1 /mnt/petos_build
+    sudo mount /dev/loop1 /mnt/petos_build
 
-    sudo grub2-install --root-directory=/mnt/petos_build --no-floppy \
-    --modules = "normal part_msdos multiboot biosdev" /dev/loop0
+    sudo grub2-install --boot-directory=/mnt/petos_build --no-floppy \
+    --modules="normal part_msdos multiboot disk drivemap" --target=i386-pc /dev/loop0 \
+    --locales=uk
 
-    sudo mkdir -p \
-    /mnt/petos_build/boot/grub \
-    /mnt/petos_bulld/sys
+    sudo mkdir -p /mnt/petos_build/boot/grub
+    sudo mkdir -p /mnt/petos_build/sys
 
     sudo cp ${OBJECTS_PATH}/${KERNEL_BIN_NAME} /mnt/petos_build/sys/${KERNEL_BIN_NAME}
     sync
 
+    sudo umount /mnt/petos_build
     sudo rmdir /mnt/petos_build
-    sudu losetup -d /dev/loop1
-    sudu losetup -d /dev/loop0
+
+    sudo losetup -d /dev/loop1
+    sudo losetup -d /dev/loop0
 '''

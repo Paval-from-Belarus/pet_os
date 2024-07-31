@@ -6,8 +6,8 @@ ASM_CONFIG_FILE := $(ASM_PROJECT_PATH)/Boot/Boot.asm
 ASM_BUILDER := ${ASM_PROJECT_PATH}/out/build/compiler_script.sh#the compiler task in project
 IMAGE_BUILDER := ${ASM_PROJECT_PATH}/out/build/image_builder.sh#the script that builds project search file in specific layout and build bootable image
 
-SCRIPTS_PATH := build
-TARGET_LOADER_PATH := target/loader#loader comprises from 2 parts: MBR.bin and OsLoader.bin
+SCRIPTS_PATH := scripts
+TARGET_LOADER_PATH := target/loader #loader comprises from 2 parts: MBR.bin and OsLoader.bin
 TARGET_APPS_PATH := target/apps
 TARGET_KERNEL_PATH := target/kernel#the cargo stores file here
 TARGET_IMAGES_PATH := target/images
