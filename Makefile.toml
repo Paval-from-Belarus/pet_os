@@ -13,6 +13,7 @@ KERNEL_LIB = "${OUTPUT_PATH}/target/release/libkernel.a"
 TARGET_SPEC = "${SCRIPTS_PATH}/target.json"
 LD_SCRIPT = "${SCRIPTS_PATH}/kernel.ld"
 MAP_FILE = "${LOGS_PATH}/mapping-info.txt"
+GRUB_CFG = "${SCRIPTS_PATH}/grub.cfg"
 
 # assumed that wine is installed in system
 # compiler accept two args: source code and output binary name
@@ -92,14 +93,15 @@ script = '''
     sudo mkdir -p /mnt/petos_build
     sudo mount /dev/loop1 /mnt/petos_build
 
-    sudo grub2-install --boot-directory=/mnt/petos_build --no-floppy \
+    sudo mkdir -p /mnt/petos_build/boot/grub2
+    sudo mkdir -p /mnt/petos_build/sys
+
+    sudo grub2-install --boot-directory=/mnt/petos_build/boot/grub2 --no-floppy \
     --modules="normal part_msdos multiboot disk drivemap" --target=i386-pc /dev/loop0 \
     --locales=uk
 
-    sudo mkdir -p /mnt/petos_build/boot/grub
-    sudo mkdir -p /mnt/petos_build/sys
-
-    sudo cp ${OBJECTS_PATH}/${KERNEL_BIN_NAME} /mnt/petos_build/sys/${KERNEL_BIN_NAME}
+    sudo cp ${OBJECTS_PATH}/${KERNEL_BIN_NAME} /mnt/petos_build/sys/io.sys
+    sudo cp ${GRUB_CFG} /mnt/petos_build/boot/grub2/
     sync
 
     sudo umount /mnt/petos_build
