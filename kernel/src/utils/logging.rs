@@ -12,11 +12,13 @@ macro_rules! log {
 		let _ = write!(&mut $crate::utils::logging::Logger::get(module_path!()), $($arg)*);
 	})
 }
+
 declare_constants!(
     pub u16,
     BOCHS_HACK_PORT = 0xe9, "Reserved on real hardware, but used in bochs";
     COM_1 = 0x3f8
 );
+
 pub unsafe fn put_in_serial(line: &str) {
     for byte in line.bytes() {
         put_byte_in_serial(byte);

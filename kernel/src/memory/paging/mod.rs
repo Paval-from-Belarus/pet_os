@@ -68,6 +68,7 @@ pub struct GDTTable {
     user_data: UnsafeCell<MemoryDescriptor>,
     task: TaskStateDescriptor,
 }
+
 assert_eq_size!(GDTTable, [usize; 2 * 6]);
 
 impl GDTTable {

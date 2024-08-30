@@ -78,14 +78,15 @@ pub extern "C" fn start(magic: u32, lp_header: *const u32) {
     }
 
     let mbi_ptr = lp_header.cast();
-    let mbi = unsafe {
-        BootInformation::load(mbi_ptr).expect("Failed to load mbi")
-    };
+    let mbi =
+        unsafe { BootInformation::load(mbi_ptr).expect("Failed to load mbi") };
+
     log!("Working");
 }
 
 pub fn rust_main(properties: &PagingProperties) {
     logging::init();
+
     let allocator = properties.allocator();
     let dir_table = properties.page_directory();
     let heap_offset = properties.heap_offset();
@@ -122,9 +123,11 @@ pub(self) fn print_memory_map(mbi: &BootInformation) -> anyhow::Result<()> {
         .memory_map_tag()
         .ok_or("Should have memory map")
         .map_err(anyhow::Error::msg)?;
+    log::info!("12");
+
     log!("Memory Map:");
     memmap.memory_areas().iter().for_each(|e| {
-        println!(
+        log!(
             "  0x{:010x} - 0x{:010x} ({:.3} MiB {:?})",
             e.start_address(),
             e.end_address(),
@@ -132,7 +135,6 @@ pub(self) fn print_memory_map(mbi: &BootInformation) -> anyhow::Result<()> {
             e.typ()
         );
     });
-    lon!();
     Ok(())
 }
 
@@ -141,12 +143,12 @@ pub(self) fn print_elf_info(mbi: &BootInformation) -> anyhow::Result<()> {
         .elf_sections()
         .ok_or("Should have elf sections")
         .map_err(anyhow::Error::msg)?;
-    println!("ELF sections:");
+    log!("ELF sections:");
     for s in sections_iter {
-        let typ = format!("{:?}", s.section_type());
-        let flags = format!("{:?}", s.flags());
+        let typ = log!("{:?}", s.section_type());
+        let flags = log!("{:?}", s.flags());
         let name = s.name().map_err(anyhow::Error::msg)?;
-        println!(
+        log!(
             "  {:<13} {:<17} {:<22} 0x{:010x} 0x{:010x} {:>5.2} MiB align={}",
             name,
             typ,
@@ -157,7 +159,6 @@ pub(self) fn print_elf_info(mbi: &BootInformation) -> anyhow::Result<()> {
             s.addralign(),
         );
     }
-    println!();
     Ok(())
 }
 
@@ -168,28 +169,28 @@ pub(self) fn print_module_info(mbi: &BootInformation) -> anyhow::Result<()> {
     }
     let module = modules.first().unwrap();
     let module_cmdline = module.cmdline().map_err(anyhow::Error::msg)?;
-    println!("Modules:");
-    println!(
+    log!("Modules:");
+    log!(
         "  0x{:010x} - 0x{:010x} ({} B, cmdline='{}')",
         module.start_address(),
         module.end_address(),
         module.module_size(),
         module_cmdline
     );
-    println!(" grub cfg passed as boot module:");
+    log!(" grub cfg passed as boot module:");
     let grup_cfg_ptr = module.start_address() as *const u32 as *const u8;
-    let grub_cfg =
-        unsafe { core::slice::from_raw_parts(grup_cfg_ptr, module.module_size() as usize) };
+    let grub_cfg = unsafe {
+        core::slice::from_raw_parts(grup_cfg_ptr, module.module_size() as usize)
+    };
 
     // In the GRUB bootflow case, we pass the config as module with it. This is
     // not done for the chainloaded case.
     if let Ok(str) = core::str::from_utf8(grub_cfg) {
-        println!("=== file begin ===");
+        log!("=== file begin ===");
         for line in str.lines() {
-            println!("    > {line}");
+            log!("    > {line}");
         }
-        println!("=== file end ===");
-        println!();
+        log!("=== file end ===");
     }
 
     Ok(())

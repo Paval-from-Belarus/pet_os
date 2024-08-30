@@ -77,6 +77,7 @@ proc Kernel.copy uses esi edi
      rep movsb ;but kernel should be paged aligned  
 ret
 endp
+
 ;Input:
 ;None
 ;Output:
