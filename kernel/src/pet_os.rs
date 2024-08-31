@@ -87,6 +87,10 @@ pub extern "C" fn start(magic: u32, lp_header: *const u32) {
 pub fn rust_main(properties: &PagingProperties) {
     logging::init();
 
+    let boot_info = properties.boot_info();
+    
+
+
     let allocator = properties.allocator();
     let dir_table = properties.page_directory();
     let heap_offset = properties.heap_offset();
@@ -164,6 +168,7 @@ pub(self) fn print_elf_info(mbi: &BootInformation) -> anyhow::Result<()> {
 
 pub(self) fn print_module_info(mbi: &BootInformation) -> anyhow::Result<()> {
     let modules = mbi.module_tags().collect::<Vec<_>>();
+
     if modules.len() != 1 {
         Err(anyhow::Error::msg("Should have exactly one boot module"))?
     }

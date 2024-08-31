@@ -38,12 +38,14 @@ impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
         let pointer: *mut T = self.entries.add(index);
         &*pointer
     }
+
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         if index >= self.size {
             return None;
         }
         unsafe { Some(self.get_mut_unchecked(index)) }
     }
+
     pub unsafe fn get_mut_unchecked(&mut self, index: usize) -> &mut T {
         assert!(index < self.size);
         let pointer: *mut T = self.entries.add(index);

@@ -5,14 +5,21 @@ use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use core::slice;
 
+use multiboot2::{BootInformation, BootInformationHeader};
 use static_assertions::assert_eq_size;
 
 use kernel_types::collections::LinkedList;
 use kernel_types::{bitflags, declare_constants, Zeroed};
 use table::{RefTable, RefTableEntry};
 
-use crate::memory::{AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector, TaskStateDescriptor, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
-use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
+use crate::memory::paging::table::{
+    DirEntry, DirEntryFlag, TableEntry, TableEntryFlag,
+};
+use crate::memory::{
+    AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag,
+    MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector,
+    TaskStateDescriptor, ToPhysicalAddress, ToVirtualAddress, VirtualAddress,
+};
 
 pub(crate) mod table;
 
@@ -32,7 +39,7 @@ pub struct PageMarker {
 }
 
 pub enum CommonError {
-    OutOfBounds
+    OutOfBounds,
 }
 
 #[derive(Debug)]
@@ -57,6 +64,7 @@ pub struct PagingProperties {
     heap_offset: VirtualAddress,
     captures: *mut CaptureMemRec,
     captures_cnt: usize,
+    boot_header: *const BootInformationHeader,
 }
 
 #[repr(C)]
@@ -120,14 +128,26 @@ impl PagingProperties {
     pub fn page_directory(&self) -> RefTable<DirEntry> {
         RefTable::wrap(self.directory, DIRECTORY_ENTRIES_COUNT)
     }
+
     pub fn allocator(&self) -> CaptureAllocator {
-        let captures: &mut [CaptureMemRec] =
-            unsafe { slice::from_raw_parts_mut(self.captures, self.captures_cnt) };
+        let captures: &mut [CaptureMemRec] = unsafe {
+            slice::from_raw_parts_mut(self.captures, self.captures_cnt)
+        };
         CaptureAllocator::new(captures)
     }
+
     pub fn heap_offset(&self) -> VirtualAddress {
         self.heap_offset
     }
+
+    pub fn boot_info(&self) -> BootInformation {
+        unsafe {
+            BootInformation::load(self.boot_header)
+                .expect("Failed to access boot info")
+        }
+
+    }
+
     #[cfg(target_arch = "x86")]
     pub fn gdt(&self) -> NonNull<GDTTable> {
         unsafe {
@@ -140,7 +160,10 @@ impl PagingProperties {
 }
 
 impl CaptureMemRec {
-    pub fn capture_offset(&mut self, page_cnt: usize) -> Option<PhysicalAddress> {
+    pub fn capture_offset(
+        &mut self,
+        page_cnt: usize,
+    ) -> Option<PhysicalAddress> {
         let rest_pages = self.free_pages_count();
         if rest_pages >= page_cnt {
             self.next_page += page_cnt;
@@ -195,7 +218,6 @@ impl CaptureAllocator {
     }
 }
 
-
 macro_rules! table_index {
     ($argument:expr) => {
         ($argument >> 22) & 0x3FF
@@ -222,8 +244,16 @@ bitflags!(
 
 );
 impl PageMarker {
-    pub fn wrap(directory: RefTable<DirEntry>, alloc_handler: AllocHandler, dealloc_handler: DeallocHandler) -> Self {
-        Self { directory, alloc_handler, dealloc_handler }
+    pub fn wrap(
+        directory: RefTable<DirEntry>,
+        alloc_handler: AllocHandler,
+        dealloc_handler: DeallocHandler,
+    ) -> Self {
+        Self {
+            directory,
+            alloc_handler,
+            dealloc_handler,
+        }
     }
     #[deprecated]
     pub fn set_dealloc_handler(&mut self, handler: DeallocHandler) {
@@ -307,7 +337,11 @@ impl PageMarker {
     //     return Ok(());
     // }
 
-    fn mark_dir_entry(&mut self, virtual_offset: VirtualAddress, flags: DirEntryFlag) {
+    fn mark_dir_entry(
+        &mut self,
+        virtual_offset: VirtualAddress,
+        flags: DirEntryFlag,
+    ) {
         let dir_entry = unsafe {
             self.entries()
                 .get_unchecked_mut(table_index!(virtual_offset))
@@ -316,22 +350,16 @@ impl PageMarker {
     }
     pub fn map_user_range(
         &mut self,
-        map_region: &MemoryMappingRegion) -> Result<(), PageMarkerError> {
-        unsafe {
-            self.map_range_unsafe(
-                map_region,
-                true)
-        }
+        map_region: &MemoryMappingRegion,
+    ) -> Result<(), PageMarkerError> {
+        unsafe { self.map_range_unsafe(map_region, true) }
     }
     ///the method mark memory in kernel space (doesn't check validness of region offset). That is, not additional memory can be allocated (we mark kernel, ie. memory already mapped)
     pub fn map_kernel_range(
         &mut self,
-        map_region: &MemoryMappingRegion) -> Result<(), PageMarkerError> {
-        unsafe {
-            self.map_range_unsafe(
-                map_region,
-                false)
-        }
+        map_region: &MemoryMappingRegion,
+    ) -> Result<(), PageMarkerError> {
+        unsafe { self.map_range_unsafe(map_region, false) }
     }
     ///This method is used during initialization of kernel structures in bootstrap process.
     ///When no Pages even exists
@@ -339,7 +367,8 @@ impl PageMarker {
     unsafe fn map_range_unsafe(
         &mut self,
         map_region: &MemoryMappingRegion,
-        can_allocate: bool) -> Result<(), PageMarkerError> {
+        can_allocate: bool,
+    ) -> Result<(), PageMarkerError> {
         let mut addressable_offset = map_region.virtual_offset;
         let mut memory_offset = map_region.physical_offset;
         let flags = map_region.flags;
@@ -348,7 +377,8 @@ impl PageMarker {
             let entry_index = entry_index!(addressable_offset);
             let dir_entry = self.directory.get_mut_unchecked(table_index);
             let mut page_table = {
-                let page_table_option = RefTable::wrap_page_table(dir_entry.clone());
+                let page_table_option =
+                    RefTable::wrap_page_table(dir_entry.clone());
                 dir_entry.set_flags(flags.as_directory_flag());
                 match page_table_option {
                     None => {
@@ -356,14 +386,18 @@ impl PageMarker {
                             unreachable()
                             //truly, we should panic
                         }
-                        let option_table_offset = self.alloc_pages(TABLE_PAGES_COUNT);
+                        let option_table_offset =
+                            self.alloc_pages(TABLE_PAGES_COUNT);
                         if let Some(table_offset) = option_table_offset {
-                            RefTable::<TableEntry>::with_default_values(table_offset as *mut TableEntry, TABLE_ENTRIES_COUNT)
+                            RefTable::<TableEntry>::with_default_values(
+                                table_offset as *mut TableEntry,
+                                TABLE_ENTRIES_COUNT,
+                            )
                         } else {
                             return Err(PageMarkerError::OutOfMemory);
                         }
                     }
-                    Some(page_table) => page_table
+                    Some(page_table) => page_table,
                 }
             };
             let table_entry = page_table.get_mut_unchecked(entry_index);
@@ -375,15 +409,22 @@ impl PageMarker {
         return Ok(());
     }
     #[inline(never)]
-    pub fn unmap_range(&mut self, virtual_offset: VirtualAddress, page_count: usize, params: UnmapParamsFlag) {
+    pub fn unmap_range(
+        &mut self,
+        virtual_offset: VirtualAddress,
+        page_count: usize,
+        params: UnmapParamsFlag,
+    ) {
         let mut addressable_offset = virtual_offset;
         for _ in 0..page_count {
             let table_index = table_index!(addressable_offset);
             let entry_index = entry_index!(addressable_offset);
-            let dir_entry = unsafe { self.directory.get_unchecked(table_index) };
+            let dir_entry =
+                unsafe { self.directory.get_unchecked(table_index) };
             let option_page_table = RefTable::wrap_page_table(*dir_entry);
             if let Some(mut page_table) = option_page_table {
-                let table_entry = unsafe { page_table.get_mut_unchecked(entry_index) };
+                let table_entry =
+                    unsafe { page_table.get_mut_unchecked(entry_index) };
                 if table_entry.is_present() {
                     self.dealloc_page(table_entry.get_page_offset());
                     table_entry.clear();
@@ -391,13 +432,15 @@ impl PageMarker {
             }
             addressable_offset += Page::SIZE;
         }
-        if !params.test_with(UnmapParamsFlag::TABLES) { //no needs to unmap page tables
+        if !params.test_with(UnmapParamsFlag::TABLES) {
+            //no needs to unmap page tables
             return;
         }
         addressable_offset = virtual_offset;
         for _ in 0..page_count {
             let table_index = table_index!(addressable_offset);
-            let dir_entry = unsafe { self.directory.get_mut_unchecked(table_index) };
+            let dir_entry =
+                unsafe { self.directory.get_mut_unchecked(table_index) };
             let page_offset = dir_entry.get_table_offset().as_physical();
             dir_entry.clear();
             self.dealloc_page(page_offset);
@@ -411,12 +454,18 @@ impl PageMarker {
         &mut self,
         mapping_regions: LinkedList<MemoryMappingRegion>,
         alloc_handler: AllocHandler,
-        dealloc_handler: DeallocHandler) -> Result<PageMarker, PageMarkerError> {
-        let option_directory_offset: Option<PhysicalAddress> = self.alloc_pages(DIRECTORY_PAGES_COUNT);
+        dealloc_handler: DeallocHandler,
+    ) -> Result<PageMarker, PageMarkerError> {
+        let option_directory_offset: Option<PhysicalAddress> =
+            self.alloc_pages(DIRECTORY_PAGES_COUNT);
         let mut marker: PageMarker;
         if let Some(directory_offset) = option_directory_offset {
-            let directory = RefTable::<DirEntry>::with_default_values(directory_offset as *mut DirEntry, DIRECTORY_ENTRIES_COUNT);
-            marker = PageMarker::wrap(directory, alloc_handler, dealloc_handler);
+            let directory = RefTable::<DirEntry>::with_default_values(
+                directory_offset as *mut DirEntry,
+                DIRECTORY_ENTRIES_COUNT,
+            );
+            marker =
+                PageMarker::wrap(directory, alloc_handler, dealloc_handler);
             for region in mapping_regions.iter() {
                 unsafe {
                     marker.map_range_unsafe(region, true)?;
@@ -431,8 +480,8 @@ impl PageMarker {
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
     extern crate alloc;
+    extern crate std;
 
     #[test]
     fn import() {

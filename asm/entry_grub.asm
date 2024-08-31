@@ -9,39 +9,53 @@ include 'include/Page.asm'
 include 'include/Kernel.asm'
 include 'include/Grub.asm'
 
+
+extrn 'KERNEL_STACK_SIZE' as KernelStack.size
 extrn 'KERNEL_SIZE' as Kernel.size
 extrn 'main' as Kernel.run
 extrn KERNEL_VIRTUAL_OFFSET
 extrn KERNEL_PHYSICAL_OFFSET
+extrn CONSOLE_WIDTH
+extrn CONSOLE_HEIGHT
 
 public EntryPoint as '_start'
-; public Kernel.GDT as KERNEL_GDT
 
-section '.header' align 4
 
-Header:
+section '.header' align 8
+
+;org KERNEL_PHYSICAL_OFFSET
 
 HEADER_SIZE = Header.end - Header.start
 
-.start:
+Header.start:
 
 dd GRUB_MAGIC_NUMBER
 dd Architecture.i386
 dd HEADER_SIZE
-dd 0x100_000_000 - (GRUB_MAGIC_NUMBER + Architecture.i386 + HEADER_SIZE)
+dd  -(GRUB_MAGIC_NUMBER + Architecture.i386 + HEADER_SIZE)
 
-.end:
+HeaderTag.alignment
+HeaderTag.i386Loader (EntryPoint)
+HeaderTag.frameBuffer CONSOLE_WIDTH, CONSOLE_HEIGHT
+HeaderTag.address ()
+HeaderTag.tail
+Header.end:
 
 
-section '.loader' executable align 4
+section '.loader' executable
 EntryPoint:
+    ;perform configuration of 
+    mov eax, Kernel.properties
+    jmp Panic
 
-section '.data'
+Panic:
+    hlt
+
+section '.data' writeable 
+
 Kernel.properties PagingProperties
-Kernel.GDT:
 
-Table:
-.start:
+Table.start:
 
 .null: GDTEntry.nullEntry
 ; DOS entries?
@@ -50,8 +64,7 @@ Table:
 
 Table.end:
 
-Table.size =  Table.end - Table.start
+Table.size = Table.end - Table.start
 
 GlobalDescriptorTable.handle:
-todo 'Fix relocation problem'
-; GDTHandle.valueOf Table.size, Table.offset
+GDTHandle.valueOf Table.size, Table.start

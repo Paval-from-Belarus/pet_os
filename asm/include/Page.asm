@@ -117,10 +117,8 @@ assert sizeof.GDTHandle * 8 = 48
 
 macro GDTHandle.valueOf size*, address*
 {
-    local label
-    label GDTHandle
-    store word size at label + GDTHandle.wTableSize
-    store dword address at label + GDTHandle.dMemoryAddress
+    dw size
+    dd address
 }
 MAX_BASE_VALUE equ 0FF_FF_FF_FFh
 MAX_LIMIT_VALUE equ 0F_FF_FFh
