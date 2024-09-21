@@ -23,6 +23,8 @@ use crate::memory::{
 
 pub(crate) mod table;
 
+// pub(crate) use 
+
 declare_constants!(
     pub usize,
     DIRECTORY_ENTRIES_COUNT = 1024;
@@ -30,6 +32,7 @@ declare_constants!(
     DIRECTORY_PAGES_COUNT = 1;
     TABLE_PAGES_COUNT = 1;
 );
+
 
 /// The struct is simply used to transfer physical layout for page allcoator
 pub struct PageMarker {
@@ -51,11 +54,7 @@ pub enum PageMarkerError {
     CapturedMemoryRange,
 }
 
-pub struct KernelProperties {
-    boot_device: u8,
-    //used to invoke virtual task
-    ranges: *const u8,
-}
+/// show which modules should be disabled/enabled at boot time
 
 #[repr(C)]
 pub struct PagingProperties {
@@ -115,12 +114,12 @@ pub struct CaptureMemRec {
     ///The next free page
     next_page: usize,
     ///The common count of pages in region
-    page_cnt: usize,
+    page_count: usize,
     ///The start physical offset of region
     memory_offset: PhysicalAddress,
 }
 
-pub struct CaptureAllocator {
+pub struct BootAllocator {
     pivots: &'static mut [CaptureMemRec],
 }
 
@@ -129,23 +128,16 @@ impl PagingProperties {
         RefTable::wrap(self.directory, DIRECTORY_ENTRIES_COUNT)
     }
 
-    pub fn allocator(&self) -> CaptureAllocator {
+    pub fn boot_allocator(&mut self) -> BootAllocator {
         let captures: &mut [CaptureMemRec] = unsafe {
             slice::from_raw_parts_mut(self.captures, self.captures_cnt)
         };
-        CaptureAllocator::new(captures)
+
+        BootAllocator::new(captures)
     }
 
     pub fn heap_offset(&self) -> VirtualAddress {
         self.heap_offset
-    }
-
-    pub fn boot_info(&self) -> BootInformation {
-        unsafe {
-            BootInformation::load(self.boot_header)
-                .expect("Failed to access boot info")
-        }
-
     }
 
     #[cfg(target_arch = "x86")]
@@ -160,6 +152,15 @@ impl PagingProperties {
 }
 
 impl CaptureMemRec {
+    pub fn new(memory_offset: PhysicalAddress, size: usize) -> Self {
+        let page_count = Page::lower_bound(size);
+
+        Self {
+            next_page: 0,
+            page_count,
+            memory_offset,
+        }
+    }
     pub fn capture_offset(
         &mut self,
         page_cnt: usize,
@@ -174,7 +175,7 @@ impl CaptureMemRec {
         }
     }
     pub fn free_pages_count(&self) -> usize {
-        self.page_cnt - self.next_page
+        self.page_count - self.next_page
     }
     ///return the beginning of region which is describes by this entry
     pub fn mem_offset(&self) -> PhysicalAddress {
@@ -186,10 +187,11 @@ impl CaptureMemRec {
     }
 }
 
-impl CaptureAllocator {
-    pub fn new(captures: &'static mut [CaptureMemRec]) -> CaptureAllocator {
-        CaptureAllocator { pivots: captures }
+impl BootAllocator {
+    pub fn new(captures: &'static mut [CaptureMemRec]) -> BootAllocator {
+        BootAllocator { pivots: captures }
     }
+
     pub fn alloc(
         &mut self,
         search_offset: VirtualAddress,
@@ -206,6 +208,7 @@ impl CaptureAllocator {
         }
         return mem_offset;
     }
+
     pub fn free_memory(&self) -> usize {
         return self
             .pivots
@@ -213,7 +216,8 @@ impl CaptureAllocator {
             .map(|pivot| pivot.free_pages_count() * Page::SIZE)
             .sum::<usize>();
     }
-    pub fn as_pivots(&mut self) -> &mut [CaptureMemRec] {
+
+    pub fn as_slice_mut(&mut self) -> &mut [CaptureMemRec] {
         self.pivots
     }
 }

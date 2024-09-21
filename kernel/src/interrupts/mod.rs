@@ -1,23 +1,26 @@
-use core::{mem, ptr};
 use core::arch::asm;
+use core::{mem, ptr};
 
 use kernel_macro::ListNode;
-use kernel_types::{declare_constants, declare_types};
 use kernel_types::collections::TinyListNode;
+use kernel_types::{declare_constants, declare_types};
 pub use lock::InterruptableLazyCell;
 
-use crate::{get_eax, memory, syscall};
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
-use crate::memory::{InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, ToPhysicalAddress, VirtualAddress};
 use crate::memory::AllocationStrategy::Kernel;
+use crate::memory::{
+    InterruptGate, PrivilegeLevel, SegmentSelector, SystemType,
+    ToPhysicalAddress, VirtualAddress,
+};
 use crate::utils::atomics::{SpinLock, SpinLockLazyCell};
+use crate::{get_eax, memory, syscall};
 
-mod object;
-mod system;
-pub(crate) mod pic;
 mod lock;
+mod object;
+pub(crate) mod pic;
+mod system;
 
 #[allow(unused)]
 #[repr(C)] //the wrapper on real stack frame
@@ -31,8 +34,10 @@ pub struct InterruptStackFrame {
     ss: usize,
 }
 
-pub type NakedExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFrame);
-pub type ErrorExceptionHandler = extern "x86-interrupt" fn(&mut InterruptStackFrame, usize);
+pub type NakedExceptionHandler =
+    extern "x86-interrupt" fn(&mut InterruptStackFrame);
+pub type ErrorExceptionHandler =
+    extern "x86-interrupt" fn(&mut InterruptStackFrame, usize);
 ///the interrupt callback that return true if interrupt was handle (and no more handling is required)
 pub type Callback = fn(is_processed: bool, context: *mut ()) -> bool;
 
@@ -69,7 +74,10 @@ pub struct IrqLine {
 }
 macro_rules! irq_line {
     ($index: expr, $line: ident) => {
-        IrqLine {interrupt: $index, line: $crate::interrupts::pic::PicLine::$line}
+        IrqLine {
+            interrupt: $index,
+            line: $crate::interrupts::pic::PicLine::$line,
+        }
     };
 }
 impl From<PicLine> for IrqLine {
@@ -91,7 +99,7 @@ impl From<PicLine> for IrqLine {
             IRQ12 => IrqLine::MOUSE,
             IRQ13 => IrqLine::FLOAT_COPROC,
             IRQ14 => IrqLine::PRIMARY_ATA,
-            IRQ15 => IrqLine::SECONDARY_ATA
+            IRQ15 => IrqLine::SECONDARY_ATA,
         }
     }
 }
@@ -132,36 +140,61 @@ declare_types! {
 
 #[macro_export]
 macro_rules! naked_trap {
-    ($handler:ident) => ({
+    ($handler:ident) => {{
         use $crate::interrupts::InterruptGate;
-        InterruptGate::with_naked_handler($handler, $crate::memory::SegmentSelector::CODE, $crate::interrupts::TRAP)
-    });
+        InterruptGate::with_naked_handler(
+            $handler,
+            $crate::memory::SegmentSelector::CODE,
+            $crate::interrupts::TRAP,
+        )
+    }};
 }
 #[macro_export]
 macro_rules! error_trap {
-    ($handler: ident) => ({
+    ($handler: ident) => {{
         use $crate::interrupts::InterruptGate;
-        InterruptGate::with_error_handler($handler, $crate::memory::SegmentSelector::CODE, $crate::interrupts::TRAP)
-    });
+        InterruptGate::with_error_handler(
+            $handler,
+            $crate::memory::SegmentSelector::CODE,
+            $crate::interrupts::TRAP,
+        )
+    }};
 }
 impl InterruptGate {
-    pub fn with_naked_handler(handler: NakedExceptionHandler, selector: SegmentSelector, attributes: SystemType) -> Self {
-        let handler_offset = handler as *const NakedExceptionHandler as VirtualAddress;
-        let mut instance = InterruptGate::default(handler_offset, selector, attributes);
+    pub fn with_naked_handler(
+        handler: NakedExceptionHandler,
+        selector: SegmentSelector,
+        attributes: SystemType,
+    ) -> Self {
+        let handler_offset =
+            handler as *const NakedExceptionHandler as VirtualAddress;
+        let mut instance =
+            InterruptGate::default(handler_offset, selector, attributes);
         instance.flags.set_present(true);
         instance
     }
-    pub fn with_error_handler(handler: ErrorExceptionHandler, selector: SegmentSelector, attributes: SystemType) -> Self {
-        let handler_offset = handler as *const ErrorExceptionHandler as VirtualAddress;
-        let mut instance = InterruptGate::default(handler_offset, selector, attributes);
+    pub fn with_error_handler(
+        handler: ErrorExceptionHandler,
+        selector: SegmentSelector,
+        attributes: SystemType,
+    ) -> Self {
+        let handler_offset =
+            handler as *const ErrorExceptionHandler as VirtualAddress;
+        let mut instance =
+            InterruptGate::default(handler_offset, selector, attributes);
         instance.flags.set_present(true);
         instance
     }
     pub fn syscall(handler: NakedExceptionHandler) -> Self {
         let offset = handler as *const NakedExceptionHandler as VirtualAddress;
-        let mut instance = InterruptGate::default(offset, SegmentSelector::CODE, INTERRUPT);
+        let mut instance =
+            InterruptGate::default(offset, SegmentSelector::CODE, INTERRUPT);
         instance.flags.set_present(true);
-        unsafe { instance.flags.set_ring(PrivilegeLevel::wrap(PrivilegeLevel::USER)) };
+        unsafe {
+            instance
+                .flags
+                .set_ring(PrivilegeLevel::wrap(PrivilegeLevel::USER))
+        };
         instance
     }
 }
@@ -178,18 +211,20 @@ pub fn registry(handle: Handle, line: IrqLine, info: CallbackInfo) {
 
 //the red zone in thread kernel size:
 //all segment registers + all base registers + InterStackFrame + error code + user-mode switching ― the worst case
-pub const KERNEL_TRAP_SIZE: usize = 4 * 2 + 8 * 4 + mem::size_of::<InterruptStackFrame>() + 4 + 4 * 2;
+pub const KERNEL_TRAP_SIZE: usize =
+    4 * 2 + 8 * 4 + mem::size_of::<InterruptStackFrame>() + 4 + 4 * 2;
 
 //save all registers
 unsafe fn enter_kernel_trap() {
     asm!(
-    "push es",
-    "push ds",
-    "push fs",
-    "push gs",
-    "pusha",
-    "push ax", //save ax from future changing
-    options(preserves_flags));
+        "push es",
+        "push ds",
+        "push fs",
+        "push gs",
+        "pusha",
+        "push ax", //save ax from future changing
+        options(preserves_flags)
+    );
     asm!(
     "mov ds, ax",
     "mov es, ax",
@@ -200,22 +235,27 @@ unsafe fn enter_kernel_trap() {
 
 unsafe fn leave_kernel_trap() {
     asm!(
-    "popa",
-    "pop gs",
-    "pop fs",
-    "pop ds",
-    "pop es",
-    options(preserves_flags));
+        "popa",
+        "pop gs",
+        "pop fs",
+        "pop ds",
+        "pop es",
+        options(preserves_flags)
+    );
 }
-
 
 pub fn init() {
     let table = unsafe { &mut INTERRUPT_TABLE };
     system::init_traps(table);
-    table.set(IDTable::SYSTEM_CALL, InterruptGate::syscall(system::syscall));
+    table.set(
+        IDTable::SYSTEM_CALL,
+        InterruptGate::syscall(system::syscall),
+    );
     unsafe {
-        pic::remap(IrqLine::IRQ_MASTER_OFFSET as u8,
-                   IrqLine::IRQ_SLAVE_OFFSET as u8)
+        pic::remap(
+            IrqLine::IRQ_MASTER_OFFSET as u8,
+            IrqLine::IRQ_SLAVE_OFFSET as u8,
+        )
     };
     init_interceptors(table);
     unsafe {
@@ -239,11 +279,13 @@ extern "C" {
 }
 
 #[no_mangle]
-static INTERCEPTORS: SpinLockLazyCell<[&'static InterruptObject; pic::LINES_COUNT]> = SpinLockLazyCell::empty();
+static INTERCEPTORS: SpinLockLazyCell<
+    [&'static InterruptObject; pic::LINES_COUNT],
+> = SpinLockLazyCell::empty();
 
 ///the interceptor_stub is invoked by corresponding asm stub for certain interrupt
 #[no_mangle]
-unsafe fn interceptor_stub() {
+pub unsafe extern "C" fn interceptor_stub() {
     let index: usize;
     asm!(
     "",
@@ -260,8 +302,8 @@ fn init_interceptors(table: &mut IDTable) {
     let mut created_objects = system::init_irq();
     for (index, object_option) in created_objects.iter_mut().enumerate() {
         if object_option.is_none() {
-            let line =
-                PicLine::try_from(index as u8).expect("index cannot exceed array size");
+            let line = PicLine::try_from(index as u8)
+                .expect("index cannot exceed array size");
             let raw_object = memory::slab_alloc::<InterruptObject>(Kernel)
                 .expect("Failed to alloc task struct");
             let object = raw_object.write(InterruptObject::new(line));
@@ -279,7 +321,6 @@ fn init_interceptors(table: &mut IDTable) {
 }
 //this function is invoked directly from interrupt stub
 
-
 const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::default(suppress_irq);
 
 const fn suppress_irq(is_processed: bool, context: *mut ()) -> bool {
@@ -288,9 +329,7 @@ const fn suppress_irq(is_processed: bool, context: *mut ()) -> bool {
 
 /// set custom interrupt handler
 pub fn set(index: usize, descriptor: InterruptGate) -> InterruptGate {
-    unsafe {
-        INTERRUPT_TABLE.set(index, descriptor)
-    }
+    unsafe { INTERRUPT_TABLE.set(index, descriptor) }
 }
 
 #[repr(C, packed)]
@@ -329,19 +368,16 @@ impl IDTHandle {
 }
 
 pub unsafe fn disable() {
-    asm!(
-    "cli",
-    options(nomem, nostack));
+    asm!("cli", options(nomem, nostack));
 }
 
 pub unsafe fn enable() {
-    asm!(
-    "sti",
-    options(nomem, nostack));
+    asm!("sti", options(nomem, nostack));
 }
 
 #[no_mangle]
-static mut INTERRUPT_TABLE_HANDLE: IDTHandle = unsafe { IDTHandle::new(&INTERRUPT_TABLE) };
+static mut INTERRUPT_TABLE_HANDLE: IDTHandle =
+    unsafe { IDTHandle::new(&INTERRUPT_TABLE) };
 #[no_mangle]
 static mut INTERRUPT_TABLE: IDTable = IDTable::empty();
 
@@ -373,7 +409,8 @@ impl IDTable {
         TRAP_COUNT = 32, "The average count of exception reserved by Intel";
     );
     pub const fn empty() -> Self {
-        let entries: [InterruptGate; MAX_INTERRUPTS_COUNT] = [InterruptGate::null(); MAX_INTERRUPTS_COUNT];
+        let entries: [InterruptGate; MAX_INTERRUPTS_COUNT] =
+            [InterruptGate::null(); MAX_INTERRUPTS_COUNT];
         let lock = SpinLock::new();
         IDTable { entries, lock }
     }
@@ -381,7 +418,11 @@ impl IDTable {
     pub const fn byte_size(&self) -> usize {
         self.entries.len() * mem::size_of::<InterruptGate>()
     }
-    pub fn set(&mut self, index: usize, descriptor: InterruptGate) -> InterruptGate {
+    pub fn set(
+        &mut self,
+        index: usize,
+        descriptor: InterruptGate,
+    ) -> InterruptGate {
         assert!(index < self.entries.len(), "Invalid index for IDTable");
         self.lock.acquire();
         let old = self.entries[index];
@@ -393,14 +434,18 @@ impl IDTable {
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
     extern crate alloc;
+    extern crate std;
 
     use super::*;
 
     #[test]
     fn integrity_tests() {
-        assert_eq!(mem::size_of::<InterruptGate>(), 8, "Invalid size of IDTEntry");
+        assert_eq!(
+            mem::size_of::<InterruptGate>(),
+            8,
+            "Invalid size of IDTEntry"
+        );
         let table = IDTable::empty();
         assert_eq!(table.byte_size() <= u16::MAX as usize, true);
         assert_eq!(mem::size_of::<IDTHandle>(), 6);

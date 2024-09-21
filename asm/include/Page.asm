@@ -49,6 +49,7 @@ PageSize.Huge equ 1 ;4MiB
 PageSize.Small equ 0 ;4KiB
 PageSize.mode equ PageSize.Small
 PageSize.bytes equ 4096
+PageSize.shift equ 12
 
 struct PageDirEntry 
 {

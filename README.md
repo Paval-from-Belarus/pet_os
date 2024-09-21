@@ -10,3 +10,51 @@
   - At least, holds image.iso file that available to be run via CD-ROM
 - `target/logs` ― the additional info about compilation process
   - Used by any compiler to save debug info
+
+
+- Linux use cases
+1. Two kind of deferrable actions:
+  - Running in interrupt context
+  - Running in process context
+2. Methods over deferrable actions:
+  - Initialize (create structure)
+  - Activate | Schedule action (submit action to execution)
+  - Mask | Unmask execution
+3. Using Soft IRQ tasks
+  - There is a dedicated thread on cpu to handle interrupt actions (a kind of IO Worker)
+  - Specific interrupt can raise specific kind of work
+  - Statically allocated
+```C
+  enum
+  {
+    HI_SOFTIRQ=0,
+    TIMER_SOFTIRQ,
+    NET_TX_SOFTIRQ,
+    NET_RX_SOFTIRQ,
+    BLOCK_SOFTIRQ,
+    IRQ_POLL_SOFTIRQ,
+    TASKLET_SOFTIRQ,
+    SCHED_SOFTIRQ,
+    HRTIMER_SOFTIRQ,
+    RCU_SOFTIRQ,    /* Preferable RCU should always be the last softirq */
+  
+    NR_SOFTIRQS
+  };
+```
+### Taskslets
+- Deferred work running in interrupt context
+- Implemented over `TASKLET_SOFITIRQ` and `HI_SOFTIRQ`
+- Methods:
+  - `init`
+  - `schedule`
+  - `enable` | `disable`
+### Workqueu
+- Deferred work running in process context
+- Methods:
+  - `init`
+  - `schedule_work`
+### Timer
+- Implemented over `TIMER_SOFTIRQ`
+ 
+
+

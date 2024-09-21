@@ -27,6 +27,7 @@ struct RangeRecList
 }
 ends
 CaptureRecList.MAX_CAPACITY = 10
+
 ;@Declare{struct=CaptureRecList}
 struct CaptureRecList 
 {
@@ -34,6 +35,7 @@ struct CaptureRecList
 	.records db CaptureRecList.MAX_CAPACITY * sizeof.CaptureRangeRec DUP (0)
 }
 ends
+
 ;@Declare{struct=PagingProperties}
 struct PagingProperties 
 {
@@ -44,6 +46,14 @@ struct PagingProperties
 	.captureRecList CaptureRecList ;upper level uses only dRecCnt
 }
 ends
+
+;@Declare{struct=KernelProperties}
+struct KernelProperties
+{
+	.pages PagingProperties
+}
+ends
+
 ;@Declare{struct=LoaderProperties}
 struct LoaderProperties
 {

@@ -77,6 +77,7 @@ bitflags!(
     PRESENT = 0b1,
     EMPTY = 0b0
 );
+
 bitflags!(
     pub TableEntryFlag(usize),
     GLOBAL = 0b10_000_000,

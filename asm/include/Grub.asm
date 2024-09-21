@@ -110,11 +110,16 @@ macro HeaderTag.frameBuffer width*, height*
     dd 8
 }
 
-macro HeaderTag.address 
+; bssEnd -> the end of heap which should be filled with zeroes
+macro HeaderTag.address headerAddr*, textStart*, textEnd*
 {
-    HeaderTag.valueOf ( type: HeaderTagType.ADDRESS, flags: 0, size: 3 * 4 )
-    
-
+    HeaderTag.valueOf ( type: HeaderTagType.ADDRESS, flags: 0, size: 4 * 4)
+    @@:
+        dd headerAddr
+        dd textStart
+        dd textEnd
+        dd textEnd
+    ; assert @B - $ == 16
 }
 
 
@@ -129,3 +134,34 @@ HeaderTagType.EFI_I386 equ 8
 HeaderTagType.EFI_AMD64 equ 9
 HeaderTagType.RELOCATION equ 10
 
+
+;@Declare{struct=MultiBootInfo}
+struct MultiBootInfo
+{
+    .dTotalSize dd ?
+    .dReserved  dd ?
+    .tags:
+}
+ends
+
+struct BootMemoryInfo 
+{
+    .dType dd ?
+    .dSize dd ?
+    .dMemLower dd ?
+    .dMemUpper dd ?
+}
+ends
+
+BootMemoryInfo.size = 16
+BootMemoryInfo.type = 4
+
+struct BootCommandLine
+{
+    .dType dd ?
+    .dSize dd ? ;the size of zero string
+    .szArgs db ? ;zero terminated string
+}
+ends
+
+BootCommandLine.type = 1

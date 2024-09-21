@@ -50,3 +50,6 @@ log = { workspace = true }
 #kernel-macro = { path = "../kernel_macro" }
 #kernel-types = { path = "../kernel_types" }
 #strum = "0.25.0"
+[features]
+default = ["grub"]
+grub = []

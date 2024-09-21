@@ -40,6 +40,7 @@ args = ["-r", "${OUTPUT_PATH}"]
 [tasks.asm]
 script = '''
     ${ASM_COMPILER} ${ASM_SOURCE_PATH}/interceptors.asm ${OBJECTS_PATH}/interceptors.o
+    ${ASM_COMPILER} ${ASM_SOURCE_PATH}/entry_grub.asm ${OBJECTS_PATH}/entry.o
 '''
 
 [tasks.kernel_lib]
@@ -55,13 +56,17 @@ args = [
 [tasks.kernel]
 dependencies = ["layout", "asm", "kernel_lib"]
 script = '''
-    ld -n --gc-sections \
+    ld -n \
+    --gc-sections \
+    --no-undefined \
     -Map=${MAP_FILE} \
     -T ${LD_SCRIPT} \
     -z max-page-size=0x1000 \
     -melf_i386 \
     -o ${OBJECTS_PATH}/${KERNEL_BIN_NAME} \
-    ${KERNEL_LIB} ${OBJECTS_PATH}/interceptors.o
+    ${KERNEL_LIB} \
+    ${OBJECTS_PATH}/interceptors.o \
+    ${OBJECTS_PATH}/entry.o
 '''
 
 

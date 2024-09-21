@@ -9,7 +9,7 @@ use kernel_types::declare_constants;
 use crate::{log};
 use crate::memory::{MEMORY_MAP_SIZE, OsAllocationError, Page, PhysicalAddress, ProcessInfo, ToPhysicalAddress, VirtualAddress};
 use crate::memory::OsAllocationError::NoMemory;
-use crate::memory::paging::{CaptureAllocator, PageMarkerError};
+use crate::memory::paging::{BootAllocator, PageMarkerError};
 use crate::utils::atomics::SpinLock;
 use crate::utils::SpinBox;
 
@@ -110,7 +110,7 @@ fn is_second_buddy(page: &'static Page) -> bool {
 
 impl PhysicalAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
-    pub fn new(boot_allocator: CaptureAllocator) -> Self {
+    pub fn new(boot_allocator: BootAllocator) -> Self {
         let lock = SpinLock::new();
         let mut raw_buddies = MaybeUninit::<LinkedList<'static, Page>>::uninit_array::<{ MAX_UNIT_POWER + 1 }>();
         for buddy in raw_buddies.iter_mut() {
@@ -121,8 +121,8 @@ impl PhysicalAllocator {
         unsafe { allocator.collect_free_pages(boot_allocator) }
         allocator
     }
-    unsafe fn collect_free_pages(&self, mut boot_allocator: CaptureAllocator) {
-        for pivot in boot_allocator.as_pivots() {
+    unsafe fn collect_free_pages(&self, mut boot_allocator: BootAllocator) {
+        for pivot in boot_allocator.as_slice_mut() {
             let mut mem_offset = pivot.next_offset();
             for _ in 0..pivot.free_pages_count() {
                 let mut raw_page = Page::map_offset(mem_offset);
