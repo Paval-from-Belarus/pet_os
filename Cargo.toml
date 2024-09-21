@@ -4,10 +4,6 @@ members = [
 ]
 
 resolver = "2"
-#build-std = ["core", "compiler_builtins"]
-#[dependencies]
-#compiler_builtins = { version = "0.1.101", features = ["mem"] }
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace.dependencies]
 kernel-types = { path = "kernel_types" }

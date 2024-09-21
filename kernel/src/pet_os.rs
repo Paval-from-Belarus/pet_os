@@ -6,6 +6,7 @@
 #![feature(core_intrinsics)]
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
+#![feature(ptr_from_ref)]
 #![feature(pointer_byte_offsets)]
 #![feature(ptr_sub_ptr)]
 #![feature(offset_of)]
@@ -67,20 +68,20 @@ pub unsafe extern "C" fn main() {
     unsafe { rust_main(&mut *properties) };
 }
 
-pub extern "C" fn start(magic: u32, lp_header: *const u32) {
-    logging::init();
-
-    if magic != multiboot2::MAGIC {
-        log!("Invalid grub2 magic");
-        return;
-    }
-
-    let mbi_ptr = lp_header.cast();
-    let mbi =
-        unsafe { BootInformation::load(mbi_ptr).expect("Failed to load mbi") };
-
-    log!("Working");
-}
+// pub extern "C" fn start(magic: u32, lp_header: *const u32) {
+//     logging::init();
+//
+//     if magic != multiboot2::MAGIC {
+//         log!("Invalid grub2 magic");
+//         return;
+//     }
+//
+//     let mbi_ptr = lp_header.cast();
+//     let mbi =
+//         unsafe { BootInformation::load(mbi_ptr).expect("Failed to load mbi") };
+//
+//     log!("Working");
+// }
 
 pub fn rust_main(properties: &mut PagingProperties) {
     logging::init();

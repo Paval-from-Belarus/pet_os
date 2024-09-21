@@ -64,9 +64,9 @@ script = '''
     -z max-page-size=0x1000 \
     -melf_i386 \
     -o ${OBJECTS_PATH}/${KERNEL_BIN_NAME} \
-    ${KERNEL_LIB} \
     ${OBJECTS_PATH}/interceptors.o \
-    ${OBJECTS_PATH}/entry.o
+    ${OBJECTS_PATH}/entry.o \
+    ${KERNEL_LIB}
 '''
 
 

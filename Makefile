@@ -9,7 +9,7 @@ IMAGE_BUILDER := ${ASM_PROJECT_PATH}/out/build/image_builder.sh#the script that 
 SCRIPTS_PATH := scripts
 TARGET_LOADER_PATH := target/loader #loader comprises from 2 parts: MBR.bin and OsLoader.bin
 TARGET_APPS_PATH := target/apps
-TARGET_KERNEL_PATH := target/shared #the cargo stores file here
+TARGET_KERNEL_PATH := target/shared#the cargo stores file here
 TARGET_IMAGES_PATH := target/images
 TARGET_LOGS_PATH := target/logs
 TARGET_LIB_PATH := target/target/release
@@ -32,6 +32,7 @@ BOCHS_RUN = build/bochs-run.sh
 #configuration properties
 LD_SCRIPT = $(SCRIPTS_PATH)/kernel.ld
 LD_FLAGS := -n --gc-sections
+LD_FLAGS := --no-undefined
 LD_FLAGS += -Map=$(MAP_FILE)
 LD_FLAGS += -T $(LD_SCRIPT)
 LD_FLAGS += -z max-page-size=0x1000
@@ -68,16 +69,16 @@ rebuild-kernel:
 	@rm $(TARGET_KERNEL_PATH)/kernel.o
 	@make kernel
 kernel: $(TARGET_KERNEL_PATH)/kernel.o
-$(TARGET_KERNEL_PATH)/kernel.o: kernel/src $(LD_SCRIPT) $(TARGET_SPEC) $(OBJECTS)
+$(TARGET_KERNEL_PATH)/kernel.o: kernel/src $(LD_SCRIPT) $(TARGET_SPEC)
 	$(CARGO) build $(CARGO_FLAGS) --release
-	@cp --preserve $(TARGET_LIB_PATH)/libkernel.a $(TARGET_KERNEL_PATH)/kernel.a
+	@cp --preserve --remove-destination $(TARGET_LIB_PATH)/libkernel.a $(TARGET_KERNEL_PATH)/kernel.a
 	$(LD) $(LD_FLAGS) -o $@ $(OBJECTS) $(TARGET_KERNEL_PATH)/kernel.a
-entry: $(TARGET_KERNEL_PATH)/entry.o
-$(TARGET_KERNEL_PATH)/entry.o: $(ASM_ENTRY_PATH)/entry.asm
-	$(ASM_BUILDER) ${ASM_ENTRY_PATH}/entry.asm $@
-interceptors: $(TARGET_KERNEL_PATH)/interceptors.o #the asm stub for Interrupt Objects
-$(TARGET_KERNEL_PATH)/interceptors.o:  $(ASM_ENTRY_PATH)/interceptors.asm
-	$(ASM_BUILDER) ${ASM_ENTRY_PATH}/interceptors.asm $@
+# entry: $(TARGET_KERNEL_PATH)/entry.o
+# $(TARGET_KERNEL_PATH)/entry.o: $(ASM_ENTRY_PATH)/entry.asm
+# 	$(ASM_BUILDER) ${ASM_ENTRY_PATH}/entry.asm $@
+# interceptors: $(TARGET_KERNEL_PATH)/interceptors.o #the asm stub for Interrupt Objects
+# $(TARGET_KERNEL_PATH)/interceptors.o:  $(ASM_ENTRY_PATH)/interceptors.asm
+# 	$(ASM_BUILDER) ${ASM_ENTRY_PATH}/interceptors.asm $@
 loader: layout
 	$(ASM_BUILDER) ${ASM_LOADER_SOURCES_PATH}/OsLoader.asm ${TARGET_LOADER_PATH}/OsLoader.bin
 	$(ASM_BUILDER) ${ASM_LOADER_SOURCES_PATH}/MBR.asm ${TARGET_LOADER_PATH}/MBR.bin

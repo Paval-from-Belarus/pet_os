@@ -56,6 +56,7 @@ Header.end:
 
 
 section '.loader' executable
+
 EntryPoint:
     cmp eax, GRUB_MAGIC_NUMBER 
     jne .panic
