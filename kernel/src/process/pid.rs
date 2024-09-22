@@ -5,7 +5,6 @@ declare_constants!(
 );
 pub struct PidBitmap {
     map: usize,
-
 }
 #[repr(transparent)]
 struct Pid {

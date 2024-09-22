@@ -43,7 +43,7 @@ macro_rules! bitflags {
     ($vis:vis $s:ident($t:ty), $($name:ident = $value:expr),* $(,)?) => {
         #[derive(Clone, Copy, PartialEq, Eq)]
         #[repr(transparent)]
-        $vis struct $s($t);
+        $vis struct $s($vis $t);
         impl TryFrom<$t> for $s {
             type Error = $crate::BitflagFormatError<$t>;
             fn try_from(item: $t) -> Result<Self, Self::Error> {

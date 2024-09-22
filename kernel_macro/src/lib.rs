@@ -7,7 +7,9 @@ use proc_macro::TokenStream;
 
 use proc_macro2::Span;
 use quote::quote;
-use syn::{parse_macro_input, Attribute, DeriveInput, Field, Ident, ItemFn, Type};
+use syn::{
+    parse_macro_input, Attribute, DeriveInput, Field, Ident, ItemFn, Type,
+};
 
 macro_rules! token_stream_error {
     ($pattern: expr $(, $($arg:tt)*)? ) => ({
@@ -33,7 +35,8 @@ pub fn export_symbolic(attr: TokenStream, item: TokenStream) -> TokenStream {
     } else {
         attr.to_string()
     };
-    let export_symbol = Ident::new(&format!("SYMTAB_{}", &export_name), Span::call_site());
+    let export_symbol =
+        Ident::new(&format!("SYMTAB_{}", &export_name), Span::call_site());
     let entry_name = Ident::new(
         &format!("SYMTAB_{}_kernel_entry", &export_name),
         Span::call_site(),
@@ -71,7 +74,11 @@ pub fn list_node(input: TokenStream) -> TokenStream {
     let struct_ast = parse_macro_input!(input as DeriveInput);
     let struct_info: syn::DataStruct = match struct_ast.data {
         syn::Data::Struct(data) => data,
-        _ => return token_stream_error!("#[derive(ListNode)] can be used only under struct"),
+        _ => {
+            return token_stream_error!(
+                "#[derive(ListNode)] can be used only under struct"
+            )
+        }
     };
     let struct_name = struct_ast.ident;
     match &struct_info.fields {
@@ -110,7 +117,10 @@ struct NodeDefinition {
     traits: proc_macro2::TokenStream,
 }
 
-fn extract_node_definition(field: Field, target_ident: &Ident) -> Option<NodeDefinition> {
+fn extract_node_definition(
+    field: Field,
+    target_ident: &Ident,
+) -> Option<NodeDefinition> {
     let node_attr = field.attrs.iter().find_map(ListNodeAttribute::try_new)?;
     let method = parse_access_method(field.clone());
     let traits = parse_markers_traits(field.clone(), &node_attr, target_ident);
@@ -121,7 +131,8 @@ fn extract_node_definition(field: Field, target_ident: &Ident) -> Option<NodeDef
 fn parse_access_method(field: Field) -> proc_macro2::TokenStream {
     let field_name = field.ident.expect("Named field expected!");
     let field_type = field.ty;
-    let method_name = Ident::new(&format!("as_{}", field_name), field_name.span());
+    let method_name =
+        Ident::new(&format!("as_{}", field_name), field_name.span());
     quote! {
         pub fn #method_name(&mut self) -> &mut # field_type {
             &mut self.#field_name
@@ -149,7 +160,8 @@ fn parse_markers_traits(
             return token_stream_error!("Invalid syntax for helper attribute. Should be #[list_pivots(<marker>)].\n There are several markers:\n\t - dangling");
         } //otherwise no markers are specified
     }
-    let field_type_option = get_field_type(&field, node_attr).and_then(|ty| map_type_to_ident(&ty));
+    let field_type_option =
+        get_field_type(&field, node_attr).and_then(|ty| map_type_to_ident(&ty));
     if field_type_option.is_none() {
         return token_stream_error!(
             "Field doesn't have wrapper type. For example, ListNode<T> or TinyListNode<T>"
@@ -231,7 +243,10 @@ fn define_tiny_node_data_marker(
 }
 
 //all fields that are marked as #[list_node]
-fn get_field_type(field: &Field, node_attr: &ListNodeAttribute) -> Option<Type> {
+fn get_field_type(
+    field: &Field,
+    node_attr: &ListNodeAttribute,
+) -> Option<Type> {
     if let Type::Path(syn::TypePath { path, .. }) = &field.ty
         && let Some(segment) = path.segments.last()
         && node_attr.verify_wrapper(&segment.ident)
@@ -270,7 +285,8 @@ fn get_trait_name(marker_ident: &Ident) -> Option<Ident> {
     None
 }
 
-type TokenStreamSupplier = fn(&Ident, &Ident, &Ident) -> proc_macro2::TokenStream;
+type TokenStreamSupplier =
+    fn(&Ident, &Ident, &Ident) -> proc_macro2::TokenStream;
 
 struct ListNodeAttribute {
     attribyte: Option<syn::Attribute>,
@@ -321,8 +337,16 @@ impl ListNodeAttribute {
     fn values() -> Vec<ListNodeAttribute> {
         unsafe {
             vec![
-                ListNodeAttribute::new("list_pivots", "ListNode", define_node_data_marker),
-                ListNodeAttribute::new("list_pivot", "TinyListNode", define_tiny_node_data_marker),
+                ListNodeAttribute::new(
+                    "list_pivots",
+                    "ListNode",
+                    define_node_data_marker,
+                ),
+                ListNodeAttribute::new(
+                    "list_pivot",
+                    "TinyListNode",
+                    define_tiny_node_data_marker,
+                ),
             ]
         }
     }

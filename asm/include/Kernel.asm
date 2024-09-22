@@ -31,7 +31,7 @@ CaptureRecList.MAX_CAPACITY = 10
 ;@Declare{struct=CaptureRecList}
 struct CaptureRecList 
 {
-	.dRecCnt dd ?
+	.dRecCnt dd CaptureRecList.MAX_CAPACITY
 	.records db CaptureRecList.MAX_CAPACITY * sizeof.CaptureRangeRec DUP (0)
 }
 ends

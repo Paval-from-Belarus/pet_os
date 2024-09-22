@@ -23,7 +23,7 @@ use crate::memory::{
 
 pub(crate) mod table;
 
-// pub(crate) use 
+// pub(crate) use
 
 declare_constants!(
     pub usize,
@@ -32,7 +32,6 @@ declare_constants!(
     DIRECTORY_PAGES_COUNT = 1;
     TABLE_PAGES_COUNT = 1;
 );
-
 
 /// The struct is simply used to transfer physical layout for page allcoator
 pub struct PageMarker {
@@ -63,7 +62,6 @@ pub struct PagingProperties {
     heap_offset: VirtualAddress,
     captures: *mut CaptureMemRec,
     captures_cnt: usize,
-    boot_header: *const BootInformationHeader,
 }
 
 #[repr(C)]
@@ -119,8 +117,9 @@ pub struct CaptureMemRec {
     memory_offset: PhysicalAddress,
 }
 
-pub struct BootAllocator {
-    pivots: &'static mut [CaptureMemRec],
+pub struct BootAllocator<'a> {
+    pivots: NonNull<CaptureMemRec>,
+    len: &'a mut usize,
 }
 
 impl PagingProperties {
@@ -129,11 +128,12 @@ impl PagingProperties {
     }
 
     pub fn boot_allocator(&mut self) -> BootAllocator {
-        let captures: &mut [CaptureMemRec] = unsafe {
-            slice::from_raw_parts_mut(self.captures, self.captures_cnt)
-        };
+        let pivots = unsafe { NonNull::new_unchecked(self.captures) };
 
-        BootAllocator::new(captures)
+        BootAllocator {
+            pivots,
+            len: &mut self.captures_cnt,
+        }
     }
 
     pub fn heap_offset(&self) -> VirtualAddress {
@@ -161,6 +161,7 @@ impl CaptureMemRec {
             memory_offset,
         }
     }
+
     pub fn capture_offset(
         &mut self,
         page_cnt: usize,
@@ -174,59 +175,59 @@ impl CaptureMemRec {
             None
         }
     }
+
     pub fn free_pages_count(&self) -> usize {
         self.page_count - self.next_page
     }
-    ///return the beginning of region which is describes by this entry
-    pub fn mem_offset(&self) -> PhysicalAddress {
-        self.memory_offset
-    }
+
     ///return next free physical offset in region
     pub fn next_offset(&self) -> PhysicalAddress {
         self.memory_offset + self.next_page * Page::SIZE
     }
 }
 
-impl BootAllocator {
-    pub fn new(captures: &'static mut [CaptureMemRec]) -> BootAllocator {
-        BootAllocator { pivots: captures }
-    }
-
+impl<'a> BootAllocator<'a> {
     pub fn alloc(
         &mut self,
-        search_offset: VirtualAddress,
+        search_offset: PhysicalAddress,
         page_count: usize,
     ) -> Option<PhysicalAddress> {
-        let mut mem_offset = None;
-        for pivot in self.pivots.iter_mut() {
-            if search_offset < pivot.memory_offset {
-                mem_offset = pivot.capture_offset(page_count);
-            }
-            if mem_offset.is_some() {
-                break;
-            }
-        }
-        return mem_offset;
+        self.as_slice_mut()
+            .iter_mut()
+            .find(|pivot| pivot.memory_offset >= search_offset)
+            .and_then(|p| p.capture_offset(page_count))
     }
 
-    pub fn free_memory(&self) -> usize {
-        return self
-            .pivots
+    pub fn free(&self) -> usize {
+        self.as_slice()
             .iter()
             .map(|pivot| pivot.free_pages_count() * Page::SIZE)
-            .sum::<usize>();
+            .sum::<usize>()
     }
 
-    pub fn as_slice_mut(&mut self) -> &mut [CaptureMemRec] {
-        self.pivots
+    pub unsafe fn set_len(&mut self, len: usize) {
+        *self.len = len;
+    }
+
+    pub fn as_slice(&self) -> &'a [CaptureMemRec] {
+        unsafe { core::slice::from_raw_parts(self.pivots.as_ref(), *self.len) }
+    }
+
+    pub fn as_slice_mut(&mut self) -> &'a mut [CaptureMemRec] {
+        unsafe {
+            core::slice::from_raw_parts_mut(self.pivots.as_mut(), *self.len)
+        }
     }
 }
 
+#[macro_export]
 macro_rules! table_index {
     ($argument:expr) => {
         ($argument >> 22) & 0x3FF
     };
 }
+
+#[macro_export]
 macro_rules! entry_index {
     ($argument:expr) => {
         ($argument >> 12) & 0x3FF
@@ -271,7 +272,7 @@ impl PageMarker {
     }
     #[deprecated]
     fn entries(&mut self) -> &mut [DirEntry] {
-        self.directory.as_mut_slice()
+        self.directory.as_slice_mut()
     }
     pub fn table(&mut self) -> &mut RefTable<DirEntry> {
         &mut self.directory
@@ -445,7 +446,7 @@ impl PageMarker {
             let table_index = table_index!(addressable_offset);
             let dir_entry =
                 unsafe { self.directory.get_mut_unchecked(table_index) };
-            let page_offset = dir_entry.get_table_offset().as_physical();
+            let page_offset = dir_entry.get_table_offset();
             dir_entry.clear();
             self.dealloc_page(page_offset);
         }

@@ -2,19 +2,22 @@ use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::ptr;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::sync::atomic::Ordering::Relaxed;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode, TinyLinkedList, UnlinkableListGuard};
+use kernel_types::collections::{
+    BorrowingLinkedList, LinkedList, ListNode, TinyLinkedList,
+    UnlinkableListGuard,
+};
 
-use crate::{interrupts, memory};
 use crate::process::{RunnableTask, TaskContext, TaskStatus, ThreadTask};
 use crate::utils::atomics::SpinLock;
+use crate::{interrupts, memory};
 
 #[macro_export]
 macro_rules! current_task {
     () => {
-    $crate::process::scheduler::SCHEDULER.get().current_task()
+        $crate::process::scheduler::SCHEDULER.get().current_task()
     };
 }
 #[inline(never)]
@@ -49,7 +52,7 @@ impl TaskSchedulerInner {
     //always should be the current task!
     ///task is simple idle task
     pub fn new(task: &'static mut ThreadTask) -> Self {
-        task.status = TaskStatus::Active;//the status of idle task is never changed
+        task.status = TaskStatus::Active; //the status of idle task is never changed
         let raw_task = NonNull::from(task.as_runnable());
         unsafe {
             Self {
@@ -74,8 +77,10 @@ impl TaskSchedulerInner {
     ///try to move task from sleeping list
     pub fn awake_sleeping(&mut self, current_time: usize) {
         let guard = self.sleeping.link_guard();
-        let iter = self.sleeping.iter_mut()
-                       .filter(|task| task.start_time <= current_time);
+        let iter = self
+            .sleeping
+            .iter_mut()
+            .filter(|task| task.start_time <= current_time);
         let mut list = unsafe { guard.collect(iter) };
         for tiny in list.iter_mut() {
             let node = tiny.node_mut();
@@ -88,12 +93,17 @@ impl TaskSchedulerInner {
     pub fn next_task(&mut self) -> &'static mut ListNode<RunnableTask> {
         let mut iterator = self.delayed.iter_mut();
         let mut next_task = None;
-        while next_task.is_none() && let Some(task) = iterator.next() {
+        while next_task.is_none()
+            && let Some(task) = iterator.next()
+        {
             if task.status == TaskStatus::Killed {
                 self.killed.push_back(task.tiny_mut());
                 continue;
             }
-            assert!(task.status != TaskStatus::Active, "No active task can be in delayed queue");
+            assert!(
+                task.status != TaskStatus::Active,
+                "No active task can be in delayed queue"
+            );
             next_task = iterator.unlink_watched();
         }
         if let Some(task) = next_task {
@@ -104,12 +114,13 @@ impl TaskSchedulerInner {
     }
     pub fn cleanup(&'static mut self) -> TinyLinkedList<'static, RunnableTask> {
         let guard = unsafe { self.delayed.link_guard() };
-        let iter =
-            self.delayed.iter_mut().limit()
-                .filter(|task| task.status == TaskStatus::Killed);
-        let list: TinyLinkedList<RunnableTask> = unsafe {
-            guard.collect_map(iter, |node| node.tiny_mut())
-        };
+        let iter = self
+            .delayed
+            .iter_mut()
+            .limit()
+            .filter(|task| task.status == TaskStatus::Killed);
+        let list: TinyLinkedList<RunnableTask> =
+            unsafe { guard.collect_map(iter, |node| node.tiny_mut()) };
         self.killed.splice(list);
         let list = unsafe { self.killed.clone() };
         self.killed = TinyLinkedList::empty();
@@ -128,7 +139,10 @@ impl TaskSchedulerInner {
     }
     //set status of current task and set idle task as current
     pub fn block_current(&mut self) -> &'static mut ListNode<RunnableTask> {
-        assert!(self.current.eq(&self.idle_task), "Attempt to block idle task");
+        assert!(
+            self.current.eq(&self.idle_task),
+            "Attempt to block idle task"
+        );
         let current_task = unsafe { self.current.as_mut() };
         current_task.status = TaskStatus::Blocked;
         self.current = self.idle_task;
@@ -164,7 +178,9 @@ impl TaskScheduler {
     ///unlock the scheduler to be available
     pub unsafe fn unlock(&self) {
         let _ = self.postponed_count.fetch_sub(1, Ordering::SeqCst);
-        if self.postponed_count.load(Ordering::Acquire) == 0 && self.should_reschedule.load(Ordering::SeqCst) {
+        if self.postponed_count.load(Ordering::Acquire) == 0
+            && self.should_reschedule.load(Ordering::SeqCst)
+        {
             self.should_reschedule.store(false, Ordering::SeqCst);
             self.reschedule();
         }
@@ -174,15 +190,17 @@ impl TaskScheduler {
         }
     }
     pub fn lock(&self) {
-        let old_locked_count = self.locked_count.fetch_add(1, Ordering::Relaxed);
-        let old_postponed_count = self.postponed_count.fetch_add(1, Ordering::Relaxed);
+        let old_locked_count =
+            self.locked_count.fetch_add(1, Ordering::Relaxed);
+        let old_postponed_count =
+            self.postponed_count.fetch_add(1, Ordering::Relaxed);
         assert!(old_locked_count >= 1 && old_postponed_count >= 1);
         unsafe { interrupts::disable() };
     }
     pub fn add_task(&self, task: &'static mut ThreadTask) {
         self.lock();
         self.inner().add_task(task);
-        unsafe { self.unlock() };//interrupts can be safely enabled
+        unsafe { self.unlock() }; //interrupts can be safely enabled
     }
     //this method should be invoked with properly synchronization police
     unsafe fn reschedule(&self) {
@@ -200,11 +218,14 @@ impl TaskScheduler {
         self.lock();
         let mut inner = self.inner();
         let blocked_current = inner.block_current();
-        blocked_current.start_time += period;//update the time until wait
-        assert!(!ptr::eq(blocked_current, inner.idle_task.as_ptr()), "Attempt to sleep idle task");
+        blocked_current.start_time += period; //update the time until wait
+        assert!(
+            !ptr::eq(blocked_current, inner.idle_task.as_ptr()),
+            "Attempt to sleep idle task"
+        );
         inner.add_sleeping(blocked_current);
         unsafe {
-            self.reschedule();//change the current task
+            self.reschedule(); //change the current task
             self.switch();
             self.unlock();
         }

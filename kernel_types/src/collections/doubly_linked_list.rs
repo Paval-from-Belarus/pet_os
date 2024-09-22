@@ -3,7 +3,9 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::{mem, ptr};
 
-use crate::collections::{BorrowingLinkedList, DanglingData, ListNodeData, UnlinkableListGuard};
+use crate::collections::{
+    BorrowingLinkedList, DanglingData, ListNodeData, UnlinkableListGuard,
+};
 
 #[repr(C)]
 pub struct ListNode<T: Sized + ListNodeData> {
@@ -111,14 +113,17 @@ impl<T: Sized + ListNodeData + DanglingData> ListNode<T> {
 }
 
 pub fn is_self_linked<T: ListNodeData>(node: &ListNode<T>) -> bool {
-    ptr::eq(node.next.as_ptr(), node.prev.as_ptr()) && ptr::eq(node.next.as_ptr(), node)
+    ptr::eq(node.next.as_ptr(), node.prev.as_ptr())
+        && ptr::eq(node.next.as_ptr(), node)
 }
 
 impl<T: ListNodeData> Deref for ListNode<T> {
     type Target = T::Item;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { ListNodeData::from_node_unchecked(NonNull::from(self)).as_ref() }
+        unsafe {
+            ListNodeData::from_node_unchecked(NonNull::from(self)).as_ref()
+        }
     }
 }
 
@@ -149,7 +154,9 @@ pub struct UnlinkableGuard<'a, T: ListNodeData> {
 
 impl<'a, T: ListNodeData> UnlinkableGuard<'a, T> {}
 
-impl<'a, T: ListNodeData> UnlinkableListGuard<'a, LinkedList<'a, T>> for UnlinkableGuard<'a, T> {
+impl<'a, T: ListNodeData> UnlinkableListGuard<'a, LinkedList<'a, T>>
+    for UnlinkableGuard<'a, T>
+{
     fn parent(&self) -> NonNull<LinkedList<'a, T>> {
         self.parent
     }
@@ -232,7 +239,9 @@ impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
     pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
         MutListIterator::new(self)
     }
-    pub fn limit_iter_mut<'b>(&'b mut self) -> LimitedIterator<'a, MutListIterator<'a, 'b, T>> {
+    pub fn limit_iter_mut<'b>(
+        &'b mut self,
+    ) -> LimitedIterator<'a, MutListIterator<'a, 'b, T>> {
         LimitedIterator::new(self.iter_mut())
     }
     pub fn splice(&mut self, other: LinkedList<'a, T>) {
@@ -494,7 +503,9 @@ impl<'a, 'b, T: ListNodeData> Iterator for MutListIterator<'a, 'b, T> {
     }
 }
 
-impl<'a, 'b, T: ListNodeData> DoubleEndedIterator for MutListIterator<'a, 'b, T> {
+impl<'a, 'b, T: ListNodeData> DoubleEndedIterator
+    for MutListIterator<'a, 'b, T>
+{
     fn next_back(&mut self) -> Option<Self::Item> {
         match self.prev {
             None => None,
@@ -546,7 +557,9 @@ impl<'a, I: Iterator> Iterator for LimitedIterator<'a, I> {
     }
 }
 
-impl<'a, I: DoubleEndedIterator> DoubleEndedIterator for LimitedIterator<'a, I> {
+impl<'a, I: DoubleEndedIterator> DoubleEndedIterator
+    for LimitedIterator<'a, I>
+{
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back().filter(|prev| self.can_proceed(prev))
     }
@@ -560,8 +573,11 @@ macro_rules! from_list_node {
             fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item {
                 let pointer = node as *mut ListNode<Self>;
                 let field_offset = core::mem::offset_of!($target, $field);
-                let struct_offset = unsafe { (pointer as *mut u8).sub(field_offset) };
-                let value = unsafe { core::mem::transmute::<*mut u8, *mut $target>(struct_offset) };
+                let struct_offset =
+                    unsafe { (pointer as *mut u8).sub(field_offset) };
+                let value = unsafe {
+                    core::mem::transmute::<*mut u8, *mut $target>(struct_offset)
+                };
                 unsafe { &mut *value }
             }
         }
@@ -821,7 +837,8 @@ mod tests {
                 list.push_back(node.as_node().as_mut());
             }
             let guard = list.link_guard();
-            let iter = list.iter_mut().skip_while(|node| node.value < 3).take(1);
+            let iter =
+                list.iter_mut().skip_while(|node| node.value < 3).take(1);
             let target = guard.collect(iter);
             let mut test_iter = target.iter().limit();
             assert_eq!(test_iter.next().unwrap().value, 3);

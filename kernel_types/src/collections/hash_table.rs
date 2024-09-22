@@ -5,8 +5,8 @@ use core::ops::Deref;
 use core::ptr;
 
 use crate::collections::{
-    BorrowingLinkedList, FastHasher, HashCode, HashData, HashKey, TinyLinkedList, TinyListNode,
-    TinyListNodeData,
+    BorrowingLinkedList, FastHasher, HashCode, HashData, HashKey,
+    TinyLinkedList, TinyListNode, TinyListNodeData,
 };
 use crate::lambda_const_assert;
 
@@ -15,14 +15,21 @@ struct HashBucket<'a, V: TinyListNodeData<Item = V> + HashData> {
     _marker: PhantomData<V>,
 }
 
-pub struct HashTable<'a, V: TinyListNodeData<Item = V> + HashData, const N: usize> {
+pub struct HashTable<
+    'a,
+    V: TinyListNodeData<Item = V> + HashData,
+    const N: usize,
+> {
     table: [TinyLinkedList<'a, V>; N],
     _marker: PhantomData<[V; N]>,
 }
 
-impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData> HashTable<'a, V, N> {
+impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData>
+    HashTable<'a, V, N>
+{
     pub fn empty() -> Self {
-        let raw_table: [MaybeUninit<TinyLinkedList<'a, V>>; N] = MaybeUninit::uninit_array();
+        let raw_table: [MaybeUninit<TinyLinkedList<'a, V>>; N] =
+            MaybeUninit::uninit_array();
         let table = raw_table.map(|mut raw_bucket| {
             raw_bucket.write(TinyLinkedList::empty());
             unsafe { raw_bucket.assume_init() }
@@ -48,7 +55,11 @@ impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData> HashTable<'a,
         let bucket = self.find_bucket(node.key());
         bucket.remove(node)
     }
-    pub fn find<'b, P, K>(&mut self, key: &K, mut predicate: P) -> Option<&'a mut V>
+    pub fn find<'b, P, K>(
+        &mut self,
+        key: &K,
+        mut predicate: P,
+    ) -> Option<&'a mut V>
     where
         P: FnMut(&V) -> bool,
         K: HashKey,

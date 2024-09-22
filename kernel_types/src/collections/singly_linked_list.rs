@@ -70,7 +70,9 @@ impl<T: TinyListNodeData> Deref for TinyListNode<T> {
     type Target = T::Item;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { TinyListNodeData::from_node_unchecked(NonNull::from(self)).as_ref() }
+        unsafe {
+            TinyListNodeData::from_node_unchecked(NonNull::from(self)).as_ref()
+        }
     }
 }
 
@@ -104,7 +106,9 @@ impl<'a, T: TinyListNodeData> Default for TinyLinkedList<'a, T> {
     }
 }
 
-impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a> for TinyLinkedList<'a, T> {
+impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a>
+    for TinyLinkedList<'a, T>
+{
     type Item = TinyListNode<T>;
 
     fn empty() -> TinyLinkedList<'a, T> {
@@ -118,7 +122,10 @@ impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a> for TinyLinkedList<'a, T> 
             if let Some(mut old_last) = self.last {
                 old_last.as_mut().set_next(raw_node.as_mut());
             } else {
-                assert!(self.first.is_none(), "The empty last means empty first");
+                assert!(
+                    self.first.is_none(),
+                    "The empty last means empty first"
+                );
                 self.first = Some(raw_node);
             }
             self.last = Some(raw_node);
@@ -325,8 +332,11 @@ mod tests {
         fn from_node(node: &mut TinyListNode<Self>) -> &mut Self::Item {
             let pointer = node as *mut TinyListNode<Self>;
             let field_offset = offset_of!(TestStruct, node);
-            let struct_offset = unsafe { (pointer as *mut u8).sub(field_offset) };
-            let value = unsafe { mem::transmute::<*mut u8, *mut TestStruct>(struct_offset) };
+            let struct_offset =
+                unsafe { (pointer as *mut u8).sub(field_offset) };
+            let value = unsafe {
+                mem::transmute::<*mut u8, *mut TestStruct>(struct_offset)
+            };
             unsafe { &mut *value }
         }
     }

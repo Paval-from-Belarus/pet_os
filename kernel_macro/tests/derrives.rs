@@ -10,8 +10,8 @@ mod tests {
     extern crate std;
 
     use kernel_types::collections::{
-        BorrowingLinkedList, LinkedList, ListNode, ListNodeData, TinyLinkedList, TinyListNode,
-        TinyListNodeData,
+        BorrowingLinkedList, LinkedList, ListNode, ListNodeData,
+        TinyLinkedList, TinyListNode, TinyListNodeData,
     };
 
     pub struct AnotherStruct;

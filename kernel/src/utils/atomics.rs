@@ -29,7 +29,9 @@ pub struct SpinLock {
 
 impl SpinLock {
     pub const fn new() -> Self {
-        SpinLock { lock: AtomicBool::new(false) }
+        SpinLock {
+            lock: AtomicBool::new(false),
+        }
     }
     pub fn acquire(&self) {
         loop {
@@ -60,12 +62,12 @@ pub struct UnsafeLazyCell<T> {
 
 impl<T> UnsafeLazyCell<T> {
     pub const fn empty() -> Self {
-        Self { cell: UnsafeCell::new(None) }
+        Self {
+            cell: UnsafeCell::new(None),
+        }
     }
     pub fn set(&self, value: T) {
-        let option = unsafe {
-            &mut *self.cell.get()
-        };
+        let option = unsafe { &mut *self.cell.get() };
         if option.is_none() {
             option.replace(value);
         }
@@ -136,7 +138,10 @@ impl<T> SpinLockLazyCell<T> {
 }
 
 impl<'a, T> SpinLockGuard<'a, T> {
-    pub fn new(data_option: &mut Option<T>, lock: &'a SpinLock) -> SpinLockGuard<'a, T> {
+    pub fn new(
+        data_option: &mut Option<T>,
+        lock: &'a SpinLock,
+    ) -> SpinLockGuard<'a, T> {
         let pointer: NonNull<T>;
         loop {
             lock.acquire();
@@ -146,7 +151,10 @@ impl<'a, T> SpinLockGuard<'a, T> {
             }
             lock.release();
         }
-        Self { lock, data: NonNull::from(pointer) }
+        Self {
+            lock,
+            data: NonNull::from(pointer),
+        }
     }
     fn data(&self) -> &T {
         unsafe { self.data.as_ref() }

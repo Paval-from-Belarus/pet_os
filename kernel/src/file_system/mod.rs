@@ -8,16 +8,16 @@ use fallible_collections::{FallibleVec, TryCollect};
 use num_enum::FromPrimitive;
 
 use kernel_macro::ListNode;
-use kernel_types::{bitflags, declare_constants};
-use kernel_types::collections::{HashKey, LinkedList, ListNode, TinyListNode};
 use kernel_types::collections::{HashData, HashTable};
-use kernel_types::drivers::{Device};
+use kernel_types::collections::{HashKey, LinkedList, ListNode, TinyListNode};
+use kernel_types::drivers::Device;
 use kernel_types::string::{MutString, QuickString};
+use kernel_types::{bitflags, declare_constants};
 
 use crate::drivers::{BlockDevice, CharDevice};
 use crate::utils::atomics::{SpinLock, UnsafeLazyCell};
-use crate::utils::SpinBox;
 use crate::utils::time::Timestamp;
+use crate::utils::SpinBox;
 
 mod fat;
 
@@ -62,7 +62,6 @@ pub struct SuperBlock {
     device: Device,
     private: *mut (),
 }
-
 
 impl SuperBlock {}
 
@@ -334,9 +333,9 @@ bitflags! {
 impl FileOpenMode {
     pub fn is_accessible(&self, mode: FileAccessMode) -> bool {
         match mode.bits() {
-            FileAccessMode::READ => { !self.test_with(FileOpenMode::WRITE) }
-            FileAccessMode::WRITE => { self.test_with(FileOpenMode::WRITE) }
-            _ => panic!("Unknown access mode")
+            FileAccessMode::READ => !self.test_with(FileOpenMode::WRITE),
+            FileAccessMode::WRITE => self.test_with(FileOpenMode::WRITE),
+            _ => panic!("Unknown access mode"),
         }
     }
 }
@@ -348,8 +347,8 @@ bitflags! {
 }
 #[cfg(test)]
 mod tests {
-    extern crate std;
     extern crate alloc;
+    extern crate std;
 
     #[test]
     pub fn test() {}

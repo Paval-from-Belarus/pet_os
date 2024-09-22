@@ -13,6 +13,7 @@ macro_rules! syscall {
         );
     });
 }
+
 #[macro_export]
 macro_rules! get_eax {
     () => ({
@@ -25,9 +26,10 @@ macro_rules! get_eax {
         value
     });
 }
+
 #[macro_export]
 macro_rules! set_eax {
-    ($value:expr) => ({
+    ($value : expr) => ({
         core::arch::asm!(
           "",
           in("eax") $value,

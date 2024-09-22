@@ -29,9 +29,17 @@ impl SegmentSelector {
         USER_DATA = SegmentSelector(0x20);
         TASK = SegmentSelector(0x28)
     );
-    pub fn new(index: usize, ring: PrivilegeLevel, parent: SelectorType) -> Self {
+    pub fn new(
+        index: usize,
+        ring: PrivilegeLevel,
+        parent: SelectorType,
+    ) -> Self {
         assert!(index < u32::MAX as usize);
-        let type_bit = if parent == SelectorType::LDT { 0x04 } else { 0x00 };
+        let type_bit = if parent == SelectorType::LDT {
+            0x04
+        } else {
+            0x00
+        };
         let selector = (index & !0x3) | type_bit | (ring.bits() as usize);
         Self(selector as u16)
     }
@@ -48,7 +56,6 @@ impl SegmentSelector {
         unsafe { PrivilegeLevel::wrap(bits) }
     }
 }
-
 
 impl From<SegmentSelector> for u16 {
     fn from(value: SegmentSelector) -> Self {
@@ -101,10 +108,16 @@ pub struct DescriptorFlags<T: DescriptorType> {
 }
 
 impl<T: DescriptorType> DescriptorFlags<T> {
-    pub fn new(present: bool, ring: PrivilegeLevel, descriptor_type: T) -> Self {
+    pub fn new(
+        present: bool,
+        ring: PrivilegeLevel,
+        descriptor_type: T,
+    ) -> Self {
         let present_bit = u8::from(present);
         Self {
-            value: (present_bit << 7) | (ring.bits() << 5) | descriptor_type.bits(),
+            value: (present_bit << 7)
+                | (ring.bits() << 5)
+                | descriptor_type.bits(),
             _marker: PhantomData,
         }
     }
@@ -136,7 +149,6 @@ impl<T: DescriptorType> DescriptorFlags<T> {
     }
 }
 
-
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct MemoryDescriptor {
@@ -152,7 +164,11 @@ assert_eq_size!(MemoryDescriptor, [u32; 2]);
 impl Descriptor for MemoryDescriptor {}
 
 impl MemoryDescriptor {
-    pub fn default(base: VirtualAddress, limit: usize, memory_type: MemoryType) -> Self {
+    pub fn default(
+        base: VirtualAddress,
+        limit: usize,
+        memory_type: MemoryType,
+    ) -> Self {
         let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
         let flags = DescriptorFlags::new(false, ring, memory_type);
         let mut instance = MemoryDescriptor::null();
@@ -160,10 +176,7 @@ impl MemoryDescriptor {
         instance.set_small_operations(false);
         instance.set_limit(limit);
         instance.set_base(base);
-        Self {
-            flags,
-            ..instance
-        }
+        Self { flags, ..instance }
     }
     ///When granularity flag is clear then virtual address is measured in byte units.
     ///Otherwise, the address space is measured in 4KiB pages
@@ -212,16 +225,14 @@ assert_eq_size!(TaskStateDescriptor, [u32; 2]);
 impl TaskStateDescriptor {
     pub fn active(base: VirtualAddress, limit: usize) -> Self {
         let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
-        let system_type = unsafe { SystemType::wrap(SystemType::TSS_FREE_32BIT) };
+        let system_type =
+            unsafe { SystemType::wrap(SystemType::TSS_FREE_32BIT) };
         let flags = DescriptorFlags::new(true, ring, system_type);
         let mut instance = TaskStateDescriptor::null();
         instance.set_base(base.as_physical());
         instance.set_limit(limit);
         instance.set_granularity(false);
-        Self {
-            flags,
-            ..instance
-        }
+        Self { flags, ..instance }
     }
     pub const fn null() -> Self {
         unsafe { mem::MaybeUninit::zeroed().assume_init() }
@@ -297,7 +308,11 @@ impl Descriptor for InterruptGate {}
 
 impl InterruptGate {
     /// The default interrupt gate is kernel ring and not present
-    pub fn default(handler_offset: VirtualAddress, selector: SegmentSelector, flags: SystemType) -> InterruptGate {
+    pub fn default(
+        handler_offset: VirtualAddress,
+        selector: SegmentSelector,
+        flags: SystemType,
+    ) -> InterruptGate {
         // let physical_offset = handler_offset.as_physical();
         let lower_offset = (handler_offset & 0xFFFF) as u16;
         let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
@@ -311,7 +326,7 @@ impl InterruptGate {
         }
     }
     pub const fn null() -> Self {
-        unsafe { mem::MaybeUninit::<InterruptGate>::zeroed().assume_init() }//because the present bit is set to zero
+        unsafe { mem::MaybeUninit::<InterruptGate>::zeroed().assume_init() } //because the present bit is set to zero
     }
 }
 

@@ -1,7 +1,9 @@
 use core::arch::asm;
 
-use num_enum::{FromPrimitive, IntoPrimitive, TryFromPrimitive, UnsafeFromPrimitive};
 use kernel_types::declare_constants;
+use num_enum::{
+    FromPrimitive, IntoPrimitive, TryFromPrimitive, UnsafeFromPrimitive,
+};
 
 use crate::utils::io;
 
@@ -99,7 +101,7 @@ pub unsafe fn remap(master_offset: u8, slave_offset: u8) {
     wait();
     outb(PIC2_DATA, slave_offset);
     wait();
-    outb(PIC1_DATA, 4);//What is ?
+    outb(PIC1_DATA, 4); //What is ?
     wait();
     outb(PIC2_DATA, 2);
     wait();

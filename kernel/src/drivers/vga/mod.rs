@@ -1,7 +1,7 @@
 use core::fmt;
 
-use volatile::Volatile;
 use kernel_types::declare_constants;
+use volatile::Volatile;
 
 use crate::memory::PhysicalAddress;
 
@@ -121,7 +121,8 @@ impl Writer {
             self.buffer.chars[row][col].write(blank);
         }
     }
-    fn new_line(&mut self) { /* TODO */ }
+    fn new_line(&mut self) { /* TODO */
+    }
 }
 // #[macro_export]
 // macro_rules! print {
@@ -147,14 +148,12 @@ impl Writer {
 //     });
 // }
 
-
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(s);
         Ok(())
     }
 }
-
 
 fn print_something() {
     // use core::fmt::Write;

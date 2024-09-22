@@ -1,8 +1,10 @@
 use core::{mem, slice};
 use kernel_types::bitflags;
 
-use crate::memory::{PhysicalAddress, ToPhysicalAddress, ToVirtualAddress, VirtualAddress};
 use crate::memory::paging::{CommonError, TABLE_ENTRIES_COUNT};
+use crate::memory::{
+    PhysicalAddress, ToPhysicalAddress, ToVirtualAddress, VirtualAddress,
+};
 
 pub struct RefTable<T> {
     entries: *mut T,
@@ -16,13 +18,17 @@ pub trait RefTableEntry {
 
 impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
     pub fn wrap(entries: *mut T, size: usize) -> Self {
-        assert!(!entries.is_null(), "Impossible to create PageDirectory from null pointer");
+        // assert!(
+        //     !entries.is_null(),
+        //     "Impossible to create PageDirectory from null pointer"
+        // );
         Self { entries, size }
     }
     //the table will be initialized with default values
     pub fn with_default_values(entries: *mut T, size: usize) -> Self {
         let mut table = RefTable::wrap(entries, size);
-        table.as_mut_slice()
+        table
+            .as_slice_mut()
             .iter_mut()
             .for_each(RefTableEntry::clear);
         table
@@ -54,7 +60,7 @@ impl<T: Sized + Copy + Clone + RefTableEntry> RefTable<T> {
     pub fn as_slice(&self) -> &[T] {
         unsafe { slice::from_raw_parts(self.entries, self.size) }
     }
-    pub fn as_mut_slice(&mut self) -> &mut [T] {
+    pub fn as_slice_mut(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.entries, self.size) }
     }
     pub fn set(&mut self, index: usize, entry: T) -> Result<(), CommonError> {
@@ -90,6 +96,7 @@ bitflags!(
     PRESENT = 0b1,
     EMPTY = 0b0
 );
+
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct DirEntry {
@@ -104,8 +111,11 @@ pub struct TableEntry {
 
 impl RefTableEntry for DirEntry {
     fn empty() -> Self {
-        DirEntry { entry: PhysicalAddress::NULL | DirEntryFlag::EMPTY }
+        DirEntry {
+            entry: PhysicalAddress::NULL | DirEntryFlag::EMPTY,
+        }
     }
+
     fn clear(&mut self) {
         self.entry = (PhysicalAddress::NULL) | DirEntryFlag::EMPTY;
     }
@@ -113,7 +123,9 @@ impl RefTableEntry for DirEntry {
 
 impl RefTableEntry for TableEntry {
     fn empty() -> Self {
-        TableEntry { entry: PhysicalAddress::NULL | TableEntryFlag::EMPTY }
+        TableEntry {
+            entry: PhysicalAddress::NULL | TableEntryFlag::EMPTY,
+        }
     }
     fn clear(&mut self) {
         self.entry = PhysicalAddress::NULL | TableEntryFlag::EMPTY;
@@ -121,12 +133,11 @@ impl RefTableEntry for TableEntry {
 }
 impl RefTable<DirEntry> {
     ///load table in CPU register
-    pub unsafe fn load(&self) {
-    }
+    pub unsafe fn load(&self) {}
 }
 impl RefTable<TableEntry> {
     pub fn wrap_page_table(entry: DirEntry) -> Option<Self> {
-        let table_offset = entry.get_table_offset();
+        let table_offset = entry.get_table_offset().as_virtual();
         if table_offset == VirtualAddress::NULL {
             return None;
         }
@@ -145,8 +156,8 @@ impl RefTable<TableEntry> {
 impl DirEntry {
     const ADDRESS_MASK: usize = 0xFF_FF_FC_00;
     const BYTE_SIZE: usize = mem::size_of::<usize>();
-    pub fn new(table_offset: VirtualAddress, flags: DirEntryFlag) -> DirEntry {
-        let entry: usize = table_offset.as_physical() | flags.bits();
+    pub fn new(table_offset: PhysicalAddress, flags: DirEntryFlag) -> DirEntry {
+        let entry: usize = table_offset | flags.bits();
         DirEntry { entry }
     }
     //This is impossible to change offset to PageTable
@@ -160,12 +171,14 @@ impl DirEntry {
     pub fn is_present(&self) -> bool {
         self.get_flags().test_with(DirEntryFlag::PRESENT)
     }
-    pub fn set_table_offset(&mut self, table_offset: VirtualAddress) {
+
+    pub fn set_table_offset(&mut self, table_offset: PhysicalAddress) {
         let flags = self.get_flags();
-        self.entry = (table_offset.as_physical() & DirEntry::ADDRESS_MASK) | flags.bits();
+        self.entry = (table_offset & DirEntry::ADDRESS_MASK) | flags.bits();
     }
-    pub fn get_table_offset(&self) -> VirtualAddress {
-        (self.entry & DirEntry::ADDRESS_MASK).as_virtual()
+
+    pub fn get_table_offset(&self) -> PhysicalAddress {
+        (self.entry & DirEntry::ADDRESS_MASK)
     }
 }
 
@@ -174,7 +187,10 @@ impl TableEntry {
     const BYTE_SIZE: usize = mem::size_of::<usize>();
     //TableEntry is fully mutable
     //Page and flags should be change per time for entry consistent
-    pub fn new(page_offset: PhysicalAddress, flags: TableEntryFlag) -> TableEntry {
+    pub fn new(
+        page_offset: PhysicalAddress,
+        flags: TableEntryFlag,
+    ) -> TableEntry {
         let entry = (page_offset & TableEntry::ADDRESS_MASK) | flags.bits();
         TableEntry { entry }
     }
@@ -182,7 +198,8 @@ impl TableEntry {
         self.entry = (self.entry & TableEntry::ADDRESS_MASK) | flags.bits();
     }
     pub fn set_page_offset(&mut self, offset: PhysicalAddress) {
-        self.entry = (offset & TableEntry::ADDRESS_MASK) | self.get_flags().bits();
+        self.entry =
+            (offset & TableEntry::ADDRESS_MASK) | self.get_flags().bits();
     }
     pub fn get_flags(&self) -> TableEntryFlag {
         TableEntryFlag(self.entry & !TableEntry::ADDRESS_MASK)

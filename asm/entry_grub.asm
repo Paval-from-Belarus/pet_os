@@ -11,7 +11,7 @@ include 'include/Kernel.asm'
 include 'include/Grub.asm'
 include 'include/MMU.asm'
 
-KERNEL_LOW_ADDRESSES_SIZE equ 100_000;
+KERNEL_LOW_ADDRESSES_SIZE equ 0x100_000;
 
 extrn 'KERNEL_STACK_TOP' as KernelStack.top
 extrn 'KERNEL_STACK_SIZE' as KernelStack.size
@@ -54,36 +54,83 @@ section '.loader' executable
 
 EntryPoint:
     cmp eax, 0x36d76289
-    jne .panic
+    jne Panic
     ; MultiBoot info is storing in at ebx
     test ebx, ebx
-    jz .panic
+    jz Panic
 
     mov eax, Kernel.properties
     call Kernel.toPhysicalAddress
-    
+    push eax
+
     call Kernel.initBootAllocator
 
-    push eax
     mov eax, Kernel.parseBootInfo
     call Kernel.toPhysicalAddress
+
     mov edx, eax
     pop eax
 
     call edx
-
+    cmp eax, 42 ;Okay code
+    jne Panic
 
     todo 'Consider to use boot modules'
 .init_kernel:
-    mov eax, GlobalDescriptorTable.handle
+
     call Kernel.setProtectedMode
+
+ConfigureKernel:
+
     call Kernel.setPaging
 
-    mov eax, Kernel.properties
-    call Kernel.run
-
-.panic:
+Panic:
     hlt
+
+;Input:
+;None
+;Output:
+;ds -> data segment selector
+;ss -> stack selector
+;Notes:
+;As conventional:
+;GDT[1] entry is a code entry
+;GDT[2] entry is a data entry
+;All ― for kernel uses only
+;
+Kernel.setProtectedMode:
+     cli
+
+     mov eax, GlobalDescriptorTable.handle
+     call Kernel.toPhysicalAddress
+
+     mov edx, eax
+
+     mov eax, GlobalDescriptorTable.start
+     call Kernel.toPhysicalAddress
+     mov dword [ds: edx + GDTHandle.dMemoryAddress], eax
+     mov word  [ds: edx + GDTHandle.wTableSize], GlobalDescriptorTable.size
+
+     lgdt [ds: edx]
+     mov eax, cr0
+     or eax, 1
+     mov cr0, eax
+
+    ; init data segments
+     mov ax, 2 shl 3
+     push ax ax ax
+     pop ss ds es
+     push ds 
+     pop es
+     mov ax, 0
+    ;  push ax ax
+    ;  pop fs gs ;fs ds are not used; so it' forbidden to use them
+
+     mov eax, KernelStack.top
+     call Kernel.toPhysicalAddress
+     mov esp, eax
+
+     jmp ConfigureKernel
 
 ;Input:
 ;eax -> KernelProperties
@@ -99,37 +146,6 @@ push edx
     mov dword [edx + PagingProperties.lpCaptureRec], eax
 pop edx
 ret
-
-;Input:
-;eax -> address of a handle to GDTable
-;Output:
-;ds -> data segment selector
-;ss -> stack selector
-;Notes:
-;As conventional:
-;GDT[1] entry is a code entry
-;GDT[2] entry is a data entry
-;All ― for kernel uses only
-;
-Kernel.setProtectedMode:
-     cli
-     lgdt [ds: eax]
-     mov eax, cr0
-     or eax, 1
-     mov cr0, eax
-     jmp  08h: .clearPipe
-.clearPipe:
-    ; init data segments
-     mov ax, 2 shl 3
-     push ax ax ax
-     pop ss ds es
-     push ds 
-     pop es
-     mov ax, 0
-     push ax ax
-     pop fs gs ;fs ds are not used; so it' forbidden to use them
-     mov esp, KernelStack.top ;will be replaced
-     jmp EntryPoint
 
 ;Input:
 ;any register
@@ -151,9 +167,11 @@ macro bytes_to_pages size*
 ;if cf set -> paging error (system crash)
 ;
 Kernel.setPaging:
-    push eax
+    mov eax, Kernel.properties
+    call Kernel.toPhysicalAddress
+
     mov ebx, eax
-    add ebx, KernelProperties.pages
+    add ebx, KernelProperties.pages + PagingProperties.captureRecList
 .acquireKernelSize:
 
      bytes_to_pages Kernel.staticSize
@@ -182,19 +200,28 @@ Kernel.setPaging:
      mov eax, ebx ;restore directory offset
      call MMU.init
 .configureKernel:
-     pop ecx ;restore the count of pages for kernel
-     add ecx, (KERNEL_LOW_ADDRESSES_SIZE + PageSize.bytes - 1) / PageSize.bytes ;the main idea to use lower addresses in kernel is to use V8086
+.dosMapping:
      mov eax, PageDirEntry.Present or PageDirEntry.Writable
      mov edx, PageTableEntry.Present or PageTableEntry.Writable
      ;mov ebx, ebx
+.identityMapping:
+    pop edi
+    push edi
+    pusha
+    mov ecx, edi
+
+    mov esi, Kernel.start
+    mov edi, Kernel.start
+    call MMU.markRegion
+
+    popa
+.highMapping:
+     pop ecx ;restore the count of pages for kernel
+     add ecx, (KERNEL_LOW_ADDRESSES_SIZE + PageSize.bytes - 1) / PageSize.bytes ;the main idea to use lower addresses in kernel is to use V8086
      xor esi, esi
-     mov edi, esi ;identity mapping
-     pusha ;save all register because they will be used to map the kernel in higher addresses
-     call MMU.markRegion
-     popa
      mov edi, KERNEL_VIRTUAL_OFFSET ;map to higher addresses
      call MMU.markRegion
-     ;map PageDirectory
+.markPageDirectory:
      add edi, ebx ;no needs to substract KERNEL_PHYSICAL_OFFSET from edi because virtual mapping accept low addresses as a part of kernel
      ;add edi, ebx - KERNEL_PHYSICAL_OFFSET + KERNEL_LOW_ADDRESSES_SIZE
      mov esi, ebx
@@ -203,9 +230,11 @@ Kernel.setPaging:
      mov ecx, 1 ;PageDirectory occure only 1 page
      ;mov ebx, ebx
      call MMU.markRegion
+
+.markPageTables:
      add edi, PageSize.bytes
-     mov esi, ebp ;tricky way to acquire existing value
-     todo 'replace addresing kernel only to read'
+     mov esi, ebp
+
      mov eax, PageDirEntry.Present or PageDirEntry.Writable
      mov edx, PageTableEntry.Present or PageTableEntry.Writable
      mov ecx, PageDirectory.ENTRIES_CNT
@@ -237,7 +266,10 @@ Kernel.setPaging:
     ;  pop ecx ;restore page count
      ;now all prepositions for paging are done; let's copy kernel to hight addresse
 .configureProperties:
-    pop edx ;restore Kernel.properties
+    mov eax, Kernel.properties
+    call Kernel.toPhysicalAddress
+    mov edx, eax
+
     add edx, KernelProperties.pages
 
      ;consider to check each stask access
@@ -247,14 +279,9 @@ Kernel.setPaging:
      call Kernel.toVirtualAddress
      mov dword [edx + PagingProperties.lpPageDirectory], eax
 
-     mov eax, GlobalDescriptorTable.handle
-     call Kernel.toVirtualAddress
-     mov dword [edx + PagingProperties.lpGDTHandle], eax
+     mov dword [edx + PagingProperties.lpGDTHandle], GlobalDescriptorTable.handle
 
-     mov eax, edx
-     sub eax, KernelProperties.pages
-     call Kernel.toVirtualAddress
-     mov ecx, eax
+     mov ecx, Kernel.properties
      mov eax, ebx
      mov edx, KernelStack.top
      call Kernel.switchPaging
@@ -274,6 +301,9 @@ proc captureMemory uses ebx eax
      add eax, CaptureRecList.records
      mov ebx, eax
 .searchLoop:
+     cmp dword [es: ebx + CaptureRangeRec.dMemOffset], 0
+     je .nextRec
+
      mov eax, dword [es: ebx + CaptureRangeRec.dPageCnt]
      sub eax, dword [es: ebx + CaptureRangeRec.dNextPage]
      jle .nextRec
@@ -320,7 +350,7 @@ Kernel.toPhysicalAddress:
     sub eax, KERNEL_VIRTUAL_OFFSET
 ret
 
-section '.loader_data' writeable 
+section '.data' writeable 
 
 Kernel.properties KernelProperties
 

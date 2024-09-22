@@ -112,15 +112,16 @@ script = '''
     sudo mkdir -p /mnt/petos_build
     sudo mount /dev/loop1 /mnt/petos_build
 
-    sudo mkdir -p /mnt/petos_build/boot/grub
+    sudo mkdir -p /mnt/petos_build/boot/grub2
     sudo mkdir -p /mnt/petos_build/sys
 
-    sudo grub2-install --boot-directory=/mnt/petos_build/boot/grub2 --no-floppy \
-    --modules="normal part_msdos multiboot disk drivemap" --target=i386-pc /dev/loop0 \
-    --locales=uk
+    sudo grub2-install --boot-directory=/mnt/petos_build/boot --no-floppy \
+    --modules="normal part_msdos multiboot disk drivemap" --target=i386-pc \
+    --locales=uk \
+    /dev/loop0
 
     sudo cp ${KERNEL_BIN} /mnt/petos_build/sys/io.sys
-    sudo cp ${GRUB_CFG} /mnt/petos_build/boot/grub/
+    sudo cp ${GRUB_CFG} /mnt/petos_build/boot/grub2/
     sync
 
     sudo umount /mnt/petos_build

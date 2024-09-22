@@ -17,7 +17,7 @@ unsafe impl<T> Sync for InterruptableLazyCell<T> {}
 impl<T> InterruptableLazyCell<T> {
     pub const fn empty() -> Self {
         Self {
-            cell: UnsafeCell::new(None)
+            cell: UnsafeCell::new(None),
         }
     }
     pub fn set(&self, value: T) {

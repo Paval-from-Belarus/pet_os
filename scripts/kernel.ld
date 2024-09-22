@@ -30,27 +30,14 @@ SECTIONS
 	/*  The kernel must be aligne to this offset to ensure that
 	 *  lower addresses are accessed directly */
 
-	. = ALIGN(8);
-
 	. = (KERNEL_PHYSICAL_START + KERNEL_VIRTUAL_OFFSET);
-	/* . = (KERNEL_PHYSICAL_START); */
-
-	PROVIDE(LOADER_START = .);
-
-	.loader : AT(KERNEL_PHYSICAL_START) {
-	    KEEP(*(.multiboot2_header));
-	    *(.loader)
-	    *(.loader_data)
-	}
-
-	PROVIDE(LOADER_END = .);
-	LOADER_SIZE = LOADER_END - LOADER_START;
 
 	. = ALIGN(PAGE_SIZE);
 
 	PROVIDE(START_OFFSET = .);
-	/* .text : AT(KERNEL_PHYSICAL_START) { */
-	.text : {
+	.text : AT(KERNEL_PHYSICAL_START) {
+	    KEEP(*(.multiboot2_header));
+	    *(.loader)
 	    *(.text  .text.* .stub .gnu.linkonce.t.*)
 	}
 
@@ -107,8 +94,8 @@ SECTIONS
        	*(.eh_frame .note.GNU-stack)
        }
 
-       BINARY_SIZE = edata - START_OFFSET + LOADER_SIZE;
-       KERNEL_SIZE = END_OFFSET - START_OFFSET + LOADER_SIZE;
+       BINARY_SIZE = edata - START_OFFSET;
+       KERNEL_SIZE = END_OFFSET - START_OFFSET;
 
        KERNEL_PHYSICAL_END = KERNEL_PHYSICAL_START + KERNEL_SIZE;
 }

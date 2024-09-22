@@ -1,10 +1,13 @@
 use core::{u8, usize};
 use kernel_types::{bitflags, declare_constants};
 
-use crate::{error_trap, get_eax, log, memory, naked_trap, process, set_eax};
-use crate::interrupts::{CallbackInfo, IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT, pic};
 use crate::interrupts::object::InterruptObject;
+use crate::interrupts::{
+    pic, CallbackInfo, IDTable, InterruptStackFrame, IrqLine,
+    MAX_INTERRUPTS_COUNT,
+};
 use crate::memory::AllocationStrategy::Kernel;
+use crate::{error_trap, get_eax, log, memory, naked_trap, process, set_eax};
 
 //the common handlers
 bitflags!(
@@ -26,7 +29,8 @@ bitflags!(
 );
 #[inline(never)]
 pub fn init_traps(table: &mut IDTable) {
-    for i in 0..MAX_INTERRUPTS_COUNT { //setting all interrupts to default handler
+    for i in 0..MAX_INTERRUPTS_COUNT {
+        //setting all interrupts to default handler
         table.set(i, naked_trap!(unknown_trap));
     }
     table.set(IDTable::DIVISION_BY_ZERO, naked_trap!(division_by_zero));
@@ -36,7 +40,10 @@ pub fn init_traps(table: &mut IDTable) {
     table.set(IDTable::OVERFLOW, naked_trap!(overflow));
     table.set(IDTable::BOUND, naked_trap!(bound_check));
     table.set(IDTable::INVALID_OPCODE, naked_trap!(invalid_opcode));
-    table.set(IDTable::DEVICE_NOT_AVAILABLE, naked_trap!(device_not_available));
+    table.set(
+        IDTable::DEVICE_NOT_AVAILABLE,
+        naked_trap!(device_not_available),
+    );
     table.set(IDTable::DOUBLE_FAULT, error_trap!(double_fault));
     table.set(IDTable::INVALID_TSS, error_trap!(invalid_tss));
     table.set(IDTable::SEGMENT_NOT_PRESENT, error_trap!(invalid_segment));
@@ -48,15 +55,18 @@ pub fn init_traps(table: &mut IDTable) {
 
 ///Init IRQ lines
 pub fn init_irq() -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
-    let mut objects: [Option<&'static InterruptObject>; pic::LINES_COUNT] = [None; pic::LINES_COUNT];
-    objects[u8::from(IrqLine::SYS_TIMER.line) as usize] = Some(init_timer(process::init()));
+    let mut objects: [Option<&'static InterruptObject>; pic::LINES_COUNT] =
+        [None; pic::LINES_COUNT];
+    objects[u8::from(IrqLine::SYS_TIMER.line) as usize] =
+        Some(init_timer(process::init()));
     objects
 }
 
 fn init_timer(info: CallbackInfo) -> &'static InterruptObject {
     let raw_object = memory::slab_alloc::<InterruptObject>(Kernel)
         .expect("Failed to init timer");
-    let timer_object = raw_object.write(InterruptObject::new(IrqLine::SYS_TIMER.line));
+    let timer_object =
+        raw_object.write(InterruptObject::new(IrqLine::SYS_TIMER.line));
     timer_object.add(info);
     timer_object
 }
@@ -75,7 +85,9 @@ pub extern "x86-interrupt" fn syscall(frame: &mut InterruptStackFrame) {
     }
 }
 
-pub extern "x86-interrupt" fn division_by_zero(_from: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn division_by_zero(
+    _from: &mut InterruptStackFrame,
+) {
     log!("division by zero");
 }
 
@@ -103,38 +115,63 @@ pub extern "x86-interrupt" fn invalid_opcode(frame: &mut InterruptStackFrame) {
     log!("invalid opcode int");
 }
 
-pub extern "x86-interrupt" fn device_not_available(frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn device_not_available(
+    frame: &mut InterruptStackFrame,
+) {
     log!("device not available");
 }
 
 //we can do nothing
-pub extern "x86-interrupt" fn double_fault(frame: &mut InterruptStackFrame, code: usize) {
+pub extern "x86-interrupt" fn double_fault(
+    frame: &mut InterruptStackFrame,
+    code: usize,
+) {
     panic!("The double fault exception occurs. We can nothing...(");
 }
 
-pub extern "x86-interrupt" fn invalid_tss(frame: &mut InterruptStackFrame, code: usize) {
-    log!("Invalid tss code={}",code);
+pub extern "x86-interrupt" fn invalid_tss(
+    frame: &mut InterruptStackFrame,
+    code: usize,
+) {
+    log!("Invalid tss code={}", code);
 }
 
-pub extern "x86-interrupt" fn invalid_segment(frame: &mut InterruptStackFrame, code: usize) {
+pub extern "x86-interrupt" fn invalid_segment(
+    frame: &mut InterruptStackFrame,
+    code: usize,
+) {
     log!("invalid segment");
 }
 
-pub extern "x86-interrupt" fn stack_fault(frame: &mut InterruptStackFrame, code: usize) {
+pub extern "x86-interrupt" fn stack_fault(
+    frame: &mut InterruptStackFrame,
+    code: usize,
+) {
     log!("stack fault");
 }
 
-
-pub extern "x86-interrupt" fn general_protection(frame: &mut InterruptStackFrame, code: usize) {
+pub extern "x86-interrupt" fn general_protection(
+    frame: &mut InterruptStackFrame,
+    code: usize,
+) {
     log!("general protection fault");
 }
 
-pub extern "x86-interrupt" fn page_fault(_frame: &mut InterruptStackFrame, error_code: usize) {
+pub extern "x86-interrupt" fn page_fault(
+    _frame: &mut InterruptStackFrame,
+    error_code: usize,
+) {
     let fault_code = unsafe { PageFaultError::wrap(error_code) };
-    let _code = fault_code.contains_with_mask(PageFaultError::CAUSE_MASK, PageFaultError::MODE_MASK);
+    let _code = fault_code.contains_with_mask(
+        PageFaultError::CAUSE_MASK,
+        PageFaultError::MODE_MASK,
+    );
 }
 
-pub extern "x86-interrupt" fn alignment_check(frame: &mut InterruptStackFrame, code: usize) {
+pub extern "x86-interrupt" fn alignment_check(
+    frame: &mut InterruptStackFrame,
+    code: usize,
+) {
     log!("alignment check failed");
 }
 

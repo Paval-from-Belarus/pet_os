@@ -37,6 +37,7 @@ pop ecx
 loop .markDirectoryLoop
 ret
 endp
+
 ;Input:
 ;eax -> PageDirectoryFlag
 ;edx -> PageTableFlag

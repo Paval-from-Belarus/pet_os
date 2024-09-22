@@ -3,12 +3,12 @@ use core::mem::MaybeUninit;
 
 use kernel_types::collections::{BorrowingLinkedList, TinyLinkedList};
 
-use crate::{log, memory};
 use crate::drivers::Handle;
-use crate::interrupts::{CallbackInfo, pic};
 use crate::interrupts::pic::PicLine;
+use crate::interrupts::{pic, CallbackInfo};
 use crate::memory::AllocationStrategy::Kernel;
 use crate::utils::atomics::SpinLock;
+use crate::{log, memory};
 
 ///The manager struct that handle all request for given interrupt.
 pub struct InterruptObject {
@@ -30,14 +30,18 @@ impl InterruptObject {
     pub fn new(line: PicLine) -> Self {
         let callbacks = UnsafeCell::new(TinyLinkedList::empty());
         let lock = SpinLock::new();
-        Self { callbacks, line, lock }
+        Self {
+            callbacks,
+            line,
+            lock,
+        }
     }
     pub fn dispatch(&self) {
         let mut is_dispatched = false;
         self.lock.acquire();
         let callbacks = unsafe { &*self.callbacks.get() };
         for callback in callbacks.iter() {
-            is_dispatched |= callback.invoke(is_dispatched);//if first is already dispatch the interrupt then other can only check
+            is_dispatched |= callback.invoke(is_dispatched); //if first is already dispatch the interrupt then other can only check
         }
         self.lock.release();
         if !is_dispatched {

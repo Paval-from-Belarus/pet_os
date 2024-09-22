@@ -27,7 +27,10 @@ impl PartialEq for KernelSymbol {
 }
 
 impl KernelSymbol {
-    pub const fn new<Args: Tuple, T: Fn<Args>>(function: &'static T, value: &'static [u8]) -> Self {
+    pub const fn new<Args: Tuple, T: Fn<Args>>(
+        function: &'static T,
+        value: &'static [u8],
+    ) -> Self {
         let offset: NonNull<()> = unsafe { mem::transmute(function) };
         Self { offset, value }
     }

@@ -1,9 +1,9 @@
-use core::{mem, ptr};
 use core::arch::asm;
 use core::cell::UnsafeCell;
-use core::mem::{MaybeUninit, offset_of};
+use core::mem::{offset_of, MaybeUninit};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use core::{mem, ptr};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
@@ -11,17 +11,21 @@ use kernel_macro::ListNode;
 use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
 use kernel_types::{bitflags, declare_constants, Zeroed};
 
-use crate::{interrupts, log, memory};
-use crate::file_system::{File, FileOpenMode, MAX_FILES_COUNT, MountPoint, PathNode};
+use crate::file_system::{
+    File, FileOpenMode, MountPoint, PathNode, MAX_FILES_COUNT,
+};
 use crate::interrupts::CallbackInfo;
-use crate::memory::{Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::memory::AllocationStrategy::Kernel;
+use crate::memory::{
+    Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress,
+};
 use crate::process::scheduler::TaskScheduler;
 use crate::utils::atomics::UnsafeLazyCell;
+use crate::{interrupts, log, memory};
 
 mod clocks;
-mod scheduler;
 mod pid;
+mod scheduler;
 
 #[derive(PartialOrd, PartialEq)]
 pub enum TaskStatus {
@@ -61,7 +65,6 @@ pub enum TaskPriority {
     LOW,
     HIGH,
 }
-
 
 ///The
 #[repr(C)]
@@ -127,7 +130,7 @@ impl TaskState {
         self.io_map_address = address;
     }
     pub fn set_kernel_stack(&mut self, esp0: usize) {
-        self.esp0 = esp0 as u32;//the u32 is native word
+        self.esp0 = esp0 as u32; //the u32 is native word
     }
 }
 declare_constants!(
@@ -203,7 +206,11 @@ pub struct TaskFileSystem {
 }
 
 impl ThreadTask {
-    pub unsafe fn new(id: usize, kernel_stack: VirtualAddress, priority: TaskPriority) -> Self {
+    pub unsafe fn new(
+        id: usize,
+        kernel_stack: VirtualAddress,
+        priority: TaskPriority,
+    ) -> Self {
         Self {
             kernel_stack,
             id,
@@ -227,9 +234,14 @@ fn default_thread_routine(arg: *mut ()) {
 
 //the calling convention is: eax, edx, ecx (default x8086)
 //todo: each task should have stub before running to enable interrupts
-pub fn new_task(routine: ThreadRoutine, arg: *mut (), priority: TaskPriority) -> &'static mut ThreadTask {
+pub fn new_task(
+    routine: ThreadRoutine,
+    arg: *mut (),
+    priority: TaskPriority,
+) -> &'static mut ThreadTask {
     let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
-    let raw_task = memory::slab_alloc::<ThreadTask>(Kernel).expect("Failed to alloc new task");
+    let raw_task = memory::slab_alloc::<ThreadTask>(Kernel)
+        .expect("Failed to alloc new task");
     let task_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
     let task = unsafe {
         let task_data = ThreadTask::new(task_id, kernel_stack, priority);
@@ -237,15 +249,17 @@ pub fn new_task(routine: ThreadRoutine, arg: *mut (), priority: TaskPriority) ->
     };
 
     let context = TaskContext::with_return_address(routine as VirtualAddress);
-    task.context = (task.kernel_stack + TASK_STACK_SIZE - mem::size_of::<TaskContext>() - interrupts::KERNEL_TRAP_SIZE) as *mut TaskContext;
+    task.context = (task.kernel_stack + TASK_STACK_SIZE
+        - mem::size_of::<TaskContext>()
+        - interrupts::KERNEL_TRAP_SIZE) as *mut TaskContext;
     unsafe { task.context.write(context) };
-    let arg_offset = ((task.context as VirtualAddress) - mem::size_of_val(&arg)) as *mut *mut ();
+    let arg_offset = ((task.context as VirtualAddress) - mem::size_of_val(&arg))
+        as *mut *mut ();
     unsafe { arg_offset.write(arg) };
     task
 }
 
 pub fn submit_task(task: &'static mut ThreadTask) {
-
     // let tiny_node = unsafe { task.as_sibling().as_mut() };
     // let raw_tiny_node = NonNull::from(tiny_node);
     SCHEDULER.get().add_task(task);
@@ -274,9 +288,7 @@ fn idle_task(args: *mut ()) {
     loop {
         log!("Idle task");
         unsafe {
-            asm!(
-            "hlt",
-            options(preserves_flags, nomem, nostack));
+            asm!("hlt", options(preserves_flags, nomem, nostack));
         }
     }
 }
@@ -301,16 +313,15 @@ pub struct Futex {
 
 impl Futex {
     pub fn new(capacity: usize) -> Self {
-        let raw_futex = memory::slab_alloc::<FutexInner>(Kernel).expect("Failed to alloc futex");
+        let raw_futex = memory::slab_alloc::<FutexInner>(Kernel)
+            .expect("Failed to alloc futex");
         let futex = raw_futex.write(FutexInner {
             count: AtomicUsize::new(0),
             max_count: capacity,
             waiting: LinkedList::empty(),
         });
         let inner = UnsafeCell::new(NonNull::from(futex));
-        Self {
-            inner
-        }
+        Self { inner }
     }
     pub fn mutex() -> Self {
         Self::new(1)

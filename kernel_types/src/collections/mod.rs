@@ -77,7 +77,10 @@ pub trait BorrowingLinkedList<'a> {
 
 pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
     fn parent(&self) -> NonNull<T>;
-    unsafe fn collect<I: IntoIterator<Item = &'a mut T::Item>>(self, iter: I) -> T {
+    unsafe fn collect<I: IntoIterator<Item = &'a mut T::Item>>(
+        self,
+        iter: I,
+    ) -> T {
         self.collect_map(iter, |node| node)
     }
     unsafe fn collect_map<
@@ -122,7 +125,9 @@ pub unsafe trait DanglingData {}
 pub unsafe trait ListNodeData: Sized {
     type Item;
     fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item;
-    unsafe fn from_node_unchecked(mut raw_node: NonNull<ListNode<Self>>) -> NonNull<Self::Item> {
+    unsafe fn from_node_unchecked(
+        mut raw_node: NonNull<ListNode<Self>>,
+    ) -> NonNull<Self::Item> {
         let node = Self::from_node(raw_node.as_mut());
         NonNull::from(node)
     }
@@ -146,7 +151,9 @@ pub unsafe trait TinyListNodeData: Sized {
 unsafe impl<T: ListNodeData> TinyListNodeData for T {
     type Item = T::Item;
     fn from_node(node: &mut TinyListNode<Self>) -> &mut Self::Item {
-        let pivot = unsafe { core::mem::transmute::<&mut TinyListNode<T>, &mut ListNode<T>>(node) };
+        let pivot = unsafe {
+            core::mem::transmute::<&mut TinyListNode<T>, &mut ListNode<T>>(node)
+        };
         ListNodeData::from_node(pivot)
     }
 }

@@ -1,15 +1,18 @@
-use core::{mem, ptr, slice};
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
+use core::{mem, ptr, slice};
 
 use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
 use kernel_types::declare_constants;
 
-use crate::{log};
-use crate::memory::{MEMORY_MAP_SIZE, OsAllocationError, Page, PhysicalAddress, ProcessInfo, ToPhysicalAddress, VirtualAddress};
-use crate::memory::OsAllocationError::NoMemory;
+use crate::log;
 use crate::memory::paging::{BootAllocator, PageMarkerError};
+use crate::memory::OsAllocationError::NoMemory;
+use crate::memory::{
+    OsAllocationError, Page, PhysicalAddress, ProcessInfo, ToPhysicalAddress,
+    VirtualAddress, MEMORY_MAP_SIZE,
+};
 use crate::utils::atomics::SpinLock;
 use crate::utils::SpinBox;
 
@@ -27,16 +30,26 @@ pub struct BuddyPiece {
 }
 
 impl BuddyPiece {
-    pub fn with_pages(pages_count: usize, first_page: &'static mut ListNode<Page>) -> Self {
+    pub fn with_pages(
+        pages_count: usize,
+        first_page: &'static mut ListNode<Page>,
+    ) -> Self {
         assert!(pages_count <= MAX_UNIT_SIZE);
         let power = Self::power_of(pages_count);
         Self::with_power(power, first_page)
     }
-    pub fn with_power(power: usize, first_page: &'static mut ListNode<Page>) -> Self {
+    pub fn with_power(
+        power: usize,
+        first_page: &'static mut ListNode<Page>,
+    ) -> Self {
         assert!(power <= MAX_UNIT_POWER);
         let size = Self::size_of(power);
         // let raw_first_page = NonNull::from(first_page);
-        Self { size, power, first_page_cell: UnsafeCell::new(first_page) }
+        Self {
+            size,
+            power,
+            first_page_cell: UnsafeCell::new(first_page),
+        }
     }
     pub fn power(&self) -> usize {
         self.power
@@ -112,12 +125,18 @@ impl PhysicalAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
     pub fn new(boot_allocator: BootAllocator) -> Self {
         let lock = SpinLock::new();
-        let mut raw_buddies = MaybeUninit::<LinkedList<'static, Page>>::uninit_array::<{ MAX_UNIT_POWER + 1 }>();
+        let mut raw_buddies =
+            MaybeUninit::<LinkedList<'static, Page>>::uninit_array::<
+                { MAX_UNIT_POWER + 1 },
+            >();
         for buddy in raw_buddies.iter_mut() {
             buddy.write(LinkedList::empty());
         }
         let buddies = unsafe { raw_buddies.map(|buddy| buddy.assume_init()) };
-        let allocator = Self { lock, buddies_cell: UnsafeCell::new(buddies) };
+        let allocator = Self {
+            lock,
+            buddies_cell: UnsafeCell::new(buddies),
+        };
         unsafe { allocator.collect_free_pages(boot_allocator) }
         allocator
     }
@@ -147,22 +166,37 @@ impl PhysicalAllocator {
         let mut expected_slice_size = MAX_UNIT_SIZE;
         loop {
             let page_slice = page.as_slice_mut(expected_slice_size);
-            let effective_slice_size = page_slice.iter()
-                                                 .filter(|page| !page.is_used())
-                                                 .take(expected_slice_size)
-                                                 .count();
+            let effective_slice_size = page_slice
+                .iter()
+                .filter(|page| !page.is_used())
+                .take(expected_slice_size)
+                .count();
             if effective_slice_size == expected_slice_size {
                 return page_slice;
             }
             expected_slice_size /= 2;
-            assert!(expected_slice_size >= 1, "At least one page in free_pages should be free");
+            assert!(
+                expected_slice_size >= 1,
+                "At least one page in free_pages should be free"
+            );
         }
     }
     //atomically save push slice in buddy array
-    fn push_buddy(&self,
-                  page_slice: &'static mut [Page],
-                  buddies_lock_option: Option<SpinBox<'_, 'static, [LinkedList<'static, Page>; MAX_UNIT_POWER + 1]>>) {
-        assert!(!page_slice.is_empty() && (page_slice.len() % 2 == 0 || page_slice.len() == 1));
+    fn push_buddy(
+        &self,
+        page_slice: &'static mut [Page],
+        buddies_lock_option: Option<
+            SpinBox<
+                '_,
+                'static,
+                [LinkedList<'static, Page>; MAX_UNIT_POWER + 1],
+            >,
+        >,
+    ) {
+        assert!(
+            !page_slice.is_empty()
+                && (page_slice.len() % 2 == 0 || page_slice.len() == 1)
+        );
         let mut buddies_lock = buddies_lock_option
             .unwrap_or_else(|| unsafe { self.synchronized_buddies() });
         let buddies = buddies_lock.as_mut_slice();
@@ -172,7 +206,11 @@ impl PhysicalAllocator {
         unsafe {
             let buddy_option = Self::find_other_buddy(raw_page.as_ref(), power);
             if let Some(buddy) = buddy_option {
-                let merged_page_slice = Self::merge_buddies(raw_page.as_mut(), buddy, page_slice.len() * 2);
+                let merged_page_slice = Self::merge_buddies(
+                    raw_page.as_mut(),
+                    buddy,
+                    page_slice.len() * 2,
+                );
                 self.push_buddy(merged_page_slice, Some(buddies_lock));
             } else {
                 buddies[power].push_front(raw_page.as_mut().as_node());
@@ -180,13 +218,17 @@ impl PhysicalAllocator {
         }
     }
     //this method should be invoked when all pages are synchronized
-    unsafe fn find_other_buddy(page: &'static Page, power: usize) -> Option<&'static mut Page> {
+    unsafe fn find_other_buddy(
+        page: &'static Page,
+        power: usize,
+    ) -> Option<&'static mut Page> {
         if power == MAX_UNIT_POWER {
             //more merging is impossible
             return None;
         }
         let page_offset = page as *const Page as VirtualAddress;
-        let page_slice_size = BuddyPiece::size_of(power) * mem::size_of::<Page>();
+        let page_slice_size =
+            BuddyPiece::size_of(power) * mem::size_of::<Page>();
         let mut buddy_offset = VirtualAddress::NULL;
         if is_first_buddy(page) {
             if usize::MAX - page_offset > page_slice_size {
@@ -200,9 +242,11 @@ impl PhysicalAllocator {
         }
         let buddy = &mut *(buddy_offset as *mut ListNode<Page>);
         if !buddy.is_used() {
-            let buddy_free_pages_count = buddy.as_slice(page_slice_size).iter()
-                                              .filter(|page| !page.is_used())
-                                              .count();
+            let buddy_free_pages_count = buddy
+                .as_slice(page_slice_size)
+                .iter()
+                .filter(|page| !page.is_used())
+                .count();
             //no other way when second is free, but this one is not -- merge required
             if buddy_free_pages_count == page_slice_size {
                 Some(buddy)
@@ -213,13 +257,18 @@ impl PhysicalAllocator {
             None
         }
     }
-    unsafe fn merge_buddies(first: &'static mut Page, second: &'static mut Page, target_size: usize) -> &'static mut [Page] {
+    unsafe fn merge_buddies(
+        first: &'static mut Page,
+        second: &'static mut Page,
+        target_size: usize,
+    ) -> &'static mut [Page] {
         assert!(!ptr::eq(first as *mut Page, second as *mut Page));
-        let slice_offset = if ptr::from_ref(first).cmp(&ptr::from_ref(second)).is_lt() {
-            ptr::from_mut(first)
-        } else {
-            ptr::from_mut(second)
-        };
+        let slice_offset =
+            if ptr::from_ref(first).cmp(&ptr::from_ref(second)).is_lt() {
+                ptr::from_mut(first)
+            } else {
+                ptr::from_mut(second)
+            };
         slice::from_raw_parts_mut(slice_offset, target_size)
     }
     ///Be careful with such method: it should, theoretically, batch page in solid memory region, but, truly, doesn't
@@ -227,10 +276,15 @@ impl PhysicalAllocator {
         page.free();
         if !page.is_used() {
             let mut list = self.synchronized_pages();
-            unsafe { list.push_back(page.as_node()); }
+            unsafe {
+                list.push_back(page.as_node());
+            }
         }
     }
-    pub fn fast_pages(&'static self, pages_count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+    pub fn fast_pages(
+        &'static self,
+        pages_count: usize,
+    ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         let mut list = LinkedList::<'static, Page>::empty();
         // let mut rest_pages_count = pages_count;
         // let mut batch_size = 2;//the initial count of pages to wrap
@@ -264,16 +318,22 @@ impl PhysicalAllocator {
     }
     ///the method try to unite page with existing list
     unsafe fn dealloc_and_align(&self, page: &'static mut ListNode<Page>) {
-        let list = self.synchronized_pages();//lock list so no one can update it
+        let list = self.synchronized_pages(); //lock list so no one can update it
         page.self_link();
         todo!()
     }
     //allocate continuous memory region
     #[inline(never)]
-    pub fn alloc_pages(&self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+    pub fn alloc_pages(
+        &self,
+        count: usize,
+    ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         self.alloc_densely(count)
     }
-    pub fn new_alloc(&self, count: usize) -> Result<BuddyPiece, OsAllocationError> {
+    pub fn new_alloc(
+        &self,
+        count: usize,
+    ) -> Result<BuddyPiece, OsAllocationError> {
         let mut buddy_index = BuddyPiece::power_of(count);
         assert!(buddy_index <= MAX_UNIT_POWER, "Buddy with too huge power");
         let mut buddies_lock = unsafe { self.synchronized_buddies() };
@@ -285,8 +345,7 @@ impl PhysicalAllocator {
         }
         if let Some(first_page) = buddy_option {
             let piece = BuddyPiece::with_power(buddy_index, first_page);
-            piece.pages().iter_mut()
-                 .for_each(|page| page.take());
+            piece.pages().iter_mut().for_each(|page| page.take());
             Ok(piece)
         } else {
             Err(NoMemory)
@@ -298,9 +357,8 @@ impl PhysicalAllocator {
         assert!(buddy_index <= MAX_UNIT_POWER, "Buddy with too huge power");
         let pages = piece.pages();
         pages.iter_mut().for_each(|page| page.free());
-        let used_pages_count = pages.iter()
-                                    .filter(|page| page.is_used())
-                                    .count();
+        let used_pages_count =
+            pages.iter().filter(|page| page.is_used()).count();
         if used_pages_count == 0 {
             self.push_buddy(pages, None);
             Ok(())
@@ -309,7 +367,10 @@ impl PhysicalAllocator {
             Err(())
         }
     }
-    fn alloc_densely(&self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+    fn alloc_densely(
+        &self,
+        count: usize,
+    ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         let mut pages = self.synchronized_pages();
         let mut longest = 0; //the current longest count of pages in same sequence
         let mut last_offset_option: Option<PhysicalAddress> = None;
@@ -322,7 +383,9 @@ impl PhysicalAllocator {
             } else {
                 first_page_option = Some(page);
             }
-            if let Some(offset) = last_offset_option && page.as_physical() == offset + Page::SIZE {
+            if let Some(offset) = last_offset_option
+                && page.as_physical() == offset + Page::SIZE
+            {
                 last_offset_option = last_offset_option
                     .map(|offset| offset.saturating_add(Page::SIZE));
                 longest += 1;
@@ -334,15 +397,20 @@ impl PhysicalAllocator {
                 break;
             }
         }
-        if let Some(last_offset) = last_offset_option && longest == count {
+        if let Some(last_offset) = last_offset_option
+            && longest == count
+        {
             let mut list = LinkedList::<'static, Page>::empty();
             let mut page_iter = pages.iter_mut();
             let mut should_add = false;
             let mut added_count = 0;
-            while added_count < count && let Some(page) = page_iter.next() {
+            while added_count < count
+                && let Some(page) = page_iter.next()
+            {
                 should_add = should_add || page.as_physical() == last_offset;
                 if should_add {
-                    let page = page_iter.unlink_watched().expect("Already watched");
+                    let page =
+                        page_iter.unlink_watched().expect("Already watched");
                     page.take();
                     list.push_back(page);
                     added_count += 1;
@@ -353,7 +421,10 @@ impl PhysicalAllocator {
             Err(NoMemory)
         }
     }
-    fn alloc_split(&self, count: usize) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+    fn alloc_split(
+        &self,
+        count: usize,
+    ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         let pages = self.synchronized_pages();
         let mut page_iter = unsafe { pages.leak().iter_mut() };
         let mut list = LinkedList::<Page>::empty();
@@ -367,67 +438,70 @@ impl PhysicalAllocator {
         }
         Ok(list)
     }
-    fn synchronized_pages(&self) -> SpinBox<'_, 'static, LinkedList<'static, Page>> {
-        let buddies = unsafe {
-            &mut *self.buddies_cell.get()
-        };
+    fn synchronized_pages(
+        &self,
+    ) -> SpinBox<'_, 'static, LinkedList<'static, Page>> {
+        let buddies = unsafe { &mut *self.buddies_cell.get() };
         SpinBox::new(&self.lock, &mut buddies[0])
     }
-    unsafe fn synchronized_buddies(&self) -> SpinBox<'_, 'static, [LinkedList<'static, Page>; MAX_UNIT_POWER + 1]> {
+    unsafe fn synchronized_buddies(
+        &self,
+    ) -> SpinBox<'_, 'static, [LinkedList<'static, Page>; MAX_UNIT_POWER + 1]>
+    {
         let buddies = &mut *self.buddies_cell.get();
         // assert!(buddy_index < buddies.len());
         SpinBox::new(&self.lock, buddies)
     }
     //current version of kernel disallow to manage page caching policies
-//similar to UNIX (Linux) brk system call
+    //similar to UNIX (Linux) brk system call
     pub fn heap_alloc(
         &mut self,
         _info_rec: &mut ProcessInfo,
         _request_offset: VirtualAddress,
     ) -> Result<(), AllocationError> {
         Ok(())
-// let expanded_space = (request_offset - info_rec.heap_offset) as isize;
-// if expanded_space == 0 {
-//     return Ok(()); //dummy system call -> no space required
-// }
-// let result: Result<(), AllocationError>;
-// if request_offset > 0 {
-//     let page_cnt = Page::upper_bound(expanded_space as usize); //head_offset stored in infoRec is already captured
-//     let pages = self.capture_pages(page_cnt);
-//     if pages.size() != page_cnt {
-//         self.release_pages(pages);
-//         //try to swap memory pages to disk
-//     }
-//     let pages = self.capture_pages(page_cnt);
-//     if pages.size() == page_cnt {
-//         let mark_result = PageAllocator::mark_pages(&mut info_rec.marker, info_rec.heap_offset, &pages, info_rec.flags);
-//         if let Err(error_code) = mark_result {
-//             return Err(PageMarkerInvalidation(error_code));
-//         }
-//         info_rec.heap_offset += pages.size() * Page::SIZE;
-//         info_rec.heap_pages.add_all(pages);
-//         result = Ok(());
-//     } else {
-//         result = Err(OutOfMemory);
-//     }
-// } else {
-//     //possible, that it's not erasing. But even soo, no page should be erased
-//     if (info_rec.heap_offset % request_offset) < Page::SIZE {
-//         return Ok(());
-//     }
-//     let shrunk_space = -expanded_space;
-//     let page_cnt = Page::lower_bound(shrunk_space as usize); //shrunk_space is bigger then Page::SIZe -> so it's possible to remove only redundant pages
-//     let heap_pages = &mut info_rec.heap_pages;
-//     let pages = heap_pages.split_list(heap_pages.size() - page_cnt, heap_pages.size());
-//     let mark_result = PageAllocator::mark_pages(&mut info_rec.marker, info_rec.heap_offset, &pages, MemRangeFlag(MemRangeFlag::EMPTY));
-//     if let Err(error_code) = mark_result {
-//         return Err(PageMarkerInvalidation(error_code));
-//     }
-//     info_rec.heap_offset -= pages.size() * Page::SIZE;
-//     self.release_pages(pages);
-//     result = Ok(());
-// }
-// return result;
+        // let expanded_space = (request_offset - info_rec.heap_offset) as isize;
+        // if expanded_space == 0 {
+        //     return Ok(()); //dummy system call -> no space required
+        // }
+        // let result: Result<(), AllocationError>;
+        // if request_offset > 0 {
+        //     let page_cnt = Page::upper_bound(expanded_space as usize); //head_offset stored in infoRec is already captured
+        //     let pages = self.capture_pages(page_cnt);
+        //     if pages.size() != page_cnt {
+        //         self.release_pages(pages);
+        //         //try to swap memory pages to disk
+        //     }
+        //     let pages = self.capture_pages(page_cnt);
+        //     if pages.size() == page_cnt {
+        //         let mark_result = PageAllocator::mark_pages(&mut info_rec.marker, info_rec.heap_offset, &pages, info_rec.flags);
+        //         if let Err(error_code) = mark_result {
+        //             return Err(PageMarkerInvalidation(error_code));
+        //         }
+        //         info_rec.heap_offset += pages.size() * Page::SIZE;
+        //         info_rec.heap_pages.add_all(pages);
+        //         result = Ok(());
+        //     } else {
+        //         result = Err(OutOfMemory);
+        //     }
+        // } else {
+        //     //possible, that it's not erasing. But even soo, no page should be erased
+        //     if (info_rec.heap_offset % request_offset) < Page::SIZE {
+        //         return Ok(());
+        //     }
+        //     let shrunk_space = -expanded_space;
+        //     let page_cnt = Page::lower_bound(shrunk_space as usize); //shrunk_space is bigger then Page::SIZe -> so it's possible to remove only redundant pages
+        //     let heap_pages = &mut info_rec.heap_pages;
+        //     let pages = heap_pages.split_list(heap_pages.size() - page_cnt, heap_pages.size());
+        //     let mark_result = PageAllocator::mark_pages(&mut info_rec.marker, info_rec.heap_offset, &pages, MemRangeFlag(MemRangeFlag::EMPTY));
+        //     if let Err(error_code) = mark_result {
+        //         return Err(PageMarkerInvalidation(error_code));
+        //     }
+        //     info_rec.heap_offset -= pages.size() * Page::SIZE;
+        //     self.release_pages(pages);
+        //     result = Ok(());
+        // }
+        // return result;
     }
     //capture available pages in rec
     fn capture_pages(&mut self, _page_cnt: usize) -> LinkedList<Page> {

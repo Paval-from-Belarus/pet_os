@@ -1,19 +1,19 @@
-use core::{mem, slice};
 use core::ptr::NonNull;
+use core::{mem, slice};
 
 use kernel_macro::{export_symbolic, ListNode};
-use kernel_types::{declare_constants, declare_types};
 use kernel_types::collections::{LinkedList, ListNode, Queue};
 use kernel_types::drivers::{Device, DeviceId, DriverId, KernelSymbol};
+use kernel_types::{declare_constants, declare_types};
 
 use crate::file_system::{DeviceChild, FileOperations, IndexNode};
 use crate::memory::VirtualAddress;
 use crate::utils::atomics::SpinLockLazyCell;
 
-mod vga;
 mod keyboard;
-mod network;
 mod memory;
+mod network;
+mod vga;
 
 ///The only one DriverId for each driver
 ///Each device can be handler as devices as can
@@ -37,7 +37,8 @@ pub fn register_char_device_range(
 pub fn alloc_char_device_range(
     minor_base: usize,
     count: usize,
-    name: &str) -> Result<DeviceId, ()> {
+    name: &str,
+) -> Result<DeviceId, ()> {
     Err(())
 }
 
@@ -110,28 +111,32 @@ pub struct BlockDeviceOperations {}
 
 pub fn init() {
     unsafe {
-        let bytes_size = (SYMBOL_TABLE_END as *const u8).sub_ptr(SYMBOL_TABLE_START as *const u8);
-        assert!(bytes_size % mem::size_of::<KernelSymbol>() == 0 && bytes_size > mem::size_of::<KernelSymbol>(), "Invalid Symbol table sizes");
+        let bytes_size = (SYMBOL_TABLE_END as *const u8)
+            .sub_ptr(SYMBOL_TABLE_START as *const u8);
+        assert!(
+            bytes_size % mem::size_of::<KernelSymbol>() == 0
+                && bytes_size > mem::size_of::<KernelSymbol>(),
+            "Invalid Symbol table sizes"
+        );
     }
 }
 
 fn find_symbol(name: &str) -> Option<VirtualAddress> {
-    let table_size = unsafe {
-        SYMBOL_TABLE_END.sub_ptr(SYMBOL_TABLE_START)
-    };
-    let symbol_table = unsafe {
-        slice::from_raw_parts(SYMBOL_TABLE_START, table_size)
-    };
-    symbol_table.iter()
-                .find(|entry| entry.has_same_name(name))
-                .map(|entry| entry.offset())
+    let table_size = unsafe { SYMBOL_TABLE_END.sub_ptr(SYMBOL_TABLE_START) };
+    let symbol_table =
+        unsafe { slice::from_raw_parts(SYMBOL_TABLE_START, table_size) };
+    symbol_table
+        .iter()
+        .find(|entry| entry.has_same_name(name))
+        .map(|entry| entry.offset())
 }
 declare_constants! {
     pub usize,
     MAX_DEVICE_COUNT = 128;
 }
 
-static DRIVERS_TABLE: SpinLockLazyCell<[VirtualAddress; MAX_DEVICE_COUNT]> = SpinLockLazyCell::empty();
+static DRIVERS_TABLE: SpinLockLazyCell<[VirtualAddress; MAX_DEVICE_COUNT]> =
+    SpinLockLazyCell::empty();
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq)]

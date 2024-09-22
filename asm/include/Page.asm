@@ -107,6 +107,7 @@ struct GDTEntry
 }
 ends
 assert sizeof.GDTEntry = 8
+;@Declare{struct=GDTHandle}
 struct GDTHandle ;handle for lgdt
 {
     .wTableSize  dw 0 ;size of GDT

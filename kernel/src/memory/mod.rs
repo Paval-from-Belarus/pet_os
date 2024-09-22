@@ -14,12 +14,11 @@ use kernel_types::collections::{
     LinkedList, ListNode, TinyLinkedList, TinyListNode,
 };
 use kernel_types::{bitflags, declare_constants};
-use paging::table::{DirEntry, RefTable};
 pub use paging::PagingProperties;
 
 use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
 use crate::memory::paging::{
-    BootAllocator, GDTTable, PageMarker, PageMarkerError, TABLE_ENTRIES_COUNT,
+    BootAllocator, GDTTable, PageMarker, PageMarkerError,
 };
 use crate::process::{TaskState, ThreadTask};
 use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
@@ -29,7 +28,10 @@ mod allocators;
 mod arch;
 mod paging;
 
-pub use paging::CaptureMemRec;
+pub use paging::table::{
+    DirEntry, DirEntryFlag, RefTable, TableEntry, TableEntryFlag,
+};
+pub use paging::{CaptureMemRec, DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT};
 
 pub enum ZoneType {
     Usable,
