@@ -21,9 +21,10 @@ ASM_COMPILER = "wine ${SCRIPTS_PATH}/fasm.exe"
 #fixme: conventional way to include specific macros
 INCLUDE="/home/Paval/Triggers/ASM/petOS"
 
-KERNEL_BIN_NAME = "kernel.o"
 # the output image file location
 HDD_IMAGE = "${IMAGES_PATH}/petos.img"
+
+KERNEL_BIN = "${OBJECTS_PATH}/kernel.bin"
 
 [config]
 default_to_workspace = false
@@ -57,16 +58,29 @@ args = [
 dependencies = ["layout", "asm", "kernel_lib"]
 script = '''
     ld -n \
+    --as-needed \
     --gc-sections \
-    --no-undefined \
     -Map=${MAP_FILE} \
     -T ${LD_SCRIPT} \
     -z max-page-size=0x1000 \
     -melf_i386 \
-    -o ${OBJECTS_PATH}/${KERNEL_BIN_NAME} \
+    -o ${KERNEL_BIN} \
     ${OBJECTS_PATH}/interceptors.o \
     ${OBJECTS_PATH}/entry.o \
-    ${KERNEL_LIB}
+    ${KERNEL_LIB} ;
+
+    strip -s ${KERNEL_BIN} ;
+
+    if grub2-file --is-x86-multiboot2 ${KERNEL_BIN}; then
+        printf "Multiboot22 header check passed\n"
+    else
+        printf "Multiboot header check failed\n"
+        exit 42
+    fi ;
+
+    stat ${KERNEL_BIN} | grep "Size: [[:digit:]]"
+
+
 '''
 
 
@@ -93,20 +107,20 @@ script = '''
     sudo losetup /dev/loop0 ${HDD_IMAGE} 
     sudo losetup /dev/loop1 ${HDD_IMAGE} -o 1048576
 
-    sudo mkfs.fat -F16 /dev/loop1
+    sudo mkfs.fat -F32 /dev/loop1
 
     sudo mkdir -p /mnt/petos_build
     sudo mount /dev/loop1 /mnt/petos_build
 
-    sudo mkdir -p /mnt/petos_build/boot/grub2
+    sudo mkdir -p /mnt/petos_build/boot/grub
     sudo mkdir -p /mnt/petos_build/sys
 
     sudo grub2-install --boot-directory=/mnt/petos_build/boot/grub2 --no-floppy \
     --modules="normal part_msdos multiboot disk drivemap" --target=i386-pc /dev/loop0 \
     --locales=uk
 
-    sudo cp ${OBJECTS_PATH}/${KERNEL_BIN_NAME} /mnt/petos_build/sys/io.sys
-    sudo cp ${GRUB_CFG} /mnt/petos_build/boot/grub2/
+    sudo cp ${KERNEL_BIN} /mnt/petos_build/sys/io.sys
+    sudo cp ${GRUB_CFG} /mnt/petos_build/boot/grub/
     sync
 
     sudo umount /mnt/petos_build
@@ -114,4 +128,14 @@ script = '''
 
     sudo losetup -d /dev/loop1
     sudo losetup -d /dev/loop0
+'''
+[tasks.unlock-image]
+condition = { files_exist = ["${OUTPUT_PATH}.lock"] }
+command = "rm"
+args = ["${OUTPUT_PATH}.lock"]
+
+[tasks.debug]
+dependencies = ["image", "unlock-image"]
+script = '''
+    bochs-debugger -q -f ${SCRIPTS_PATH}/bochs-config.bxrc
 '''

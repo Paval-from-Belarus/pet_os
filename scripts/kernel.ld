@@ -12,11 +12,13 @@ KERNEL_STACK_TOP = 0;
 PAGE_SIZE = 0x1000;
 
 MAX_PHYSICAL_MEMORY_SIZE = 32 * 1024 * 1024;
-/*fixme: memory map size should be determined at runtime*/
-MEMORY_MAP_SIZE = MAX_PHYSICAL_MEMORY_SIZE / PAGE_SIZE * PAGE_REC_SIZE;
 
 /* Size of structure in MemoryMap */
 PAGE_REC_SIZE = 16;
+
+/*fixme: memory map size should be determined at runtime*/
+MEMORY_MAP_SIZE = MAX_PHYSICAL_MEMORY_SIZE / PAGE_SIZE * PAGE_REC_SIZE;
+
 
 /* Replace with env args */
 CONSOLE_WIDTH = 80;
@@ -27,10 +29,28 @@ SECTIONS
 	/* Link the kernel at this address: "." means the current address */
 	/*  The kernel must be aligne to this offset to ensure that
 	 *  lower addresses are accessed directly */
+
+	. = ALIGN(8);
+
 	. = (KERNEL_PHYSICAL_START + KERNEL_VIRTUAL_OFFSET);
-	PROVIDE(START_OFFSET = .);
-	.text : AT(KERNEL_PHYSICAL_START) {
+	/* . = (KERNEL_PHYSICAL_START); */
+
+	PROVIDE(LOADER_START = .);
+
+	.loader : AT(KERNEL_PHYSICAL_START) {
+	    KEEP(*(.multiboot2_header));
 	    *(.loader)
+	    *(.loader_data)
+	}
+
+	PROVIDE(LOADER_END = .);
+	LOADER_SIZE = LOADER_END - LOADER_START;
+
+	. = ALIGN(PAGE_SIZE);
+
+	PROVIDE(START_OFFSET = .);
+	/* .text : AT(KERNEL_PHYSICAL_START) { */
+	.text : {
 	    *(.text  .text.* .stub .gnu.linkonce.t.*)
 	}
 
@@ -82,12 +102,13 @@ SECTIONS
        . = ALIGN(PAGE_SIZE);
        .heap : { . = . + SIZEOF(.bss); }
        PROVIDE(END_OFFSET = .);
+       
        /DISCARD/ : {
        	*(.eh_frame .note.GNU-stack)
        }
 
-       BINARY_SIZE = edata - START_OFFSET;
-       KERNEL_SIZE = END_OFFSET - START_OFFSET;
+       BINARY_SIZE = edata - START_OFFSET + LOADER_SIZE;
+       KERNEL_SIZE = END_OFFSET - START_OFFSET + LOADER_SIZE;
 
        KERNEL_PHYSICAL_END = KERNEL_PHYSICAL_START + KERNEL_SIZE;
 }

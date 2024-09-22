@@ -5,6 +5,7 @@ Architecture.MIPS = 4
 
 GRUB_MAGIC_NUMBER equ 0xe85250d6
 
+; GRUB_MAGIC_NUMBER equ 0x1BADB002
 
 ;Multiboot2 header
 ;@Declare{struct=HeaderTag}
@@ -30,12 +31,15 @@ macro HeaderTag.valueOf Params&
              =size =: sizeAfter =), Params
     \{
         isMatched equ 1
-        \local label
-        label HeaderTag
+        ; \local label
+        ; label HeaderTag
         size = sizeAfter + sizeof.HeaderTag
-        store word type at label + HeaderTag.wType
-        store word flags at label + HeaderTag.wFlags
-        store word size at label + HeaderTag.dSize
+        dw type
+        dw flags
+        dd size
+        ; store word type at label + HeaderTag.wType
+        ; store word flags at label + HeaderTag.wFlags
+        ; store word size at label + HeaderTag.dSize
     \}
 
     match =0, isMatched 
@@ -50,7 +54,7 @@ macro HeaderTag.tail
     HeaderTag.valueOf ( type: HeaderTagType.TAIL, flags: 0, size: 0 ) 
 }
 
-;@Declare{enum=HeaderTag}
+;@Declare{enum=HeaderTag
 macro HeaderTag.infoRequest
 {
 
@@ -127,6 +131,7 @@ macro HeaderTag.address headerAddr*, textStart*, textEnd*
 HeaderTagType.TAIL equ 0
 HeaderTagType.INFO equ 1
 HeaderTagType.ADDRESS equ 2
+HeaderTagType.DEFAULT_LOADER equ 3
 HeaderTagType.CONSOLE_FLAGS equ 4
 HeaderTagType.FRAME_BUFFER equ 5
 HeaderTagType.MODULE_ALIGN equ 6

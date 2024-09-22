@@ -33,8 +33,7 @@ extrn CONSOLE_HEIGHT
 
 public EntryPoint as '_start'
 
-
-section '.header' align 8
+section '.multiboot2_header' align 8
 
 
 Header.size = Header.end - Header.start
@@ -46,10 +45,6 @@ dd Architecture.i386
 dd Header.size
 dd  -(GRUB_MAGIC_NUMBER + Architecture.i386 + Header.size)
 
-HeaderTag.address Header.start, Kernel.start, Kernel.end 
-HeaderTag.alignment
-HeaderTag.i386Loader (EntryPoint)
-HeaderTag.frameBuffer CONSOLE_WIDTH, CONSOLE_HEIGHT
 HeaderTag.tail
 
 Header.end:
@@ -58,7 +53,7 @@ Header.end:
 section '.loader' executable
 
 EntryPoint:
-    cmp eax, GRUB_MAGIC_NUMBER 
+    cmp eax, 0x36d76289
     jne .panic
     ; MultiBoot info is storing in at ebx
     test ebx, ebx
@@ -69,7 +64,14 @@ EntryPoint:
     
     call Kernel.initBootAllocator
 
-    call Kernel.parseBootInfo 
+    push eax
+    mov eax, Kernel.parseBootInfo
+    call Kernel.toPhysicalAddress
+    mov edx, eax
+    pop eax
+
+    call edx
+
 
     todo 'Consider to use boot modules'
 .init_kernel:
@@ -318,7 +320,7 @@ Kernel.toPhysicalAddress:
     sub eax, KERNEL_VIRTUAL_OFFSET
 ret
 
-section '.data' writeable 
+section '.loader_data' writeable 
 
 Kernel.properties KernelProperties
 

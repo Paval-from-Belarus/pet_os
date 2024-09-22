@@ -58,3 +58,8 @@
  
 
 
+```bash
+  set root(hd0,msdos1)
+  multiboot2 /sys/io.sys
+  boot
+```
