@@ -11,6 +11,7 @@ pub struct SpinBox<'a, 'b, T> {
 impl<'a, 'b, T> SpinBox<'a, 'b, T> {
     pub fn new(lock: &'a SpinLock, data: &'b mut T) -> Self {
         lock.acquire();
+
         Self {
             lock,
             data: UnsafeCell::new(data),

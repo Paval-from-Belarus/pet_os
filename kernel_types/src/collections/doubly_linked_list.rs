@@ -226,6 +226,12 @@ impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
             _marker: PhantomData,
         }
     }
+
+    /// Returns the clear of this [`LinkedList<T>`].
+    ///
+    /// # Safety
+    ///
+    /// .
     pub unsafe fn clear(&mut self) {
         self.first = None;
         self.last = None;
@@ -233,17 +239,21 @@ impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
     pub fn iter(&self) -> ListIterator<'a, T> {
         ListIterator::new(self)
     }
+
     pub fn limit_iter(&self) -> LimitedIterator<'a, ListIterator<'a, T>> {
         LimitedIterator::new(self.iter())
     }
+
     pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
         MutListIterator::new(self)
     }
+
     pub fn limit_iter_mut<'b>(
         &'b mut self,
     ) -> LimitedIterator<'a, MutListIterator<'a, 'b, T>> {
         LimitedIterator::new(self.iter_mut())
     }
+
     pub fn splice(&mut self, other: LinkedList<'a, T>) {
         if let Some(first) = other.first
             && let Some(last) = other.last
@@ -535,6 +545,7 @@ impl<'a, I> LimitedIterator<'a, I> {
             _marker: PhantomData,
         }
     }
+
     fn can_proceed<T>(&mut self, next: &T) -> bool {
         let raw_next = unsafe {
             let ref_next = mem::transmute::<&T, &u8>(next);

@@ -125,13 +125,16 @@ impl PhysicalAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
     pub fn new(boot_allocator: BootAllocator) -> Self {
         let lock = SpinLock::new();
+
         let mut raw_buddies =
             MaybeUninit::<LinkedList<'static, Page>>::uninit_array::<
                 { MAX_UNIT_POWER + 1 },
             >();
+
         for buddy in raw_buddies.iter_mut() {
             buddy.write(LinkedList::empty());
         }
+
         let buddies = unsafe { raw_buddies.map(|buddy| buddy.assume_init()) };
         let allocator = Self {
             lock,
@@ -140,12 +143,20 @@ impl PhysicalAllocator {
         unsafe { allocator.collect_free_pages(boot_allocator) }
         allocator
     }
+
     unsafe fn collect_free_pages(&self, mut boot_allocator: BootAllocator) {
+        log!("Areas count = {}", boot_allocator.as_slice().len());
+
         for pivot in boot_allocator.as_slice_mut() {
             let mut mem_offset = pivot.next_offset();
+
+            log!("Free pages = {}", pivot.free_pages_count());
+
             for _ in 0..pivot.free_pages_count() {
-                let mut raw_page = Page::map_offset(mem_offset);
-                let node_index = raw_page.as_mut().index();
+                let mut raw_page = Page::new_at_offset(mem_offset);
+
+                let node_index = raw_page.as_ref().index();
+
                 if node_index >= MEMORY_MAP_SIZE {
                     break;
                 }
@@ -154,27 +165,38 @@ impl PhysicalAllocator {
                     mem_offset += Page::SIZE;
                     continue;
                 }
+
                 let page_slice = self.find_page_slice(raw_page.as_mut());
+
                 mem_offset += Page::SIZE * page_slice.len();
+
                 let buddy_index = BuddyPiece::power_of(page_slice.len());
+
                 let page_node = page_slice[0].as_node();
+
                 (*self.buddies_cell.get())[buddy_index].push_front(page_node);
             }
         }
     }
+
     unsafe fn find_page_slice(&self, page: &mut Page) -> &'static mut [Page] {
         let mut expected_slice_size = MAX_UNIT_SIZE;
+
         loop {
             let page_slice = page.as_slice_mut(expected_slice_size);
+
             let effective_slice_size = page_slice
                 .iter()
                 .filter(|page| !page.is_used())
                 .take(expected_slice_size)
                 .count();
+
             if effective_slice_size == expected_slice_size {
                 return page_slice;
             }
+
             expected_slice_size /= 2;
+
             assert!(
                 expected_slice_size >= 1,
                 "At least one page in free_pages should be free"
@@ -373,16 +395,12 @@ impl PhysicalAllocator {
     ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         let mut pages = self.synchronized_pages();
         let mut longest = 0; //the current longest count of pages in same sequence
-        let mut last_offset_option: Option<PhysicalAddress> = None;
-        let mut first_page_option: Option<&ListNode<Page>> = None;
-        for page in pages.iter() {
-            if let Some(first_page) = first_page_option {
-                if ptr::eq(first_page, page) {
-                    return Err(NoMemory);
-                }
-            } else {
-                first_page_option = Some(page);
-            }
+
+        let mut last_offset_option = Option::<PhysicalAddress>::None;
+
+        for page in pages.iter().limit() {
+            log!("Next page");
+
             if let Some(offset) = last_offset_option
                 && page.as_physical() == offset + Page::SIZE
             {
@@ -393,10 +411,12 @@ impl PhysicalAllocator {
                 last_offset_option = Some(page.as_physical());
                 longest = 1;
             }
+
             if longest == count {
                 break;
             }
         }
+
         if let Some(last_offset) = last_offset_option
             && longest == count
         {
@@ -421,6 +441,7 @@ impl PhysicalAllocator {
             Err(NoMemory)
         }
     }
+
     fn alloc_split(
         &self,
         count: usize,
@@ -438,12 +459,14 @@ impl PhysicalAllocator {
         }
         Ok(list)
     }
+
     fn synchronized_pages(
         &self,
     ) -> SpinBox<'_, 'static, LinkedList<'static, Page>> {
         let buddies = unsafe { &mut *self.buddies_cell.get() };
-        SpinBox::new(&self.lock, &mut buddies[0])
+        SpinBox::new(&self.lock, &mut buddies[7])
     }
+
     unsafe fn synchronized_buddies(
         &self,
     ) -> SpinBox<'_, 'static, [LinkedList<'static, Page>; MAX_UNIT_POWER + 1]>
@@ -452,6 +475,7 @@ impl PhysicalAllocator {
         // assert!(buddy_index < buddies.len());
         SpinBox::new(&self.lock, buddies)
     }
+
     //current version of kernel disallow to manage page caching policies
     //similar to UNIX (Linux) brk system call
     pub fn heap_alloc(

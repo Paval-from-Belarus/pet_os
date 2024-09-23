@@ -200,7 +200,6 @@ Kernel.setPaging:
      mov eax, ebx ;restore directory offset
      call MMU.init
 .configureKernel:
-.dosMapping:
      mov eax, PageDirEntry.Present or PageDirEntry.Writable
      mov edx, PageTableEntry.Present or PageTableEntry.Writable
      ;mov ebx, ebx
@@ -280,6 +279,7 @@ Kernel.setPaging:
      mov dword [edx + PagingProperties.lpPageDirectory], eax
 
      mov dword [edx + PagingProperties.lpGDTHandle], GlobalDescriptorTable.handle
+     mov dword [edx + PagingProperties.lpCaptureRec], Kernel.properties + PagingProperties.captureRecList + CaptureRecList.records
 
      mov ecx, Kernel.properties
      mov eax, ebx
@@ -301,8 +301,8 @@ proc captureMemory uses ebx eax
      add eax, CaptureRecList.records
      mov ebx, eax
 .searchLoop:
-     cmp dword [es: ebx + CaptureRangeRec.dMemOffset], 0
-     je .nextRec
+     cmp dword [es: ebx + CaptureRangeRec.dMemOffset], Kernel.start
+     jl .nextRec
 
      mov eax, dword [es: ebx + CaptureRangeRec.dPageCnt]
      sub eax, dword [es: ebx + CaptureRangeRec.dNextPage]

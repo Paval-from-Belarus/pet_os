@@ -12,6 +12,7 @@ use kernel_types::collections::LinkedList;
 use kernel_types::{bitflags, declare_constants, Zeroed};
 use table::{RefTable, RefTableEntry};
 
+use crate::log;
 use crate::memory::paging::table::{
     DirEntry, DirEntryFlag, TableEntry, TableEntryFlag,
 };
@@ -376,23 +377,30 @@ impl PageMarker {
     ) -> Result<(), PageMarkerError> {
         let mut addressable_offset = map_region.virtual_offset;
         let mut memory_offset = map_region.physical_offset;
+
         let flags = map_region.flags;
+
         for _ in 0..map_region.page_count {
             let table_index = table_index!(addressable_offset);
             let entry_index = entry_index!(addressable_offset);
+
             let dir_entry = self.directory.get_mut_unchecked(table_index);
+            dir_entry.set_flags(flags.as_directory_flag());
+
             let mut page_table = {
-                let page_table_option =
-                    RefTable::wrap_page_table(dir_entry.clone());
-                dir_entry.set_flags(flags.as_directory_flag());
+                let page_table_option = RefTable::wrap_page_table(*dir_entry);
+
                 match page_table_option {
                     None => {
                         if !can_allocate {
+                            log!("Failed to allocated in page marker");
                             unreachable()
                             //truly, we should panic
                         }
+
                         let option_table_offset =
                             self.alloc_pages(TABLE_PAGES_COUNT);
+
                         if let Some(table_offset) = option_table_offset {
                             RefTable::<TableEntry>::with_default_values(
                                 table_offset as *mut TableEntry,
@@ -405,13 +413,15 @@ impl PageMarker {
                     Some(page_table) => page_table,
                 }
             };
+
             let table_entry = page_table.get_mut_unchecked(entry_index);
             table_entry.set_page_offset(memory_offset);
             table_entry.set_flags(flags.as_table_flag());
             addressable_offset += Page::SIZE;
             memory_offset += Page::SIZE;
         }
-        return Ok(());
+
+        Ok(())
     }
     #[inline(never)]
     pub fn unmap_range(

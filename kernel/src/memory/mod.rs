@@ -123,7 +123,7 @@ pub fn enable_task_switching(table: &mut GDTTable) {
 #[deprecated]
 fn first_dealloc_handler(offset: PhysicalAddress) {
     let mut page = unsafe {
-        let mut node = Page::map_offset(offset);
+        let mut node = Page::new_at_offset(offset);
         node.as_mut()
     };
     page.take();
@@ -137,7 +137,7 @@ fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
 
 fn dealloc_physical_page(offset: PhysicalAddress) {
     let allocator = PHYSICAL_ALLOCATOR.get();
-    let mut page = unsafe { Page::map_offset(offset) };
+    let mut page = unsafe { Page::new_at_offset(offset) };
     unsafe {
         allocator.dealloc_page(page.as_mut());
     }
@@ -342,6 +342,9 @@ pub struct Page {
     ref_count: AtomicUsize,
 }
 
+//wrapper for page to control uses
+pub struct PageOwner {}
+
 assert_eq_size!(Page, [u8; 16]);
 pub enum AllocationStrategy {
     #[doc = "Allocation for Kernel space when page cannot be swapped"]
@@ -495,12 +498,14 @@ impl Page {
     pub fn take(&self) {
         let _old_value = self.ref_count.fetch_add(1, Ordering::Relaxed);
     }
+
     pub fn free(&self) {
         let old_value = self.ref_count.fetch_sub(1, Ordering::SeqCst);
         if old_value == 0 {
             panic!("The free page releases again");
         }
     }
+
     pub fn is_used(&self) -> bool {
         self.ref_count.load(Ordering::SeqCst) > 0
     }
@@ -513,7 +518,7 @@ impl Page {
         byte_size / Page::SIZE
     }
 
-    pub unsafe fn map_offset(offset: PhysicalAddress) -> NonNull<Page> {
+    pub unsafe fn new_at_offset(offset: PhysicalAddress) -> NonNull<Page> {
         let page_index: usize = offset >> Page::SHIFT;
         let page_offset = unsafe { mem_map_offset().add(page_index) };
         unsafe { NonNull::new_unchecked(page_offset) }
@@ -591,7 +596,7 @@ mod tests {
         let page_index = 42;
         let page_virtual_offset = mem_map_virtual_offset
             + page_index * mem::size_of::<ListNode<Page>>();
-        let page = unsafe { Page::map_offset(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
+        let page = unsafe { Page::new_at_offset(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
         assert_eq!(page.as_ptr() as VirtualAddress, page_virtual_offset);
         assert_eq!(
             page_index << Page::SHIFT,

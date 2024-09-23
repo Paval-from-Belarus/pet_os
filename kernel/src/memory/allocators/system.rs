@@ -11,13 +11,13 @@ use kernel_types::collections::{
 };
 use kernel_types::{declare_constants, Zeroed};
 
-use crate::memory;
 use crate::memory::{
     MemoryMappingRegion, OsAllocationError, Page, PhysicalAddress,
     PhysicalAllocator, ToPhysicalAddress, VirtualAddress,
 };
 use crate::utils::atomics::SpinLock;
 use crate::utils::SpinBox;
+use crate::{log, memory};
 
 pub enum Alignment {
     Word,
@@ -288,20 +288,24 @@ impl SlabAllocatorInner {
         entries_count: usize,
     ) -> Result<(), OsAllocationError> {
         let free_entries_count = free_entries.iter().count();
+
         if free_entries_count < entries_count {
             let additional_pages = Page::upper_bound(
                 (entries_count - free_entries_count)
                     * mem::size_of::<TinyListNode<SlabEntry>>(),
             );
+
             let pages = self.allocator.alloc_pages(additional_pages)?;
             let new_entries = self.commit_new_entries(pages);
             free_entries.splice(new_entries);
         }
+
         let mut heap_pages = self
             .allocator
             .alloc_pages(entries_count * SlabEntry::DEFAULT_SLAB_SIZE)?;
         let mut page_iter = heap_pages.iter_mut();
         let mut entry_iter = free_entries.iter_mut();
+
         for _ in 0..entries_count {
             let _ = entry_iter
                 .next()
@@ -327,6 +331,7 @@ impl SlabAllocatorInner {
             entry.set(slab_offset, cached_pages, SlabEntry::DEFAULT_SLAB_SIZE);
             self.page_pool.push_front(entry);
         }
+
         Ok(())
     }
     #[inline(never)]
@@ -336,33 +341,36 @@ impl SlabAllocatorInner {
     ) -> TinyLinkedList<'static, SlabEntry> {
         assert!(!pages.is_empty());
         const ENTRIES_PER_PAGE: usize =
-            Page::SIZE / mem::size_of::<TinyListNode<SlabEntry>>();
+            Page::SIZE / mem::size_of::<SlabEntry>();
+
         const_assert!(ENTRIES_PER_PAGE > 0);
         let mut entries = TinyLinkedList::<SlabEntry>::empty();
-        let mut first_page_option: Option<&ListNode<Page>> = None;
-        for page in pages.iter() {
-            if let Some(first_page) = first_page_option {
-                if ptr::eq(first_page, page) {
-                    break;
-                }
-            } else {
-                first_page_option = Some(page);
-            }
-            let page_offset = page.as_physical();
+
+        for page in pages.iter().limit() {
             let committed_offset =
-                self.commit(page_offset, 1).cast::<SlabEntry>();
+                self.commit(page.as_physical(), 1).cast::<SlabEntry>();
+
             let mut current_node =
                 unsafe { committed_offset.add(ENTRIES_PER_PAGE - 1) };
+
+            // let mut next_node: *mut TinyListNode<SlabEntry> = ptr::null_mut();
             let mut next_node: *mut TinyListNode<SlabEntry> = ptr::null_mut();
             for _ in 0..ENTRIES_PER_PAGE {
-                unsafe {}
                 let node = unsafe {
-                    let node = TinyListNode::from(next_node);
+                    let next_node = if next_node.is_null() {
+                        None
+                    } else {
+                        Some(&mut *next_node)
+                    };
+
+                    let node = TinyListNode::new(next_node);
                     let entry = SlabEntry::new(node);
                     current_node.write(entry);
                     &mut *current_node
                 };
+
                 next_node = node.as_next() as _;
+
                 unsafe {
                     entries.push_front(node.as_next());
                     current_node = current_node.sub(1);
@@ -383,8 +391,12 @@ impl SlabAllocatorInner {
             physical_offset: offset,
             page_count: count,
         };
+
+        log!("Region will be commited for heap (at {})", self.heap_offset);
+
         memory::kernel_commit(region)
             .expect("Failed to commit kernel heap memory");
+
         let committed_offset = self.heap_offset;
         //no additional check because marker is not failed
         self.heap_offset = self.heap_offset.add(Page::SIZE * count);

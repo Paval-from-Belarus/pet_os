@@ -33,16 +33,16 @@ impl<T: ListNodeData> ListNode<T> {
     }
 }
 
-impl<T: TinyListNodeData> From<*mut TinyListNode<T>> for TinyListNode<T> {
-    fn from(value: *mut TinyListNode<T>) -> Self {
-        let next = if value.is_null() {
-            None
-        } else {
-            unsafe { Some(&mut *value) }
-        };
-        Self::new(next)
-    }
-}
+// impl<T: TinyListNodeData> From<*mut TinyListNode<T>> for TinyListNode<T> {
+//     fn from(value: *mut TinyListNode<T>) -> Self {
+//         let next = if value.is_null() {
+//             None
+//         } else {
+//             unsafe { Some(&mut *value) }
+//         };
+//         Self::new(next)
+//     }
+// }
 
 impl<T: TinyListNodeData> TinyListNode<T> {
     pub const fn empty() -> Self {
