@@ -4,7 +4,7 @@ use core::ptr::NonNull;
 
 use bitfield::bitfield;
 
-use crate::{bitflags, declare_types};
+use crate::{declare_types};
 
 ///Currently, KernelSymbol holds size_of(usize) * 3 bytes
 ///Consider to remove

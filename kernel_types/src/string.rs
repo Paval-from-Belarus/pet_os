@@ -1,6 +1,6 @@
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
-use core::ptr::NonNull;
+
 use core::str::from_utf8_unchecked;
 use core::{ptr, slice};
 
