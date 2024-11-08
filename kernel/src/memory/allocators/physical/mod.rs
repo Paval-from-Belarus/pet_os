@@ -145,7 +145,7 @@ impl PhysicalAllocator {
     fn push_buddy(
         &self,
         page_slice: &'static mut [Page],
-        buddies_lock_option: Option<bool>,
+        _buddies_lock_option: Option<bool>,
         // Option<
         //     SpinBox<
         //         '_,

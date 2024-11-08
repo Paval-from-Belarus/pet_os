@@ -60,6 +60,9 @@ args = [
     "fix",
     "-Z", "build-std=core,alloc,compiler_builtins",
     "-Z", "build-std-features=compiler-builtins-mem",
+    "--lib",
+    "-p",
+    "${PROJECT}",
     "--release",
     "--target=${TARGET_SPEC}",
 ]
