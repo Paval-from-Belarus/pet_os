@@ -3,13 +3,13 @@ pub mod properties;
 use core::arch::asm;
 
 use multiboot2::BootInformation;
-use properties::{BootModules, KernelProperties};
+use properties::KernelProperties;
 
 use crate::{
     entry_index, get_eax,
     memory::{
-        self, CaptureMemRec, DirEntry, DirEntryFlag, Page, PhysicalAddress,
-        PhysicalAllocator, RefTable, TableEntry, TableEntryFlag,
+        self, CaptureMemRec, DirEntry, DirEntryFlag, Page, PageDirectory,
+        PhysicalAddress, RefTable, TableEntry, TableEntryFlag,
         ToPhysicalAddress, VirtualAddress, DIRECTORY_PAGES_COUNT,
         TABLE_ENTRIES_COUNT,
     },
@@ -146,7 +146,7 @@ unsafe fn enable_paging() {
 fn mark_region(
     dir_flag: DirEntryFlag,
     table_flag: TableEntryFlag,
-    dir: &mut RefTable<DirEntry>,
+    dir: &mut PageDirectory<'static>,
     p_o: PhysicalAddress,
     v_o: VirtualAddress,
     pages_count: usize,
@@ -162,14 +162,14 @@ fn mark_region(
 
         dir_entry.set_flags(dir_flag);
 
-        let mut table = RefTable::wrap_page_table(*dir_entry).unwrap();
-        let table_entry = {
-            let index = entry_index!(next_virtual_offset);
-            table.get_mut(index).unwrap()
-        };
+        if let Some(page_table) = dir_entry.page_table_mut() {
+            let table_entry =
+                &mut page_table[entry_index!(next_virtual_offset)];
 
-        table_entry.set_flags(table_flag);
-        table_entry.set_page_offset(next_physical_offset);
+            table_entry.set_flags(table_flag);
+            table_entry.set_page_offset(next_physical_offset);
+        }
+
         next_virtual_offset += Page::SIZE;
         next_physical_offset += Page::SIZE;
     }

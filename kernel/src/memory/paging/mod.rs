@@ -1,23 +1,16 @@
 use core::arch::asm;
 use core::cell::UnsafeCell;
-use core::intrinsics::unreachable;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 
 use static_assertions::assert_eq_size;
 
-use kernel_types::collections::LinkedList;
 use kernel_types::{bitflags, declare_constants, Zeroed};
-use table::{RefTable, RefTableEntry};
 
-use crate::log;
-use crate::memory::paging::table::{
-    DirEntry, DirEntryFlag, TableEntry, TableEntryFlag,
-};
+use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntryFlag};
 use crate::memory::{
-    AllocHandler, DeallocHandler, MemoryDescriptor, MemoryMappingFlag,
-    MemoryMappingRegion, Page, PhysicalAddress, SegmentSelector,
-    TaskStateDescriptor, ToVirtualAddress, VirtualAddress,
+    MemoryDescriptor, MemoryMappingFlag, Page, PhysicalAddress,
+    SegmentSelector, TaskStateDescriptor, ToVirtualAddress, VirtualAddress,
 };
 
 mod marker;

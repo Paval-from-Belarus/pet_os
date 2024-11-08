@@ -32,7 +32,7 @@ pub use paging::table::{
 };
 pub use paging::{CaptureMemRec, DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT};
 
-use self::paging::PageDirectory;
+pub use self::paging::PageDirectory;
 
 pub enum ZoneType {
     Usable,

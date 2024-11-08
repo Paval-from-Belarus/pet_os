@@ -27,19 +27,18 @@ pub struct PageMarker<'a> {
 impl<'a> PageMarker<'a> {
     /// build new page marker for memory regions
     pub fn from_regions(
-        &mut self,
         regions: LinkedList<MemoryMappingRegion>,
         alloc_handler: AllocHandler,
         dealloc_handler: DeallocHandler,
-    ) -> Result<PageMarker, PageMarkerError> {
-        let Some(dir_offset) = self.alloc_pages(DIRECTORY_PAGES_COUNT) else {
+    ) -> Result<PageMarker<'a>, PageMarkerError> {
+        let Some(dir_offset) = alloc_handler(DIRECTORY_PAGES_COUNT) else {
             return Err(PageMarkerError::OutOfMemory);
         };
 
         let directory = unsafe {
             core::mem::transmute::<
                 VirtualAddress,
-                &'static mut [DirEntry<'static>; DIRECTORY_ENTRIES_COUNT],
+                &'a mut [DirEntry<'a>; DIRECTORY_ENTRIES_COUNT],
             >(dir_offset.as_virtual())
         };
 
@@ -159,7 +158,7 @@ impl<'a> PageMarker<'a> {
             table_entry.set_page_offset(memory_offset);
             table_entry.set_flags(flags.as_table_flag());
 
-            self.directory[table_index] = dir_entry;
+            self.directory[table_index] = dir_entry.clone();
 
             addressable_offset += Page::SIZE;
             memory_offset += Page::SIZE;
@@ -196,7 +195,7 @@ impl<'a> PageMarker<'a> {
                 log!("Unmapping not existing dir table");
             }
 
-            self.directory[table_index] = dir_entry;
+            // self.directory[table_index] = dir_entry;
 
             addressable_offset += Page::SIZE;
         }
@@ -214,7 +213,7 @@ impl<'a> PageMarker<'a> {
             if dir_entry.has_page_table() {
                 let page_offset = dir_entry.table_offset();
                 dir_entry.clear();
-                self.dealloc_page(page_offset);
+                deallocator(page_offset);
             }
         }
     }
@@ -223,6 +222,8 @@ impl<'a> PageMarker<'a> {
 impl<'a> Drop for PageMarker<'a> {
     fn drop(&mut self) {
         log!("Deallocation page marker");
+        let deallocator = self.dealloc_handler;
+
         for dir_entry in self.directory.iter_mut() {
             let Some(page_table) = dir_entry.page_table_mut() else {
                 continue;
@@ -230,15 +231,16 @@ impl<'a> Drop for PageMarker<'a> {
 
             for table_entry in page_table.iter_mut() {
                 if table_entry.has_page() {
-                    self.dealloc_page(table_entry.page_offset());
+                    deallocator(table_entry.page_offset());
                 }
                 // table_entry.clear()
             }
-            self.dealloc_page(dir_entry.table_offset());
+
+            deallocator(dir_entry.table_offset());
         }
 
         let dir_offset = self.directory.as_ptr() as VirtualAddress;
 
-        self.dealloc_page(dir_offset.as_physical());
+        deallocator(dir_offset.as_physical());
     }
 }

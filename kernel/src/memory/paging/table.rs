@@ -204,7 +204,7 @@ impl<'a> DirEntry<'a> {
         self.entry & DirEntry::ADDRESS_MASK
     }
 
-    pub fn page_table(&self) -> Option<&'a [TableEntry]> {
+    pub fn page_table(&self) -> Option<&[TableEntry]> {
         let offset = self.table_offset();
 
         if offset == PhysicalAddress::NULL {
@@ -221,7 +221,7 @@ impl<'a> DirEntry<'a> {
         Some(page_table)
     }
 
-    pub fn page_table_mut(&mut self) -> Option<&'a mut [TableEntry]> {
+    pub fn page_table_mut(&mut self) -> Option<&mut [TableEntry]> {
         let offset = self.table_offset();
 
         if offset == PhysicalAddress::NULL {
