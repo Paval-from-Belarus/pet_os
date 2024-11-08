@@ -1,81 +1,13 @@
 use core::marker::PhantomData;
-use core::{mem, slice};
+use core::mem;
 use kernel_types::bitflags;
 
-use crate::memory::paging::{CommonError, TABLE_ENTRIES_COUNT};
-use crate::memory::{
-    PhysicalAddress, ToPhysicalAddress, ToVirtualAddress, VirtualAddress,
-};
-
-pub struct RefTable<T> {
-    entries: *mut T,
-    size: usize,
-}
+use crate::memory::paging::TABLE_ENTRIES_COUNT;
+use crate::memory::{PhysicalAddress, ToPhysicalAddress, ToVirtualAddress};
 
 pub trait RefTableEntry {
     fn empty() -> Self;
     fn clear(&mut self);
-}
-
-impl<T: Sized + Clone + RefTableEntry> RefTable<T> {
-    pub fn wrap(entries: *mut T, size: usize) -> Self {
-        Self { entries, size }
-    }
-
-    //the table will be initialized with default values
-    pub fn with_default_values(entries: *mut T, size: usize) -> Self {
-        let mut table = RefTable::wrap(entries, size);
-
-        table
-            .as_slice_mut()
-            .iter_mut()
-            .for_each(RefTableEntry::clear);
-        table
-    }
-
-    pub fn get(&self, index: usize) -> Option<&T> {
-        if index >= self.size {
-            return None;
-        }
-        unsafe { Some(self.get_unchecked(index)) }
-    }
-
-    pub unsafe fn get_unchecked(&self, index: usize) -> &T {
-        assert!(index < self.size);
-        let pointer: *mut T = self.entries.add(index);
-        &*pointer
-    }
-
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
-        if index >= self.size {
-            return None;
-        }
-        unsafe { Some(self.get_mut_unchecked(index)) }
-    }
-
-    pub unsafe fn get_mut_unchecked(&mut self, index: usize) -> &mut T {
-        assert!(index < self.size);
-        let pointer: *mut T = self.entries.add(index);
-        &mut *pointer
-    }
-
-    pub fn as_slice(&self) -> &[T] {
-        unsafe { slice::from_raw_parts(self.entries, self.size) }
-    }
-
-    pub fn as_slice_mut(&mut self) -> &mut [T] {
-        unsafe { slice::from_raw_parts_mut(self.entries, self.size) }
-    }
-
-    pub fn set(&mut self, index: usize, entry: T) -> Result<(), CommonError> {
-        if index >= self.size {
-            return Err(CommonError::OutOfBounds);
-        }
-
-        let pointer = unsafe { self.entries.add(index) };
-        unsafe { pointer.write(entry) };
-        Ok(())
-    }
 }
 
 bitflags!(
@@ -134,29 +66,11 @@ impl<'a> RefTableEntry for TableEntry<'a> {
     fn empty() -> Self {
         TableEntry {
             entry: PhysicalAddress::NULL | TableEntryFlag::EMPTY,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
     fn clear(&mut self) {
         self.entry = PhysicalAddress::NULL | TableEntryFlag::EMPTY;
-    }
-}
-
-impl<'a> RefTable<DirEntry<'a>> {
-    ///load table in CPU register
-    pub unsafe fn load(&self) {}
-}
-
-impl<'a> RefTable<TableEntry<'a>> {
-    pub fn wrap_page_table(entry: DirEntry) -> Option<Self> {
-        let table_offset = entry.table_offset().as_virtual();
-        if table_offset == VirtualAddress::NULL {
-            return None;
-        }
-
-        let entries = table_offset as *mut TableEntry;
-        let size = TABLE_ENTRIES_COUNT;
-        Some(Self { entries, size })
     }
 }
 
@@ -252,7 +166,7 @@ impl<'a> TableEntry<'a> {
 
         TableEntry {
             entry,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 

@@ -27,10 +27,11 @@ mod allocators;
 mod arch;
 mod paging;
 
-pub use paging::table::{
-    DirEntry, DirEntryFlag, RefTable, TableEntry, TableEntryFlag,
+pub use paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
+pub use paging::{
+    CaptureMemRec, DIRECTORY_ENTRIES_COUNT, DIRECTORY_PAGES_COUNT,
+    TABLE_ENTRIES_COUNT,
 };
-pub use paging::{CaptureMemRec, DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT};
 
 pub use self::paging::PageDirectory;
 

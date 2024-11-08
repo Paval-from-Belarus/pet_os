@@ -9,8 +9,8 @@ use crate::{
     entry_index, get_eax,
     memory::{
         self, CaptureMemRec, DirEntry, DirEntryFlag, Page, PageDirectory,
-        PhysicalAddress, RefTable, TableEntry, TableEntryFlag,
-        ToPhysicalAddress, VirtualAddress, DIRECTORY_PAGES_COUNT,
+        PhysicalAddress, TableEntry, TableEntryFlag, ToPhysicalAddress,
+        VirtualAddress, DIRECTORY_ENTRIES_COUNT, DIRECTORY_PAGES_COUNT,
         TABLE_ENTRIES_COUNT,
     },
     set_eax, table_index,
@@ -90,6 +90,7 @@ pub unsafe fn parse_grub_args_native(
 
 fn interpret_command_line(_args: &str, _properties: &mut KernelProperties) {}
 
+#[allow(unused)]
 unsafe fn enable_paging() {
     let properties = {
         let raw_properties: *mut KernelProperties = get_eax!();
@@ -112,11 +113,9 @@ unsafe fn enable_paging() {
         return;
     };
 
-    drop(allocator);
-
-    let mut directory = RefTable::wrap(
+    let directory = core::slice::from_raw_parts_mut(
         directory_offset as *mut DirEntry,
-        DIRECTORY_PAGES_COUNT,
+        DIRECTORY_ENTRIES_COUNT,
     );
 
     let tables = core::slice::from_raw_parts_mut(
@@ -124,8 +123,7 @@ unsafe fn enable_paging() {
         DIRECTORY_PAGES_COUNT,
     );
 
-    for (dir_entry, page_entries) in
-        directory.as_slice_mut().iter_mut().zip(tables.iter_mut())
+    for (dir_entry, page_entries) in directory.iter_mut().zip(tables.iter_mut())
     {
         *dir_entry = DirEntry::new(
             page_entries as *mut TableEntry as PhysicalAddress,
@@ -137,8 +135,6 @@ unsafe fn enable_paging() {
             TableEntryFlag(TableEntryFlag::EMPTY),
         ));
     }
-
-    drop(tables);
 
     // mark_region(DirEntryFlag(DirEntryFlag::), table_flag, dir, p_o, v_o, pages_count)
 }
