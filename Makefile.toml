@@ -54,6 +54,15 @@ args = [
     "--release", 
     # "--target-dir", "${OBJECTS_PATH}"
 ]
+[tasks.fix]
+command = "cargo"
+args = [
+    "fix",
+    "-Z", "build-std=core,alloc,compiler_builtins",
+    "-Z", "build-std-features=compiler-builtins-mem",
+    "--target=${TARGET_SPEC}",
+]
+
 [tasks.kernel]
 dependencies = ["layout", "asm", "kernel_lib"]
 script = '''
