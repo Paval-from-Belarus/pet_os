@@ -1,5 +1,5 @@
-use core::cell::UnsafeCell;
-use core::mem::MaybeUninit;
+mod buddy;
+
 use core::ptr::NonNull;
 use core::{mem, ptr, slice};
 
@@ -13,78 +13,51 @@ use crate::memory::{
     OsAllocationError, Page, PhysicalAddress, ProcessState, ToPhysicalAddress,
     VirtualAddress, MEMORY_MAP_SIZE,
 };
-use crate::utils::atomics::SpinLock;
-use crate::utils::SpinBox;
+
+pub use buddy::*;
 
 declare_constants!(
     pub usize,
     MAX_UNIT_SIZE = 64, "The maximal count of pages for continuous memory layout";
     MAX_UNIT_POWER = BuddyPiece::power_of(MAX_UNIT_SIZE), "The power of 2 of `MAX_UNIT_SIZE`";
 );
-pub struct BuddyPiece {
-    ///the power of two request
-    size: usize,
-    power: usize,
-    first_page_cell: UnsafeCell<&'static mut ListNode<Page>>,
-    // _marker: PhantomData<>,
-}
-
-impl BuddyPiece {
-    pub fn with_pages(
-        pages_count: usize,
-        first_page: &'static mut ListNode<Page>,
-    ) -> Self {
-        assert!(pages_count <= MAX_UNIT_SIZE);
-        let power = Self::power_of(pages_count);
-        Self::with_power(power, first_page)
-    }
-    pub fn with_power(
-        power: usize,
-        first_page: &'static mut ListNode<Page>,
-    ) -> Self {
-        assert!(power <= MAX_UNIT_POWER);
-        let size = Self::size_of(power);
-        // let raw_first_page = NonNull::from(first_page);
-        Self {
-            size,
-            power,
-            first_page_cell: UnsafeCell::new(first_page),
-        }
-    }
-    pub fn power(&self) -> usize {
-        self.power
-    }
-    ///the count of pages for given piece
-    pub fn size(&self) -> usize {
-        self.size
-    }
-    //if this struct was constructed then all requirements are already passed. It's save to create slice of Page struct
-    pub fn pages(&self) -> &'static mut [Page] {
-        unsafe {
-            let first_page = &mut (*self.first_page_cell.get());
-            first_page.as_slice_mut(self.size)
-        }
-    }
-    const fn power_of(mut number: usize) -> usize {
-        let mut power = 0;
-        while number > 0 {
-            number /= 2;
-            power += 1;
-        }
-        power
-    }
-    fn size_of(power: usize) -> usize {
-        let mut size = 1;
-        for _ in 0..power {
-            size *= 2;
-        }
-        size
-    }
-}
 
 pub struct FreePages {
     pages: LinkedList<'static, Page>,
     count: usize,
+}
+
+pub type BuddyArray = [LinkedList<'static, Page>; MAX_UNIT_POWER + 1];
+
+pub trait BuddyPage<'a>: Sized {
+    fn as_buddies(&mut self) -> &'a mut [Self];
+}
+
+impl BuddyPage<'static> for Page {
+    fn as_buddies(&mut self) -> &'static mut [Page] {
+        let mut expected_slice_size = MAX_UNIT_SIZE;
+
+        loop {
+            let page_slice = unsafe { self.as_slice_mut(expected_slice_size) };
+
+            let effective_slice_size = page_slice
+                .iter()
+                .filter(|page| !page.is_used())
+                .take(expected_slice_size)
+                .count();
+
+            if effective_slice_size == expected_slice_size {
+                return page_slice;
+            }
+
+            expected_slice_size /= 2;
+
+            assert!(
+                expected_slice_size >= 1,
+                "At least one page in free_pages should be free"
+            );
+        }
+    }
 }
 
 ///It's a responsibility of caller class to maintain synchronized caller sequence
@@ -92,10 +65,8 @@ pub struct FreePages {
 ///All methods are thread-safe
 ///todo: allocator should works as buddy allocator
 pub struct PhysicalAllocator {
-    lock: SpinLock,
-    buddies_cell: UnsafeCell<[LinkedList<'static, Page>; MAX_UNIT_POWER + 1]>,
-    //all atomic operations should be atomic in system scope
-    //it means that no thread switching will be enabled while atomic operations are not finished
+    buddies: spin::Mutex<BuddyArray>, //all atomic operations should be atomic in system scope
+                                      //it means that no thread switching will be enabled while atomic operations are not finished
 }
 
 unsafe impl Send for PhysicalAllocator {}
@@ -121,106 +92,76 @@ fn is_second_buddy(page: &'static Page) -> bool {
     !is_first_buddy(page)
 }
 
+unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
+    let mut buddies: BuddyArray = core::array::from_fn(|_| Default::default());
+    log!("Areas count = {}", boot_allocator.as_slice().len());
+
+    for pivot in boot_allocator.as_slice_mut() {
+        let mut mem_offset = pivot.next_offset();
+
+        log!("Free pages = {}", pivot.free_pages_count());
+
+        for _ in 0..pivot.free_pages_count() {
+            let mut raw_page = Page::new_at_offset(mem_offset);
+
+            let node_index = raw_page.as_ref().index();
+
+            if node_index >= MEMORY_MAP_SIZE {
+                break;
+            }
+            //only the page marked as first can begin the buddy slice
+            if !is_first_buddy(raw_page.as_mut()) {
+                mem_offset += Page::SIZE;
+                continue;
+            }
+
+            let page_slice = raw_page.as_mut().as_buddies();
+
+            mem_offset += Page::SIZE * page_slice.len();
+
+            let buddy_index = BuddyPiece::power_of(page_slice.len());
+
+            let page_node = page_slice[0].as_node();
+
+            buddies[buddy_index].push_front(page_node);
+        }
+    }
+
+    buddies
+}
+
 impl PhysicalAllocator {
     ///Construct page allocator and return self with heap start offset (memory offset usable for addressing from the scratch)
-    pub fn new(boot_allocator: BootAllocator) -> Self {
-        let lock = SpinLock::new();
+    pub fn from_boot(boot_allocator: BootAllocator) -> Self {
+        let buddies = unsafe { collect_buddies(boot_allocator) };
 
-        let mut raw_buddies =
-            MaybeUninit::<LinkedList<'static, Page>>::uninit_array::<
-                { MAX_UNIT_POWER + 1 },
-            >();
-
-        for buddy in raw_buddies.iter_mut() {
-            buddy.write(LinkedList::empty());
-        }
-
-        let buddies = unsafe { raw_buddies.map(|buddy| buddy.assume_init()) };
-        let allocator = Self {
-            lock,
-            buddies_cell: UnsafeCell::new(buddies),
-        };
-        unsafe { allocator.collect_free_pages(boot_allocator) }
-        allocator
-    }
-
-    unsafe fn collect_free_pages(&self, mut boot_allocator: BootAllocator) {
-        log!("Areas count = {}", boot_allocator.as_slice().len());
-
-        for pivot in boot_allocator.as_slice_mut() {
-            let mut mem_offset = pivot.next_offset();
-
-            log!("Free pages = {}", pivot.free_pages_count());
-
-            for _ in 0..pivot.free_pages_count() {
-                let mut raw_page = Page::new_at_offset(mem_offset);
-
-                let node_index = raw_page.as_ref().index();
-
-                if node_index >= MEMORY_MAP_SIZE {
-                    break;
-                }
-                //only the page marked as first can begin the buddy slice
-                if !is_first_buddy(raw_page.as_mut()) {
-                    mem_offset += Page::SIZE;
-                    continue;
-                }
-
-                let page_slice = self.find_page_slice(raw_page.as_mut());
-
-                mem_offset += Page::SIZE * page_slice.len();
-
-                let buddy_index = BuddyPiece::power_of(page_slice.len());
-
-                let page_node = page_slice[0].as_node();
-
-                (*self.buddies_cell.get())[buddy_index].push_front(page_node);
-            }
+        Self {
+            // lock: SpinLock::new(),
+            buddies: spin::Mutex::new(buddies),
         }
     }
 
-    unsafe fn find_page_slice(&self, page: &mut Page) -> &'static mut [Page] {
-        let mut expected_slice_size = MAX_UNIT_SIZE;
-
-        loop {
-            let page_slice = page.as_slice_mut(expected_slice_size);
-
-            let effective_slice_size = page_slice
-                .iter()
-                .filter(|page| !page.is_used())
-                .take(expected_slice_size)
-                .count();
-
-            if effective_slice_size == expected_slice_size {
-                return page_slice;
-            }
-
-            expected_slice_size /= 2;
-
-            assert!(
-                expected_slice_size >= 1,
-                "At least one page in free_pages should be free"
-            );
-        }
-    }
     //atomically save push slice in buddy array
     fn push_buddy(
         &self,
         page_slice: &'static mut [Page],
-        buddies_lock_option: Option<
-            SpinBox<
-                '_,
-                'static,
-                [LinkedList<'static, Page>; MAX_UNIT_POWER + 1],
-            >,
-        >,
+        buddies_lock_option: Option<bool>,
+        // Option<
+        //     SpinBox<
+        //         '_,
+        //         'static,
+        //         [LinkedList<'static, Page>; MAX_UNIT_POWER + 1],
+        //     >
+        // >
     ) {
         assert!(
             !page_slice.is_empty()
                 && (page_slice.len() % 2 == 0 || page_slice.len() == 1)
         );
-        let mut buddies_lock = buddies_lock_option
-            .unwrap_or_else(|| unsafe { self.synchronized_buddies() });
+        // let mut buddies_lock = buddies_lock_option
+        //     .unwrap_or_else(|| unsafe { self.synchronized_buddies() });
+        let mut buddies_lock = unsafe { self.synchronized_buddies() };
+
         let buddies = buddies_lock.as_mut_slice();
         let power = BuddyPiece::power_of(page_slice.len());
         let mut raw_page = NonNull::from(&mut page_slice[0]);
@@ -233,7 +174,7 @@ impl PhysicalAllocator {
                     buddy,
                     page_slice.len() * 2,
                 );
-                self.push_buddy(merged_page_slice, Some(buddies_lock));
+                self.push_buddy(merged_page_slice, Some(false)); //buddies_lock
             } else {
                 buddies[power].push_front(raw_page.as_mut().as_node());
             }
@@ -298,9 +239,7 @@ impl PhysicalAllocator {
         page.free();
         if !page.is_used() {
             let mut list = self.synchronized_pages();
-            unsafe {
-                list.push_back(page.as_node());
-            }
+            list.push_back(page.as_node());
         }
     }
     pub fn fast_pages(
@@ -446,8 +385,9 @@ impl PhysicalAllocator {
         &self,
         count: usize,
     ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
-        let pages = self.synchronized_pages();
-        let mut page_iter = unsafe { pages.leak().iter_mut() };
+        let mut pages = self.synchronized_pages();
+        // let mut page_iter = unsafe { pages.leak().iter_mut() };
+        let mut page_iter = pages.iter_mut();
         let mut list = LinkedList::<Page>::empty();
         for _ in 0..count {
             if page_iter.next().is_none() {
@@ -462,18 +402,13 @@ impl PhysicalAllocator {
 
     fn synchronized_pages(
         &self,
-    ) -> SpinBox<'_, 'static, LinkedList<'static, Page>> {
-        let buddies = unsafe { &mut *self.buddies_cell.get() };
-        SpinBox::new(&self.lock, &mut buddies[7])
+    ) -> spin::MutexGuard<LinkedList<'static, Page>> {
+        todo!()
     }
 
-    unsafe fn synchronized_buddies(
-        &self,
-    ) -> SpinBox<'_, 'static, [LinkedList<'static, Page>; MAX_UNIT_POWER + 1]>
-    {
-        let buddies = &mut *self.buddies_cell.get();
+    unsafe fn synchronized_buddies(&self) -> spin::MutexGuard<BuddyArray> {
         // assert!(buddy_index < buddies.len());
-        SpinBox::new(&self.lock, buddies)
+        self.buddies.lock()
     }
 
     //current version of kernel disallow to manage page caching policies
@@ -532,8 +467,13 @@ impl PhysicalAllocator {
         LinkedList::empty()
     }
     fn release_pages(&mut self, _pages: LinkedList<Page>) {}
+
     //this function is used to captured required for allocation list of pages
-    fn get_page_rec_by_index(&mut self, _index: usize) -> Option<Page> {
+    pub fn index(&self, _index: usize) -> Option<&Page> {
+        None
+    }
+
+    pub fn index_mut(&mut self, _index: usize) -> Option<&mut Page> {
         None
     }
 }

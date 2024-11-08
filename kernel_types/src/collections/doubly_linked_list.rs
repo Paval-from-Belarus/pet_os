@@ -213,6 +213,11 @@ impl<'a, T: ListNodeData> BorrowingLinkedList<'a> for LinkedList<'a, T> {
 }
 
 impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
+    /// .
+    ///
+    /// # Safety
+    ///
+    /// .
     //this method remove links from node
     pub unsafe fn with_node(node: &'a mut ListNode<T>) -> LinkedList<'a, T> {
         node.self_link();
@@ -291,6 +296,11 @@ impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
             unreachable!("Splice with empty list!");
         }
     }
+    /// .
+    ///
+    /// # Safety
+    ///
+    /// .
     unsafe fn same_as_first(&self, node: NonNull<ListNode<T>>) -> bool {
         if let Some(head) = self.first
             && let Some(_) = self.last

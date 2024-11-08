@@ -97,7 +97,7 @@ pub fn init_kernel_space(
         PageMarker::new(directory, alloc_physical_pages, first_dealloc_handler);
 
     KERNEL_MARKER.set(marker);
-    let allocator = PhysicalAllocator::new(allocator);
+    let allocator = PhysicalAllocator::from_boot(allocator);
     PHYSICAL_ALLOCATOR.set(allocator);
 
     // let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
