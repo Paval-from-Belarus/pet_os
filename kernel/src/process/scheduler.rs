@@ -204,7 +204,7 @@ impl TaskScheduler {
     }
     //this method should be invoked with properly synchronization police
     unsafe fn reschedule(&self) {
-        let mut inner = self.inner();
+        let inner = self.inner();
         let next_task = inner.next_task();
         inner.replace_current(next_task);
     }
@@ -216,7 +216,7 @@ impl TaskScheduler {
     }
     pub fn sleep(&self, period: usize) {
         self.lock();
-        let mut inner = self.inner();
+        let inner = self.inner();
         let blocked_current = inner.block_current();
         blocked_current.start_time += period; //update the time until wait
         assert!(

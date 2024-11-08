@@ -112,7 +112,7 @@ impl SlabEntry {
         take_offset
     }
 
-    pub fn release(&mut self, offset: VirtualAddress) {
+    pub fn release(&mut self, _offset: VirtualAddress) {
         //not implemented
     }
 

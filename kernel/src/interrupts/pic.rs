@@ -2,7 +2,7 @@ use core::arch::asm;
 
 use kernel_types::declare_constants;
 use num_enum::{
-    FromPrimitive, IntoPrimitive, TryFromPrimitive, UnsafeFromPrimitive,
+    IntoPrimitive, TryFromPrimitive,
 };
 
 use crate::utils::io;

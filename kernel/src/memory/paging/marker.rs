@@ -49,7 +49,7 @@ impl<'a> PageMarker<'a> {
         };
 
         for region in regions.limit_iter() {
-            marker.map_user_range(&region)?;
+            marker.map_user_range(region)?;
         }
 
         Ok(marker)
@@ -135,7 +135,7 @@ impl<'a> PageMarker<'a> {
             let table_index = table_index!(addressable_offset);
             let entry_index = entry_index!(addressable_offset);
 
-            let mut dir_entry = self.directory[table_index].clone();
+            let dir_entry = &mut self.directory[table_index];
 
             dir_entry.set_flags(flags.as_directory_flag());
 
@@ -158,8 +158,6 @@ impl<'a> PageMarker<'a> {
             table_entry.set_page_offset(memory_offset);
             table_entry.set_flags(flags.as_table_flag());
 
-            self.directory[table_index] = dir_entry.clone();
-
             addressable_offset += Page::SIZE;
             memory_offset += Page::SIZE;
         }
@@ -180,7 +178,7 @@ impl<'a> PageMarker<'a> {
             let table_index = table_index!(addressable_offset);
             let entry_index = entry_index!(addressable_offset);
 
-            let mut dir_entry = self.directory[table_index].clone();
+            let dir_entry = &mut self.directory[table_index];
 
             if let Some(page_table) = dir_entry.page_table_mut() {
                 let table_entry = &mut page_table[entry_index];
@@ -194,8 +192,6 @@ impl<'a> PageMarker<'a> {
             } else {
                 log!("Unmapping not existing dir table");
             }
-
-            // self.directory[table_index] = dir_entry;
 
             addressable_offset += Page::SIZE;
         }

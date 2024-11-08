@@ -1,6 +1,6 @@
 use core::arch::asm;
 use core::cell::UnsafeCell;
-use core::mem::{offset_of, MaybeUninit};
+use core::mem::{MaybeUninit};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{mem, ptr};
@@ -228,7 +228,7 @@ impl ThreadTask {
     }
 }
 
-fn default_thread_routine(arg: *mut ()) {
+fn default_thread_routine(_arg: *mut ()) {
     unsafe { interrupts::enable() };
 }
 
@@ -265,7 +265,7 @@ pub fn submit_task(task: &'static mut ThreadTask) {
     SCHEDULER.get().add_task(task);
 }
 
-fn accept(task: &'static ThreadTask) {}
+fn accept(_task: &'static ThreadTask) {}
 
 //run the kernel main loop
 pub fn run() -> ! {
@@ -284,7 +284,7 @@ pub fn init() -> CallbackInfo {
     CallbackInfo::default(on_timer)
 }
 
-fn idle_task(args: *mut ()) {
+fn idle_task(_args: *mut ()) {
     loop {
         log!("Idle task");
         unsafe {

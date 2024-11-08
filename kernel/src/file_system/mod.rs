@@ -1,15 +1,15 @@
 use core::cell::UnsafeCell;
-use core::hash::Hash;
+
 use core::ptr;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 
-use fallible_collections::{FallibleVec, TryCollect};
-use num_enum::FromPrimitive;
+
+
 
 use kernel_macro::ListNode;
 use kernel_types::collections::{HashData, HashTable};
-use kernel_types::collections::{HashKey, LinkedList, ListNode, TinyListNode};
+use kernel_types::collections::{LinkedList, ListNode, TinyListNode};
 use kernel_types::drivers::Device;
 use kernel_types::string::{MutString, QuickString};
 use kernel_types::{bitflags, declare_constants};
@@ -21,9 +21,9 @@ use crate::utils::SpinBox;
 
 mod fat;
 
-pub fn parse_path(path: MutString) {}
+pub fn parse_path(_path: MutString) {}
 
-pub fn registry(file_system: *const FileSystemType) {}
+pub fn registry(_file_system: *const FileSystemType) {}
 declare_constants!(
     pub usize,
     MAX_FILE_NAME = 255, "The maximal length for file name";
@@ -109,23 +109,23 @@ bitflags! {
     BLOCK = 0x2,
     CHAR = 0x4
 }
-pub fn file_read(handle: usize) -> Result<(), ()> {
+pub fn file_read(_handle: usize) -> Result<(), ()> {
     todo!()
 }
 
-pub fn file_write(handle: usize) -> Result<(), ()> {
+pub fn file_write(_handle: usize) -> Result<(), ()> {
     todo!()
 }
 
-pub fn file_move(source: &str, target: &str) -> Result<(), ()> {
+pub fn file_move(_source: &str, _target: &str) -> Result<(), ()> {
     todo!()
 }
 
-pub fn file_open(path: &str) -> Result<usize, ()> {
+pub fn file_open(_path: &str) -> Result<usize, ()> {
     todo!()
 }
 
-pub fn file_close(handle: usize) -> Result<(), ()> {
+pub fn file_close(_handle: usize) -> Result<(), ()> {
     todo!()
 }
 
@@ -183,16 +183,16 @@ struct SearchResult {
     name: QuickString<'static>,
 }
 
-pub fn file_name_lookup(path: &str, mut mount_point: &mut MountPoint) {
+pub fn file_name_lookup(path: &str, mount_point: &mut MountPoint) {
     let path_iter = resolve_wildcards(path)
         .split('/')
         .filter(|path| !path.is_empty())
         .map(QuickString::from);
-    let fs = mount_point.fs();
+    let _fs = mount_point.fs();
     let mut table = PATH_TABLE.get().table();
-    let mut parent_inode_option = Option::<&IndexNode>::None;
+    let parent_inode_option = Option::<&IndexNode>::None;
     for path in path_iter {
-        let found_node = table.find(&path, |node| -> bool {
+        let _found_node = table.find(&path, |node| -> bool {
             parent_inode_option
                 .map(|parent| node.is_parent(parent))
                 //the node should be in root it no parent

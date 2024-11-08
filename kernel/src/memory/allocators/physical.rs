@@ -340,7 +340,7 @@ impl PhysicalAllocator {
     }
     ///the method try to unite page with existing list
     unsafe fn dealloc_and_align(&self, page: &'static mut ListNode<Page>) {
-        let list = self.synchronized_pages(); //lock list so no one can update it
+        let _list = self.synchronized_pages(); //lock list so no one can update it
         page.self_link();
         todo!()
     }

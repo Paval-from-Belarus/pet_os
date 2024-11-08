@@ -75,7 +75,7 @@ declare_constants!(
     RESERVED_SYSCALL = 0xFFFF_FFFF, "No function to zero can be used; this function used to test system initialization";
     INVALID = 0;
 );
-pub extern "x86-interrupt" fn syscall(frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn syscall(_frame: &mut InterruptStackFrame) {
     let id: usize = unsafe { get_eax!() };
     if id == RESERVED_SYSCALL {
         log!("interrupts are initialized");
@@ -91,68 +91,68 @@ pub extern "x86-interrupt" fn division_by_zero(
     log!("division by zero");
 }
 
-pub extern "x86-interrupt" fn debug(frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn debug(_frame: &mut InterruptStackFrame) {
     log!("debug int");
 }
 
-pub extern "x86-interrupt" fn nonmaskable(frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn nonmaskable(_frame: &mut InterruptStackFrame) {
     log!("nmi int");
 }
 
-pub extern "x86-interrupt" fn breakpoint(frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn breakpoint(_frame: &mut InterruptStackFrame) {
     log!("breakpoint");
 }
 
-pub extern "x86-interrupt" fn overflow(frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn overflow(_frame: &mut InterruptStackFrame) {
     log!("overflow");
 }
 
-pub extern "x86-interrupt" fn bound_check(frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn bound_check(_frame: &mut InterruptStackFrame) {
     log!("bound check failed");
 }
 
-pub extern "x86-interrupt" fn invalid_opcode(frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn invalid_opcode(_frame: &mut InterruptStackFrame) {
     log!("invalid opcode int");
 }
 
 pub extern "x86-interrupt" fn device_not_available(
-    frame: &mut InterruptStackFrame,
+    _frame: &mut InterruptStackFrame,
 ) {
     log!("device not available");
 }
 
 //we can do nothing
 pub extern "x86-interrupt" fn double_fault(
-    frame: &mut InterruptStackFrame,
-    code: usize,
+    _frame: &mut InterruptStackFrame,
+    _code: usize,
 ) {
     panic!("The double fault exception occurs. We can nothing...(");
 }
 
 pub extern "x86-interrupt" fn invalid_tss(
-    frame: &mut InterruptStackFrame,
+    _frame: &mut InterruptStackFrame,
     code: usize,
 ) {
     log!("Invalid tss code={}", code);
 }
 
 pub extern "x86-interrupt" fn invalid_segment(
-    frame: &mut InterruptStackFrame,
-    code: usize,
+    _frame: &mut InterruptStackFrame,
+    _code: usize,
 ) {
     log!("invalid segment");
 }
 
 pub extern "x86-interrupt" fn stack_fault(
-    frame: &mut InterruptStackFrame,
-    code: usize,
+    _frame: &mut InterruptStackFrame,
+    _code: usize,
 ) {
     log!("stack fault");
 }
 
 pub extern "x86-interrupt" fn general_protection(
-    frame: &mut InterruptStackFrame,
-    code: usize,
+    _frame: &mut InterruptStackFrame,
+    _code: usize,
 ) {
     log!("general protection fault");
 }
@@ -169,8 +169,8 @@ pub extern "x86-interrupt" fn page_fault(
 }
 
 pub extern "x86-interrupt" fn alignment_check(
-    frame: &mut InterruptStackFrame,
-    code: usize,
+    _frame: &mut InterruptStackFrame,
+    _code: usize,
 ) {
     log!("alignment check failed");
 }

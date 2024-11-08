@@ -4,15 +4,14 @@ use core::{mem, ptr};
 use kernel_macro::ListNode;
 use kernel_types::collections::TinyListNode;
 use kernel_types::{declare_constants, declare_types};
-pub use lock::InterruptableLazyCell;
+
 
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
 use crate::memory::AllocationStrategy::Kernel;
 use crate::memory::{
-    InterruptGate, PrivilegeLevel, SegmentSelector, SystemType,
-    ToPhysicalAddress, VirtualAddress,
+    InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, VirtualAddress,
 };
 use crate::utils::atomics::{SpinLock, SpinLockLazyCell};
 use crate::{get_eax, memory, syscall};
@@ -202,7 +201,7 @@ impl InterruptGate {
 const MAX_INTERRUPTS_COUNT: usize = 256;
 
 ///the method to registry InterruptObject
-pub fn registry(handle: Handle, line: IrqLine, info: CallbackInfo) {
+pub fn registry(_handle: Handle, line: IrqLine, info: CallbackInfo) {
     let index = u8::from(line.line) as usize;
     let interceptors = INTERCEPTORS.get();
     let manager = interceptors[index];
@@ -323,7 +322,7 @@ fn init_interceptors(table: &mut IDTable) {
 
 const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::default(suppress_irq);
 
-const fn suppress_irq(is_processed: bool, context: *mut ()) -> bool {
+const fn suppress_irq(_is_processed: bool, _context: *mut ()) -> bool {
     false
 }
 

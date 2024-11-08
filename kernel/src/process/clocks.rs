@@ -17,7 +17,7 @@ pub enum ClockType {
 
 ///This upper level function is supposed to be really slow
 ///Do not use this in high performance places
-pub fn now(clocks: ClockType) -> Timestamp {
+pub fn now(_clocks: ClockType) -> Timestamp {
     todo!()
 }
 

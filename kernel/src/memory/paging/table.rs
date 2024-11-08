@@ -121,7 +121,7 @@ impl<'a> RefTableEntry for DirEntry<'a> {
     fn empty() -> Self {
         DirEntry {
             entry: PhysicalAddress::NULL | DirEntryFlag::EMPTY,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 
@@ -178,7 +178,7 @@ impl<'a> DirEntry<'a> {
 
         DirEntry {
             entry,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
     //This is impossible to change offset to PageTable
