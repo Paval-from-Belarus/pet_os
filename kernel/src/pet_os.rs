@@ -7,13 +7,11 @@
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
 #![feature(ptr_from_ref)]
-#![feature(pointer_byte_offsets)]
 #![feature(ptr_sub_ptr)]
 #![feature(offset_of)]
 #![feature(ascii_char)]
 // really raw features
 #![feature(maybe_uninit_uninit_array)]
-#![feature(const_maybe_uninit_zeroed)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(hasher_prefixfree_extras)]
 
@@ -21,21 +19,19 @@ extern crate alloc;
 extern crate fallible_collections;
 extern crate num_enum;
 extern crate static_assertions;
+extern crate spin;
 
 extern crate multiboot2;
 
 use core::arch::asm;
 use core::ptr;
 
-use fallible_collections::FallibleVec;
-
 use memory::PagingProperties;
-use multiboot2::BootInformation;
 use utils::logging;
 
 use crate::process::TaskPriority;
 
-#[cfg(any(not(target_arch = "x86")))]
+#[cfg(not(target_arch = "x86"))]
 compile_error!("Operation system is suitable for x86 CPU only");
 
 mod boot;
@@ -61,10 +57,11 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
 pub unsafe extern "C" fn main() {
     let properties: *mut PagingProperties;
     asm!(
-    "",
-    out("eax") properties,
-    options(nostack)
+        "",
+        out("eax") properties,
+        options(nostack)
     );
+
     unsafe { rust_main(&mut *properties) };
 }
 
@@ -86,12 +83,12 @@ pub unsafe extern "C" fn main() {
 pub fn rust_main(properties: &mut PagingProperties) {
     logging::init();
 
-    let dir_table = properties.page_directory();
+    let directory = properties.page_directory();
     let heap_offset = properties.heap_offset();
 
     let allocator = properties.boot_allocator();
 
-    memory::init_kernel_space(allocator, dir_table, heap_offset);
+    memory::init_kernel_space(allocator, directory, heap_offset);
 
     interrupts::init();
 

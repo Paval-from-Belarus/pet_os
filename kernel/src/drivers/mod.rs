@@ -3,8 +3,8 @@ use core::{mem, slice};
 
 use kernel_macro::{export_symbolic, ListNode};
 use kernel_types::collections::{LinkedList, ListNode, Queue};
+use kernel_types::declare_constants;
 use kernel_types::drivers::{Device, DeviceId, DriverId, KernelSymbol};
-use kernel_types::{declare_constants, declare_types};
 
 use crate::file_system::{DeviceChild, FileOperations, IndexNode};
 use crate::memory::VirtualAddress;
@@ -18,26 +18,26 @@ mod vga;
 ///The only one DriverId for each driver
 ///Each device can be handler as devices as can
 pub fn register(
-    id: DriverId,
+    _id: DriverId,
     //the origin name of driver (device name will be exceeded by additional number)
-    name: &str,
+    _name: &str,
 ) -> Result<DriverId, ()> {
     Ok(DriverId::RESERVED)
 }
 
 pub fn register_char_device_range(
-    id: DriverId,
-    count: usize,
-    name: &str,
+    _id: DriverId,
+    _count: usize,
+    _name: &str,
 ) -> Result<(), ()> {
     Err(())
 }
 
 ///return the lowest value of deviceId
 pub fn alloc_char_device_range(
-    minor_base: usize,
-    count: usize,
-    name: &str,
+    _minor_base: usize,
+    _count: usize,
+    _name: &str,
 ) -> Result<DeviceId, ()> {
     Err(())
 }

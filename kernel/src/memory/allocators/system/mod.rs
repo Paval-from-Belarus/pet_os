@@ -35,6 +35,7 @@ struct MemBounds {
 pub struct SlabPiece(u16);
 
 pub struct SystemAllocator {
+    // i: spin::Mutex<SlabAllocatorInner>,
     inner: UnsafeCell<SlabAllocatorInner>,
     //the list of entries ready to be used
     free_pool: UnsafeCell<TinyLinkedList<'static, SlabEntry>>,
@@ -65,6 +66,7 @@ struct SlabEntry {
     pages: LinkedList<'static, Page>,
     reserved: Zeroed<[usize; 2]>,
 }
+
 const_assert!(
     Page::SIZE % core::mem::size_of::<TinyListNode<SlabEntry>>() == 0
 );
@@ -109,6 +111,7 @@ impl SlabEntry {
         self.count += pages_count;
         take_offset
     }
+
     pub fn release(&mut self, offset: VirtualAddress) {
         //not implemented
     }

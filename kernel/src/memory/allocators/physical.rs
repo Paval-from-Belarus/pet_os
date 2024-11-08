@@ -10,7 +10,7 @@ use crate::log;
 use crate::memory::paging::{BootAllocator, PageMarkerError};
 use crate::memory::OsAllocationError::NoMemory;
 use crate::memory::{
-    OsAllocationError, Page, PhysicalAddress, ProcessInfo, ToPhysicalAddress,
+    OsAllocationError, Page, PhysicalAddress, ProcessState, ToPhysicalAddress,
     VirtualAddress, MEMORY_MAP_SIZE,
 };
 use crate::utils::atomics::SpinLock;
@@ -480,7 +480,7 @@ impl PhysicalAllocator {
     //similar to UNIX (Linux) brk system call
     pub fn heap_alloc(
         &mut self,
-        _info_rec: &mut ProcessInfo,
+        _info_rec: &mut ProcessState,
         _request_offset: VirtualAddress,
     ) -> Result<(), AllocationError> {
         Ok(())

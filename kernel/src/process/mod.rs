@@ -17,7 +17,7 @@ use crate::file_system::{
 use crate::interrupts::CallbackInfo;
 use crate::memory::AllocationStrategy::Kernel;
 use crate::memory::{
-    Page, ProcessInfo, SegmentSelector, ThreadRoutine, VirtualAddress,
+    Page, ProcessState, SegmentSelector, ThreadRoutine, VirtualAddress,
 };
 use crate::process::scheduler::TaskScheduler;
 use crate::utils::atomics::UnsafeLazyCell;
@@ -192,7 +192,7 @@ pub struct ThreadTask {
     //the value should be greater then 0
     pub start_time: usize,
     //the process context for thread
-    pub parent: Option<&'static mut ProcessInfo>,
+    pub state: Option<&'static mut ProcessState>,
     pub file_system: NonNull<TaskFileSystem>,
     pub files: NonNull<FilePool>,
     //todo: consider to add namespace field
@@ -219,7 +219,7 @@ impl ThreadTask {
             context: ptr::null_mut(),
             elapsed: 0,
             start_time: 0,
-            parent: None,
+            state: None,
             files: NonNull::dangling(),
             file_system: NonNull::dangling(),
             runnable: ListNode::empty(),
