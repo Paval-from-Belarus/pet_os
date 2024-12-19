@@ -24,6 +24,7 @@ impl BuddyPiece {
         let power = Self::power_of(pages_count);
         Self::with_power(power, first_page)
     }
+
     pub fn with_power(
         power: usize,
         first_page: &'static mut ListNode<Page>,
@@ -37,13 +38,16 @@ impl BuddyPiece {
             first_page_cell: UnsafeCell::new(first_page),
         }
     }
+
     pub fn power(&self) -> usize {
         self.power
     }
+
     ///the count of pages for given piece
     pub fn size(&self) -> usize {
         self.size
     }
+
     //if this struct was constructed then all requirements are already passed. It's save to create slice of Page struct
     pub fn pages(&self) -> &'static mut [Page] {
         unsafe {
@@ -51,6 +55,7 @@ impl BuddyPiece {
             first_page.as_slice_mut(self.size)
         }
     }
+
     pub const fn power_of(mut number: usize) -> usize {
         let mut power = 0;
         while number > 0 {
@@ -59,6 +64,7 @@ impl BuddyPiece {
         }
         power
     }
+
     pub fn size_of(power: usize) -> usize {
         let mut size = 1;
         for _ in 0..power {

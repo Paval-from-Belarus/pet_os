@@ -192,6 +192,7 @@ impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
             _marker: PhantomData,
         }
     }
+
     pub unsafe fn clone(&self) -> Self {
         Self {
             first: self.first,
@@ -199,23 +200,30 @@ impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
             _marker: PhantomData,
         }
     }
+
     pub fn iter(&self) -> ListIterator<'a, T> {
         ListIterator::new(self)
     }
+
     pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
         MutListIterator::new(self)
     }
+
     pub fn link_guard(&self) -> UnlinkableGuard<'a, T> {
         UnlinkableGuard {
             parent: NonNull::from(self),
         }
     }
+
+    /// Insert the entries from other list
+    /// after the head in current list 
     pub fn splice(&mut self, other: TinyLinkedList<'a, T>) {
         if self.is_empty() {
             self.first = other.first;
             self.last = other.last;
             return;
         }
+
         if let Some(first) = other.first
             && let Some(last) = other.last
         {
@@ -224,6 +232,7 @@ impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
             assert!(other.is_empty());
         }
     }
+
     unsafe fn splice_bounds(
         &mut self,
         other_first: NonNull<TinyListNode<T>>,
@@ -285,6 +294,7 @@ impl<'a, 'b, T: TinyListNodeData> MutListIterator<'a, 'b, T> {
             _marker: PhantomData,
         }
     }
+
     pub fn unlink_watched(&mut self) -> Option<&'a mut TinyListNode<T>> {
         let unlinked = match self.watched {
             None => None,

@@ -87,8 +87,8 @@ impl From<SlabPiece> for usize {
 impl SlabEntry {
     declare_constants!(
         pub usize,
-        DEFAULT_SLAB_SIZE = 4, "The count of pages for slab entry";
-        MAX_SLAB_SIZE = 16, "The maximal count of pages for slab entry";
+        DEFAULT_SLAB_SIZE_IN_PAGES = 4, "The count of pages for slab entry";
+        MAX_SLAB_SIZE_IN_PAGES = 16, "The maximal count of pages for slab entry";
     );
     //the size in bytes
     pub fn new(next: TinyListNode<SlabEntry>) -> Self {
@@ -101,10 +101,12 @@ impl SlabEntry {
             reserved: Zeroed::default(),
         }
     }
+
     pub fn holds(&self, offset: VirtualAddress) -> bool {
         let distance = (offset as isize) - (self.offset as isize);
         distance >= 0 && (distance as usize) < Page::SIZE * self.count
     }
+
     pub fn take(&mut self, pages_count: usize) -> VirtualAddress {
         assert!(self.available() >= pages_count);
         let take_offset = self.offset + self.count * Page::SIZE;
@@ -127,25 +129,32 @@ impl SlabEntry {
         self.count = 0;
         self.pages = pages;
     }
+
     pub fn get_pages(&mut self) -> &mut LinkedList<'static, Page> {
         &mut self.pages
     }
+
     pub fn set_pages(&mut self, pages: LinkedList<'static, Page>) {
         self.pages = pages;
     }
+
     ///@return the total pages in slab available to alloc
     pub fn available(&self) -> usize {
         self.capacity - self.count
     }
+
     pub fn total_available(&self) -> usize {
-        Self::MAX_SLAB_SIZE - self.count
+        Self::MAX_SLAB_SIZE_IN_PAGES - self.count
     }
+
     pub const fn is_empty(&self) -> bool {
         self.capacity == 0
     }
+
     pub const fn is_bloated(&self) -> bool {
         self.count > self.capacity / 2
     }
+
     pub const fn is_full(&self) -> bool {
         self.count == self.capacity
     }
@@ -157,19 +166,23 @@ impl SystemAllocator {
       pub usize,
       POOL_SIZE = 4, "the default size of pool";
     );
+
     pub fn new(
         allocator: &'static PhysicalAllocator,
         heap_offset: VirtualAddress,
     ) -> Result<SystemAllocator, OsAllocationError> {
         let mut free_pool = TinyLinkedList::<'static, SlabEntry>::empty();
         let mut inner = SlabAllocatorInner::empty(allocator, heap_offset);
+
         inner.enlarge_pool(&mut free_pool, Self::POOL_SIZE)?;
+
         Ok(Self {
             inner: UnsafeCell::new(inner),
             free_pool: UnsafeCell::new(free_pool),
             lock: SpinLock::new(),
         })
     }
+
     pub fn alloc(
         &'static self,
         piece: SlabPiece,
@@ -196,6 +209,7 @@ impl SystemAllocator {
         };
         Ok(entry.take(required_pages_count))
     }
+
     pub fn virtual_alloc(
         &'static self,
         bytes: usize,
@@ -204,13 +218,16 @@ impl SystemAllocator {
         let pages_count = Page::upper_bound(bytes);
         inner.virtual_alloc(pages_count)
     }
+
     pub fn dealloc(&'static self, offset: VirtualAddress) {
         let inner = self.synchronized_inner();
         unsafe { inner.leak().dealloc(offset) };
     }
+
     fn free_pool(&self) -> &'static mut TinyLinkedList<SlabEntry> {
         unsafe { &mut *self.free_pool.get() }
     }
+
     fn synchronized_inner(&self) -> SpinBox<'_, 'static, SlabAllocatorInner> {
         let inner = unsafe { &mut *self.inner.get() };
         SpinBox::new(&self.lock, inner)
@@ -228,17 +245,21 @@ impl SlabAllocatorInner {
             heap_offset,
         }
     }
+
     fn dealloc(&mut self, offset: VirtualAddress) {
         let entry = self
             .page_pool
             .iter_mut()
             .find(|entry| entry.holds(offset))
             .expect("Failed to find not existing slab entry");
+
         entry.release(offset);
+
         if entry.is_bloated() {
             //todo: release some pages
         }
     }
+
     fn virtual_alloc(
         &mut self,
         pages_count: usize,
@@ -246,6 +267,7 @@ impl SlabAllocatorInner {
         let pages = self.allocator.fast_pages(pages_count)?;
         let current_offset = self.heap_offset;
         let mut first_page_option: Option<&ListNode<Page>> = None;
+
         for page in pages.iter() {
             if let Some(first_page) = first_page_option {
                 if ptr::eq(first_page, page) {
@@ -254,10 +276,13 @@ impl SlabAllocatorInner {
             } else {
                 first_page_option = Some(page);
             }
+
             self.commit(page.as_physical(), 1);
         }
+
         Ok(current_offset)
     }
+
     fn find_suitable_entry(
         &mut self,
         required_pages_count: usize,
@@ -284,6 +309,7 @@ impl SlabAllocatorInner {
             },
         }
     }
+
     #[inline(never)]
     fn enlarge_pool(
         &mut self,
@@ -305,7 +331,8 @@ impl SlabAllocatorInner {
 
         let mut heap_pages = self
             .allocator
-            .alloc_pages(entries_count * SlabEntry::DEFAULT_SLAB_SIZE)?;
+            .alloc_pages(entries_count * SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES)?;
+
         let mut page_iter = heap_pages.iter_mut();
         let mut entry_iter = free_entries.iter_mut();
 
@@ -313,30 +340,40 @@ impl SlabAllocatorInner {
             let _ = entry_iter
                 .next()
                 .expect("Page pool should be enough for heap");
+
             let entry =
                 entry_iter.unlink_watched().expect("Is watched already");
+
             let mut cached_pages = LinkedList::<Page>::empty();
-            for _ in 0..SlabEntry::DEFAULT_SLAB_SIZE {
+
+            for _ in 0..SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES {
                 let _ = page_iter
                     .next()
                     .expect("We already allocate enough memory");
+
                 let page = page_iter.unlink_watched().expect("Already checked");
+
                 cached_pages.push_front(page);
             }
+
             let physical_offset = cached_pages
                 .iter()
                 .nth(0)
                 .expect("We simply push in list")
                 .as_physical();
+
             let slab_offset = self
-                .commit(physical_offset, SlabEntry::DEFAULT_SLAB_SIZE)
+                .commit(physical_offset, SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES)
                 as VirtualAddress;
-            entry.set(slab_offset, cached_pages, SlabEntry::DEFAULT_SLAB_SIZE);
+
+            entry.set(slab_offset, cached_pages, SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES);
+
             self.page_pool.push_front(entry);
         }
 
         Ok(())
     }
+
     #[inline(never)]
     fn commit_new_entries(
         &mut self,

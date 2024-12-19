@@ -110,7 +110,9 @@ pub fn init_kernel_space(
 
     let slab_allocator = SystemAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
         .expect("Failed to initialize slab allocator");
+
     SLAB_ALLOCATOR.set(slab_allocator);
+
     log!("memory is initialized");
 }
 
@@ -129,7 +131,7 @@ pub fn enable_task_switching(table: &mut GDTTable) {
 ///this method is conventional way to free page acquired by asm stub
 fn first_dealloc_handler(offset: PhysicalAddress) {
     let page = unsafe {
-        let mut node = Page::new_at_offset(offset);
+        let mut node = Page::take_at_offset(offset);
         node.as_mut()
     };
 
@@ -144,7 +146,7 @@ fn alloc_physical_pages(_page_count: usize) -> Option<PhysicalAddress> {
 
 fn dealloc_physical_page(offset: PhysicalAddress) {
     let allocator = PHYSICAL_ALLOCATOR.get();
-    let mut page = unsafe { Page::new_at_offset(offset) };
+    let mut page = unsafe { Page::take_at_offset(offset) };
     unsafe {
         allocator.dealloc_page(page.as_mut());
     }
@@ -525,7 +527,7 @@ impl Page {
         byte_size / Page::SIZE
     }
 
-    pub unsafe fn new_at_offset(offset: PhysicalAddress) -> NonNull<Page> {
+    pub unsafe fn take_at_offset(offset: PhysicalAddress) -> NonNull<Page> {
         let page_index: usize = offset >> Page::SHIFT;
         let page_offset = unsafe { mem_map_offset().add(page_index) };
         unsafe { NonNull::new_unchecked(page_offset) }
@@ -604,7 +606,7 @@ mod tests {
         let page_index = 42;
         let page_virtual_offset = mem_map_virtual_offset
             + page_index * mem::size_of::<ListNode<Page>>();
-        let page = unsafe { Page::new_at_offset(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
+        let page = unsafe { Page::take_at_offset(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
         assert_eq!(page.as_ptr() as VirtualAddress, page_virtual_offset);
         assert_eq!(
             page_index << Page::SHIFT,
