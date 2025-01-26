@@ -130,12 +130,10 @@ pub fn enable_task_switching(table: &mut GDTTable) {
 
 ///this method is conventional way to free page acquired by asm stub
 fn first_dealloc_handler(offset: PhysicalAddress) {
-    let page = unsafe {
-        let mut node = Page::take_at_offset(offset);
-        node.as_mut()
-    };
+    let page = unsafe { Page::take_unchecked(offset) };
 
-    page.take();
+    page.acquire();
+
     PHYSICAL_ALLOCATOR.get().dealloc_page(page);
 }
 
@@ -146,10 +144,8 @@ fn alloc_physical_pages(_page_count: usize) -> Option<PhysicalAddress> {
 
 fn dealloc_physical_page(offset: PhysicalAddress) {
     let allocator = PHYSICAL_ALLOCATOR.get();
-    let mut page = unsafe { Page::take_at_offset(offset) };
-    unsafe {
-        allocator.dealloc_page(page.as_mut());
-    }
+    let page = unsafe { Page::take_unchecked(offset) };
+    allocator.dealloc_page(page);
 }
 
 bitflags!(
@@ -344,7 +340,7 @@ pub struct MemoryMappingRegion {
 pub struct Page {
     #[list_pivots]
     node: ListNode<Page>,
-    flags: PageFlag,
+    pub flags: PageFlag,
     //it's easy to use in calculation, in future should be replace by macro
     //when zero page should be free
     ref_count: AtomicUsize,
@@ -456,6 +452,16 @@ pub struct MemoryMap {
     pages: [Page; MEMORY_MAP_SIZE],
 }
 
+impl MemoryMap {
+    pub fn iter(&self) -> impl Iterator<Item = &Page> {
+        self.pages.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Page> {
+        self.pages.iter_mut()
+    }
+}
+
 fn mem_map_offset() -> *mut Page {
     unsafe { &mut MEMORY_MAP as *mut MemoryMap as *mut Page }
 }
@@ -489,30 +495,44 @@ impl Page {
         SHIFT = 12, "the offset of page";
         SIZE = 1 << Page::SHIFT, "the size in bytes of page";
     }
-    pub fn flags(&self) -> PageFlag {
-        self.flags
-    }
-    pub fn set_flags(&mut self, flags: PageFlag) {
-        self.flags = flags;
-    }
 
-    pub const fn empty() -> Self {
+    pub const fn new() -> Self {
         Self {
             flags: unsafe { PageFlag::wrap(PageFlag::UNUSED) },
             ref_count: AtomicUsize::new(0),
             node: unsafe { ListNode::empty() },
         }
     }
-    ///increment reference counter in page
-    pub fn take(&self) {
-        let _old_value = self.ref_count.fetch_add(1, Ordering::Relaxed);
+
+    pub fn take(offset: PhysicalAddress) -> &'static Page {
+        let page = unsafe { Self::take_unchecked(offset) };
+
+        page.acquire();
+
+        page
     }
 
-    pub fn free(&self) {
+    pub unsafe fn take_unchecked(offset: PhysicalAddress) -> &'static mut Page {
+        let page_index: usize = offset >> Page::SHIFT;
+        let page_offset = unsafe { mem_map_offset().add(page_index) };
+        unsafe { &mut *page_offset }
+    }
+
+    ///increment reference counter in page
+    pub fn acquire(&self) {
+        let _old_value = self.ref_count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn release(&self) {
         let old_value = self.ref_count.fetch_sub(1, Ordering::SeqCst);
         if old_value == 0 {
             panic!("The free page releases again");
         }
+    }
+
+    /// the count of references to this page
+    pub fn use_count(&self) -> usize {
+        self.ref_count.load(Ordering::Acquire)
     }
 
     pub fn is_used(&self) -> bool {
@@ -527,12 +547,6 @@ impl Page {
         byte_size / Page::SIZE
     }
 
-    pub unsafe fn take_at_offset(offset: PhysicalAddress) -> NonNull<Page> {
-        let page_index: usize = offset >> Page::SHIFT;
-        let page_offset = unsafe { mem_map_offset().add(page_index) };
-        unsafe { NonNull::new_unchecked(page_offset) }
-    }
-
     pub unsafe fn as_slice(&mut self, count: usize) -> &'static [Page] {
         core::slice::from_raw_parts(self, count)
     }
@@ -540,18 +554,26 @@ impl Page {
     pub unsafe fn as_slice_mut(&mut self, count: usize) -> &'static mut [Page] {
         core::slice::from_raw_parts_mut(self, count)
     }
-    //return the index of page
+
+    /// Page index in global MEMORY_MAP
     pub unsafe fn index(&self) -> usize {
-        ((self as *const Page as VirtualAddress)
-            - (mem_map_offset() as VirtualAddress))
-            / mem::size_of::<Page>()
+        let offset = (self as *const Page as VirtualAddress)
+            - (mem_map_offset() as VirtualAddress);
+
+        offset / mem::size_of::<Page>()
+    }
+}
+
+impl Default for Page {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 #[cfg(test)]
 impl MemoryMap {
     pub const fn empty() -> Self {
-        const NODE: Page = Page::empty();
+        const NODE: Page = Page::new();
         let pages = [NODE; MEMORY_MAP_SIZE];
         Self { pages }
     }
@@ -606,11 +628,9 @@ mod tests {
         let page_index = 42;
         let page_virtual_offset = mem_map_virtual_offset
             + page_index * mem::size_of::<ListNode<Page>>();
-        let page = unsafe { Page::take_at_offset(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
-        assert_eq!(page.as_ptr() as VirtualAddress, page_virtual_offset);
-        assert_eq!(
-            page_index << Page::SHIFT,
-            unsafe { page.as_ref() }.as_physical()
-        );
+        let page = unsafe { Page::take(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
+                                                                     //
+        assert_eq!(page as *const Page as VirtualAddress, page_virtual_offset);
+        assert_eq!(page_index << Page::SHIFT, unsafe { page }.as_physical());
     }
 }

@@ -1,14 +1,12 @@
 use crate::memory::Page;
 
-use super::MAX_UNIT_SIZE;
-
 pub trait BuddyPage<'a>: Sized {
-    fn as_buddies(&mut self) -> &'a mut [Self];
+    fn as_buddy_batch_head(&mut self, max_count: usize) -> &'a mut [Self];
 }
 
 impl BuddyPage<'static> for Page {
-    fn as_buddies(&mut self) -> &'static mut [Page] {
-        let mut expected_slice_size = MAX_UNIT_SIZE;
+    fn as_buddy_batch_head(&mut self, max_count: usize) -> &'static mut [Page] {
+        let mut expected_slice_size = max_count;
 
         loop {
             let page_slice = unsafe { self.as_slice_mut(expected_slice_size) };

@@ -9,7 +9,7 @@ use crate::utils::io;
 macro_rules! log {
 	( $($arg:tt)* ) => ({
 		use core::fmt::Write;
-		let _ = write!(&mut $crate::utils::logging::Logger::get(module_path!()), $($arg)*);
+		let _ = write!(&mut $crate::utils::logging::Logger::get(), $($arg)*);
 	})
 }
 
@@ -36,9 +36,31 @@ pub unsafe fn put_byte_in_serial(byte: u8) {
 }
 
 static LOGGER_LOCK: SpinLock = SpinLock::new();
+static LOGGER_INSTANCE: Logger = Logger;
 
 #[repr(transparent)]
 pub struct Logger;
+
+impl log::Log for Logger {
+    fn enabled(&self, _metadata: &log::Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        log!(
+            "{}:{} -- {}",
+            record.level(),
+            record.target(),
+            record.args()
+        );
+    }
+
+    fn flush(&self) {}
+}
 
 pub fn init() {
     const TEST_BYTE: u8 = 0x42;
@@ -58,20 +80,22 @@ pub fn init() {
         }
         io::outb(COM_1 + 4, 0x0F);
     }
+
+    log::set_logger(&LOGGER_INSTANCE).expect("Failed to set logger");
+    log::set_max_level(log::LevelFilter::Debug);
 }
 
 impl Logger {
-    pub fn get(module: &str) -> Logger {
-        let mut instance = Logger;
+    pub fn get() -> Logger {
+        let instance = Logger;
         LOGGER_LOCK.acquire();
-        let _ = write!(instance, "[{}] ", module); //the result is ignored by anyone because write is always true
         instance
     }
 }
 
 impl Drop for Logger {
     fn drop(&mut self) {
-        let _ = write!(self, "\n");
+        let _ = writeln!(self);
         LOGGER_LOCK.release();
     }
 }

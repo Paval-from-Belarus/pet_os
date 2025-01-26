@@ -20,8 +20,8 @@ pub use buddy::*;
 
 declare_constants!(
     pub usize,
-    MAX_UNIT_SIZE = 64, "The maximal count of pages for continuous memory layout";
-    MAX_UNIT_POWER = BuddyPiece::power_of(MAX_UNIT_SIZE), "The power of 2 of `MAX_UNIT_SIZE`";
+    MAX_BUDDY_BATCH_SIZE = 64, "The maximal count of pages for continuous memory layout";
+    MAX_UNIT_POWER = buddy_index(MAX_BUDDY_BATCH_SIZE), "The power of 2 of `MAX_UNIT_SIZE`";
 );
 
 pub struct FreePages {
@@ -55,46 +55,72 @@ pub enum AllocationType {
     Split,
 }
 
-fn is_first_buddy(page: &Page) -> bool {
+fn is_even_in_memory_map(page: &Page) -> bool {
     unsafe { page.index() % 2 == 0 }
 }
 
-fn is_second_buddy(page: &Page) -> bool {
-    !is_first_buddy(page)
-}
-
 unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
+    unsafe fn reset_pages(offset: VirtualAddress, count: usize) {
+        let page = Page::take_unchecked(offset);
+        let pages = page.as_slice_mut(count);
+
+        for page in pages.iter_mut() {
+            *page = Page::new();
+        }
+    }
+
     let mut buddies: BuddyArray = core::array::from_fn(|_| Default::default());
-    log!("Areas count = {}", boot_allocator.as_slice().len());
+    log::info!("Areas count = {}", boot_allocator.as_slice().len());
 
     for pivot in boot_allocator.as_slice_mut() {
         let mut mem_offset = pivot.next_offset();
+        let max_offset = mem_offset + (Page::SIZE * pivot.free_pages_count());
 
-        log!("Free pages = {}", pivot.free_pages_count());
+        log::info!(
+            "Free pages = {}. Offset = {:0X}",
+            pivot.free_pages_count(),
+            mem_offset
+        );
 
-        for _ in 0..pivot.free_pages_count() {
-            let mut raw_page = Page::take_at_offset(mem_offset);
+        reset_pages(mem_offset, pivot.free_pages_count());
 
-            let node_index = raw_page.as_ref().index();
+        while mem_offset < max_offset {
+            let page = unsafe { Page::take_unchecked(mem_offset) };
 
-            if node_index >= MEMORY_MAP_SIZE {
+            let node_index = page.index();
+
+            if node_index >= MEMORY_MAP_SIZE || mem_offset > max_offset {
+                log::warn!("Invalid index for memory map: {node_index}");
                 break;
             }
-            //only the page marked as first can begin the buddy slice
-            if !is_first_buddy(raw_page.as_mut()) {
+
+            //only even page can be the first in buddy batch
+            if !is_even_in_memory_map(page) {
                 mem_offset += Page::SIZE;
                 continue;
             }
 
-            let page_slice = raw_page.as_mut().as_buddies();
+            let max_batch_size = {
+                log::debug!(
+                    "Max Offset = {max_offset}. Current Offset = {mem_offset} "
+                );
 
-            mem_offset += Page::SIZE * page_slice.len();
+                let rest_pages = (max_offset - mem_offset) / Page::SIZE;
 
-            let buddy_index = BuddyPiece::power_of(page_slice.len());
+                MAX_BUDDY_BATCH_SIZE.min(rest_pages)
+            };
 
-            let page_node = page_slice[0].as_node();
+            let buddy_batch = page.as_buddy_batch_head(max_batch_size);
 
-            buddies[buddy_index].push_front(page_node);
+            buddy_batch.iter().for_each(|page| page.acquire());
+
+            mem_offset += Page::SIZE * buddy_batch.len();
+
+            let index = buddy_index(buddy_batch.len());
+
+            let batch_head = buddy_batch[0].as_node();
+
+            buddies[index].push_front(batch_head);
         }
     }
 
@@ -125,7 +151,7 @@ impl PhysicalAllocator {
         let mut next_size = pages.len() * 2;
         let mut current_size = pages.len();
         loop {
-            let power = BuddyPiece::power_of(current_size);
+            let power = buddy_index(current_size);
 
             let page = pages.first_mut().unwrap();
             // the buddies are synchorinzed already. All is saved
@@ -153,12 +179,11 @@ impl PhysicalAllocator {
 
         let page_offset = page as *const Page as VirtualAddress;
 
-        let page_slice_size =
-            BuddyPiece::size_of(power) * mem::size_of::<Page>();
+        let page_slice_size = 2usize.pow(power as u32) * mem::size_of::<Page>();
 
         let mut buddy_offset = VirtualAddress::NULL;
 
-        if is_first_buddy(page) {
+        if is_even_in_memory_map(page) {
             if usize::MAX - page_offset > page_slice_size {
                 buddy_offset = page_offset + page_slice_size;
             }
@@ -191,7 +216,7 @@ impl PhysicalAllocator {
 
     ///Be careful with such method: it should, theoretically, batch page in solid memory region, but, truly, doesn't
     pub fn dealloc_page(&self, page: &'static mut Page) {
-        page.free();
+        page.release();
         if !page.is_used() {
             let mut lock = self.buddies.lock();
             let last_list = lock.last_mut().unwrap();
@@ -242,42 +267,54 @@ impl PhysicalAllocator {
     ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
         self.alloc_densely(count)
     }
+
     pub fn new_alloc(
         &self,
         count: usize,
-    ) -> Result<BuddyPiece, OsAllocationError> {
-        let mut buddy_index = BuddyPiece::power_of(count);
-        assert!(buddy_index <= MAX_UNIT_POWER, "Buddy with too huge power");
+    ) -> Result<BuddyBatch, OsAllocationError> {
+        let mut index = buddy_index(count);
+
+        assert!(index <= MAX_UNIT_POWER, "Buddy with too huge power");
+
         let mut lock = self.buddies.lock();
         let buddies = lock.as_mut_slice();
-        let mut buddy_option = buddies[buddy_index].remove_first();
-        while buddy_option.is_none() && (buddy_index + 1) < MAX_UNIT_POWER {
-            buddy_index += 1;
-            buddy_option = buddies[buddy_index].remove_first();
+
+        let mut maybe_head = buddies[index].remove_first();
+
+        while maybe_head.is_none() && (index + 1) < MAX_UNIT_POWER {
+            index += 1;
+            maybe_head = buddies[index].remove_first();
         }
-        if let Some(first_page) = buddy_option {
-            let piece = BuddyPiece::with_power(buddy_index, first_page);
-            piece.pages().iter_mut().for_each(|page| page.take());
-            Ok(piece)
-        } else {
-            Err(NoMemory)
-        }
+
+        let Some(head) = maybe_head else {
+            return Err(OsAllocationError::NoMemory);
+        };
+
+        let batch = BuddyBatch::new_request(count, head);
+        batch.pages().iter_mut().for_each(|page| page.acquire());
+
+        Ok(batch)
     }
     //return that reallocation is success or not
-    pub fn new_dealloc(&self, piece: BuddyPiece) -> Result<(), ()> {
+    pub fn new_dealloc(&self, piece: BuddyBatch) -> Result<(), ()> {
         let buddy_index = piece.power();
+
         assert!(buddy_index <= MAX_UNIT_POWER, "Buddy with too huge power");
+
         let pages = piece.pages();
-        pages.iter_mut().for_each(|page| page.free());
+        pages.iter_mut().for_each(|page| page.release());
+
         let used_pages_count =
             pages.iter().filter(|page| page.is_used()).count();
-        if used_pages_count == 0 {
-            self.push_pages(pages);
-            Ok(())
-        } else {
+
+        if used_pages_count != 0 {
             log!("Attempt to dealloc used pages");
-            Err(())
+            return Err(());
         }
+
+        self.push_pages(pages);
+
+        Ok(())
     }
 
     fn alloc_densely(
@@ -325,7 +362,7 @@ impl PhysicalAllocator {
                 if should_add {
                     let page =
                         page_iter.unlink_watched().expect("Already watched");
-                    page.take();
+                    page.acquire();
                     list.push_back(page);
                     added_count += 1;
                 }
@@ -350,7 +387,7 @@ impl PhysicalAllocator {
                 return Err(NoMemory);
             }
             let page = page_iter.unlink_watched().expect("Already watched");
-            page.take();
+            page.acquire();
             list.push_back(page);
         }
         Ok(list)
@@ -388,4 +425,15 @@ unsafe fn merge_pages<'a>(
         };
 
     slice::from_raw_parts_mut(slice_offset, target_size)
+}
+
+const fn buddy_index(mut size: usize) -> usize {
+    let mut power = 0;
+
+    while size > 0 {
+        size /= 2;
+        power += 1;
+    }
+
+    power
 }
