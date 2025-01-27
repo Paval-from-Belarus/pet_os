@@ -27,15 +27,18 @@ impl InterruptObject {
     pub const unsafe fn default() -> Self {
         MaybeUninit::zeroed().assume_init()
     }
+
     pub fn new(line: PicLine) -> Self {
         let callbacks = UnsafeCell::new(TinyLinkedList::empty());
         let lock = SpinLock::new();
+
         Self {
             callbacks,
             line,
             lock,
         }
     }
+
     pub fn dispatch(&self) {
         let mut is_dispatched = false;
         self.lock.acquire();
@@ -56,11 +59,15 @@ impl InterruptObject {
     pub fn add(&self, stack_info: CallbackInfo) {
         let raw_node = memory::slab_alloc::<CallbackInfo>(Kernel)
             .expect("Failed to alloc interrupt object info");
+
         let node = raw_node.write(stack_info);
+
         self.lock.acquire();
+
         unsafe {
             (*self.callbacks.get()).push_back(node.as_next());
         }
+
         self.lock.release();
     }
     pub fn remove(&self, removable: Handle) {

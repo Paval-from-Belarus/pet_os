@@ -41,7 +41,7 @@ pub struct BitflagFormatError<T: Sized>(pub T);
 #[macro_export]
 macro_rules! bitflags {
     ($vis:vis $s:ident($t:ty), $($name:ident = $value:expr),* $(,)?) => {
-        #[derive(Clone, Copy, PartialEq, Eq)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(transparent)]
         $vis struct $s($vis $t);
         impl TryFrom<$t> for $s {
@@ -79,7 +79,7 @@ macro_rules! bitflags {
         }
     };
 }
-#[derive(Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 #[repr(transparent)]
 pub struct Zeroed<T: Sized> {
     _value: T,

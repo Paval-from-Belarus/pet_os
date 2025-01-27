@@ -100,6 +100,8 @@ pub fn init_kernel_space(
     let allocator = PhysicalAllocator::from_boot(allocator);
     PHYSICAL_ALLOCATOR.set(allocator);
 
+    log::info!("Physical allocator is ready");
+
     // let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
     // let unmap_flags = UnmapParamsFlag::from(UnmapParamsFlag::TABLES | UnmapParamsFlag::PAGES);
     //the higher addresses are fully mapped by the kernel
@@ -112,8 +114,6 @@ pub fn init_kernel_space(
         .expect("Failed to initialize slab allocator");
 
     SLAB_ALLOCATOR.set(slab_allocator);
-
-    log!("memory is initialized");
 }
 
 pub fn enable_task_switching(table: &mut GDTTable) {
@@ -335,7 +335,7 @@ pub struct MemoryMappingRegion {
     page_count: usize,
 }
 
-#[derive(ListNode)]
+#[derive(Debug, ListNode)]
 #[repr(C)]
 pub struct Page {
     #[list_pivots]
@@ -373,14 +373,17 @@ pub fn slab_alloc<T>(
     _strategy: AllocationStrategy,
 ) -> Option<&'static mut MaybeUninit<T>> {
     let size = mem::size_of::<T>();
+
     let piece = if size <= u16::MAX as usize {
         SlabPiece::with_capacity(size as u16)
     } else {
         unreachable!("Slab piece too huge");
     };
+
     let offset = SLAB_ALLOCATOR
         .alloc(piece, Alignment::Page)
         .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
+
     Some(unsafe { &mut *(offset as *mut MaybeUninit<T>) })
 }
 
@@ -392,6 +395,7 @@ pub fn slab_dealloc<T>(pointer: &mut T) {
 ///Allocate virtual memory regardless of physical layout
 ///The each virtual page, probably, will be separate
 ///The current implementation is simple slab allocation (it will fail with too huge memory size)
+#[must_use]
 pub fn virtual_alloc(size: usize) -> VirtualAddress {
     SLAB_ALLOCATOR
         .get()

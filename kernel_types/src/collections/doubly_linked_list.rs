@@ -7,6 +7,7 @@ use crate::collections::{
     BorrowingLinkedList, DanglingData, ListNodeData, UnlinkableListGuard,
 };
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct ListNode<T: Sized + ListNodeData> {
     next: NonNull<ListNode<T>>,
@@ -135,7 +136,7 @@ impl<T: ListNodeData> DerefMut for ListNode<T> {
 
 ///The list lifetime is not about lifetime of list. But about lifetime of storing data
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct LinkedList<'a, T: Sized + ListNodeData> {
     first: Option<NonNull<ListNode<T>>>,
     last: Option<NonNull<ListNode<T>>>,
@@ -196,7 +197,9 @@ impl<'a, T: ListNodeData> BorrowingLinkedList<'a> for LinkedList<'a, T> {
     }
     fn remove(&mut self, node: &'a mut ListNode<T>) {
         assert!(!self.is_empty());
+
         let mut raw_node = NonNull::from(node);
+
         unsafe {
             self.unlink_node(raw_node);
             raw_node.as_mut().relink(None);
@@ -366,9 +369,7 @@ impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
     ///the method is used by iterator to unlinked element
     ///The method simply remove link in header element
     unsafe fn unlink_node(&mut self, mut raw_node: NonNull<ListNode<T>>) {
-        if let Some(first) = self.first
-            && let Some(last) = self.last
-        {
+        if let Some((first, last)) = self.first.zip(self.last) {
             if first.eq(&last) && first.eq(&raw_node) {
                 self.first = None;
                 self.last = None;
@@ -383,6 +384,7 @@ impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
                     self.first = Some(raw_node.as_mut().next);
                 }
             }
+
             if last.eq(&raw_node) {
                 unsafe {
                     self.last = Some(raw_node.as_mut().prev);

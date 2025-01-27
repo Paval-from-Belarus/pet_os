@@ -27,7 +27,7 @@ bitflags!(
     RESERVED_BIT_CAUSE = 0b1000,
     FETCH_CAUSE = 0b10000 //the cause is instruction fetch from page
 );
-#[inline(never)]
+
 pub fn init_traps(table: &mut IDTable) {
     for i in 0..MAX_INTERRUPTS_COUNT {
         //setting all interrupts to default handler
@@ -57,17 +57,22 @@ pub fn init_traps(table: &mut IDTable) {
 pub fn init_irq() -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
     let mut objects: [Option<&'static InterruptObject>; pic::LINES_COUNT] =
         [None; pic::LINES_COUNT];
+
     objects[u8::from(IrqLine::SYS_TIMER.line) as usize] =
         Some(init_timer(process::init()));
+
     objects
 }
 
 fn init_timer(info: CallbackInfo) -> &'static InterruptObject {
     let raw_object = memory::slab_alloc::<InterruptObject>(Kernel)
         .expect("Failed to init timer");
+
     let timer_object =
         raw_object.write(InterruptObject::new(IrqLine::SYS_TIMER.line));
+
     timer_object.add(info);
+
     timer_object
 }
 declare_constants!(

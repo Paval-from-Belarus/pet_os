@@ -5,7 +5,6 @@ use kernel_macro::ListNode;
 use kernel_types::collections::TinyListNode;
 use kernel_types::{declare_constants, declare_types};
 
-
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
@@ -246,17 +245,21 @@ unsafe fn leave_kernel_trap() {
 pub fn init() {
     let table = unsafe { &mut INTERRUPT_TABLE };
     system::init_traps(table);
+
     table.set(
         IDTable::SYSTEM_CALL,
         InterruptGate::syscall(system::syscall),
     );
+
     unsafe {
         pic::remap(
             IrqLine::IRQ_MASTER_OFFSET as u8,
             IrqLine::IRQ_SLAVE_OFFSET as u8,
         )
     };
+
     init_interceptors(table);
+
     unsafe {
         INTERRUPT_TABLE_HANDLE = IDTHandle::new(&INTERRUPT_TABLE);
         asm!(
@@ -291,24 +294,31 @@ pub unsafe extern "C" fn interceptor_stub() {
     out("eax") index,
     options(preserves_flags, nomem, nostack));
     enter_kernel_trap();
+
     let object = &mut INTERCEPTORS.get()[index];
+
     object.dispatch();
     leave_kernel_trap();
 }
 
-#[inline(never)]
 fn init_interceptors(table: &mut IDTable) {
     let mut created_objects = system::init_irq();
+
     for (index, object_option) in created_objects.iter_mut().enumerate() {
         if object_option.is_none() {
+            log::info!("Alloc new int object");
+
             let line = PicLine::try_from(index as u8)
                 .expect("index cannot exceed array size");
+
             let raw_object = memory::slab_alloc::<InterruptObject>(Kernel)
                 .expect("Failed to alloc task struct");
+
             let object = raw_object.write(InterruptObject::new(line));
             *object_option = Some(object);
         }
     }
+
     let interceptors = created_objects
         .map(|object| object.expect("The object is already initialized"));
     for (index, object) in interceptors.iter().enumerate() {
@@ -316,6 +326,7 @@ fn init_interceptors(table: &mut IDTable) {
         let trap = unsafe { INTERCEPTOR_STUB_ARRAY[index] };
         table.set(irq_line.interrupt as usize, naked_trap!(trap));
     }
+
     let _ = INTERCEPTORS.set(interceptors);
 }
 //this function is invoked directly from interrupt stub

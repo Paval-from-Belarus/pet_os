@@ -1,6 +1,6 @@
 use core::arch::asm;
 use core::cell::UnsafeCell;
-use core::mem::{MaybeUninit};
+use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{mem, ptr};
@@ -10,6 +10,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use kernel_macro::ListNode;
 use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
 use kernel_types::{bitflags, declare_constants, Zeroed};
+use static_assertions::const_assert;
 
 use crate::file_system::{
     File, FileOpenMode, MountPoint, PathNode, MAX_FILES_COUNT,
@@ -198,6 +199,8 @@ pub struct ThreadTask {
     //todo: consider to add namespace field
 }
 
+const_assert!(mem::size_of::<ThreadTask>() < Page::SIZE);
+
 pub struct TaskFileSystem {
     mask: FileOpenMode,
     current_path: &'static PathNode,
@@ -240,8 +243,10 @@ pub fn new_task(
     priority: TaskPriority,
 ) -> &'static mut ThreadTask {
     let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
+
     let raw_task = memory::slab_alloc::<ThreadTask>(Kernel)
         .expect("Failed to alloc new task");
+
     let task_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
     let task = unsafe {
         let task_data = ThreadTask::new(task_id, kernel_stack, priority);
@@ -249,13 +254,18 @@ pub fn new_task(
     };
 
     let context = TaskContext::with_return_address(routine as VirtualAddress);
-    task.context = (task.kernel_stack + TASK_STACK_SIZE
+
+    let context_offset = task.kernel_stack + TASK_STACK_SIZE
         - mem::size_of::<TaskContext>()
-        - interrupts::KERNEL_TRAP_SIZE) as *mut TaskContext;
+        - interrupts::KERNEL_TRAP_SIZE;
+
+    task.context = context_offset as *mut TaskContext;
     unsafe { task.context.write(context) };
-    let arg_offset = ((task.context as VirtualAddress) - mem::size_of_val(&arg))
-        as *mut *mut ();
+
+    let arg_offset = (context_offset - mem::size_of_val(&arg)) as *mut *mut ();
+
     unsafe { arg_offset.write(arg) };
+
     task
 }
 

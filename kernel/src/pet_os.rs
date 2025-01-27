@@ -18,8 +18,8 @@
 extern crate alloc;
 extern crate fallible_collections;
 extern crate num_enum;
-extern crate static_assertions;
 extern crate spin;
+extern crate static_assertions;
 
 extern crate multiboot2;
 
@@ -89,8 +89,10 @@ pub fn rust_main(properties: &mut PagingProperties) {
     let allocator = properties.boot_allocator();
 
     memory::init_kernel_space(allocator, directory, heap_offset);
+    log::info!("memory is initialized");
 
     interrupts::init();
+    log::info!("interrupts are initialized");
 
     let gdt = unsafe { properties.gdt().as_mut() };
     memory::enable_task_switching(gdt);

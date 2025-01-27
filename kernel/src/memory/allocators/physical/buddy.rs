@@ -13,7 +13,7 @@ pub struct BuddyBatch {
 }
 
 impl BuddyBatch {
-    pub fn new_request(
+    pub unsafe fn new(
         pages_count: usize,
         buffer: &'static mut ListNode<Page>,
     ) -> Self {
@@ -37,8 +37,15 @@ impl BuddyBatch {
         self.power
     }
 
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Page> {
+        unsafe {
+            let first_page = &mut (*self.first_page_cell.get());
+            first_page.as_slice_mut(self.size).iter_mut()
+        }
+    }
+
     //if this struct was constructed then all requirements are already passed. It's save to create slice of Page struct
-    pub fn pages(&self) -> &'static mut [Page] {
+    pub fn into_pages(self) -> &'static mut [Page] {
         unsafe {
             let first_page = &mut (*self.first_page_cell.get());
             first_page.as_slice_mut(self.size)

@@ -69,18 +69,25 @@ unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
         }
     }
 
+    boot_allocator.as_slice().iter().for_each(|entry| {
+        let pages_count = entry.free_pages_count();
+        let region_size = pages_count * Page::SIZE;
+        let region_start = entry.next_offset();
+
+        log::info!("start = {region_start:0X}. size = {region_size}. pages = {pages_count}");
+    });
+
     let mut buddies: BuddyArray = core::array::from_fn(|_| Default::default());
-    log::info!("Areas count = {}", boot_allocator.as_slice().len());
 
     for pivot in boot_allocator.as_slice_mut() {
         let mut mem_offset = pivot.next_offset();
-        let max_offset = mem_offset + (Page::SIZE * pivot.free_pages_count());
 
-        log::info!(
-            "Free pages = {}. Offset = {:0X}",
-            pivot.free_pages_count(),
-            mem_offset
-        );
+        if mem_offset == 0x1FF0000 {
+            //fixme: collect physical pages more gently
+            break;
+        }
+
+        let max_offset = mem_offset + (Page::SIZE * pivot.free_pages_count());
 
         reset_pages(mem_offset, pivot.free_pages_count());
 
@@ -101,10 +108,6 @@ unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
             }
 
             let max_batch_size = {
-                log::debug!(
-                    "Max Offset = {max_offset}. Current Offset = {mem_offset} "
-                );
-
                 let rest_pages = (max_offset - mem_offset) / Page::SIZE;
 
                 MAX_BUDDY_BATCH_SIZE.min(rest_pages)
@@ -242,30 +245,30 @@ impl PhysicalAllocator {
         //
         //     }
         // }
-        for _ in 0..pages_count {
-            let page_result = self.alloc_pages(1);
-            match page_result {
-                Ok(page_list) => {
-                    list.splice(page_list);
-                }
-                Err(error_code) => {
-                    for page in list.iter_mut() {
-                        self.dealloc_page(page);
-                    }
-                    return Err(error_code);
-                }
-            }
-        }
-        Ok(list)
+        self.alloc_densely(1)
+        // for _ in 0..pages_count {
+        //     let page_result = self.alloc_pages(1);
+        //     match page_result {
+        //         Ok(page_list) => {
+        //             list.splice(page_list);
+        //         }
+        //         Err(error_code) => {
+        //             for page in list.iter_mut() {
+        //                 self.dealloc_page(page);
+        //             }
+        //             return Err(error_code);
+        //         }
+        //     }
+        // }
+        // Ok(list)
     }
 
     //allocate continuous memory region
-    #[inline(never)]
     pub fn alloc_pages(
         &self,
         count: usize,
-    ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
-        self.alloc_densely(count)
+    ) -> Result<BuddyBatch, OsAllocationError> {
+        self.new_alloc(count)
     }
 
     pub fn new_alloc(
@@ -290,8 +293,8 @@ impl PhysicalAllocator {
             return Err(OsAllocationError::NoMemory);
         };
 
-        let batch = BuddyBatch::new_request(count, head);
-        batch.pages().iter_mut().for_each(|page| page.acquire());
+        let mut batch = unsafe { BuddyBatch::new(count, head) };
+        batch.iter_mut().for_each(|page| page.acquire());
 
         Ok(batch)
     }
@@ -301,7 +304,7 @@ impl PhysicalAllocator {
 
         assert!(buddy_index <= MAX_UNIT_POWER, "Buddy with too huge power");
 
-        let pages = piece.pages();
+        let pages = piece.into_pages();
         pages.iter_mut().for_each(|page| page.release());
 
         let used_pages_count =
@@ -321,56 +324,71 @@ impl PhysicalAllocator {
         &self,
         count: usize,
     ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
-        log!("Page count = {count}");
+        assert!(count > 0);
 
         let mut lock = self.buddies.lock();
-        let pages = lock.last_mut().unwrap();
+        let last_head = lock.last_mut().unwrap();
+        log::debug!("{last_head:?}");
         let mut longest = 0; //the current longest count of pages in same sequence
 
-        let mut last_offset_option = Option::<PhysicalAddress>::None;
+        let mut last_offset = Option::<PhysicalAddress>::None;
 
-        for page in pages.iter().limit() {
-            log!("Offset {:?}", last_offset_option);
-
-            if let Some(offset) = last_offset_option
-                && page.as_physical() == offset + Page::SIZE
-            {
-                last_offset_option = last_offset_option
-                    .map(|offset| offset.saturating_add(Page::SIZE));
-                longest += 1;
-            } else {
-                last_offset_option = Some(page.as_physical());
-                longest = 1;
-            }
-
+        for page in last_head.iter().limit() {
             if longest == count {
                 break;
             }
+
+            let Some(offset) = last_offset.as_mut() else {
+                last_offset = Some(page.as_physical());
+                longest += 1;
+                continue;
+            };
+
+            let offset = *offset + Page::SIZE * longest;
+
+            //check if page in continous region
+            if page.as_physical() != offset {
+                longest = 0;
+                last_offset = Some(page.as_physical()); //update first page
+                continue;
+            }
+
+            longest += 1;
         }
 
-        if let Some(last_offset) = last_offset_option
-            && longest == count
-        {
-            let mut list = LinkedList::<'static, Page>::empty();
-            let mut page_iter = pages.iter_mut();
-            let mut should_add = false;
-            let mut added_count = 0;
-            while added_count < count
-                && let Some(page) = page_iter.next()
-            {
-                should_add = should_add || page.as_physical() == last_offset;
-                if should_add {
-                    let page =
-                        page_iter.unlink_watched().expect("Already watched");
-                    page.acquire();
-                    list.push_back(page);
-                    added_count += 1;
-                }
-            }
-            Ok(list)
-        } else {
-            Err(NoMemory)
+        if longest != count {
+            log::warn!("Failed to find {count} pages");
+            return Err(OsAllocationError::NoMemory);
         }
+
+        let head_offset = last_offset.expect("Longest == count");
+
+        let mut list = LinkedList::<'static, Page>::empty();
+        let mut page_iter = last_head.iter_mut();
+        let mut should_add = false;
+        let mut added_count = 0;
+
+        loop {
+            if added_count == count {
+                break;
+            }
+
+            let page = page_iter.next().expect("Early was found");
+
+            if should_add {
+                let page = page_iter.unlink_watched().expect("Already watched");
+
+                log::debug!("Page {page:?} at {:0X}", page.as_ptr() as usize);
+
+                page.acquire();
+                list.push_back(page);
+                added_count += 1;
+            } else {
+                should_add |= page.as_physical() == head_offset;
+            }
+        }
+
+        Ok(list)
     }
 
     fn alloc_split(
@@ -427,13 +445,6 @@ unsafe fn merge_pages<'a>(
     slice::from_raw_parts_mut(slice_offset, target_size)
 }
 
-const fn buddy_index(mut size: usize) -> usize {
-    let mut power = 0;
-
-    while size > 0 {
-        size /= 2;
-        power += 1;
-    }
-
-    power
+const fn buddy_index(value: usize) -> usize {
+    value.next_power_of_two().ilog2() as usize
 }

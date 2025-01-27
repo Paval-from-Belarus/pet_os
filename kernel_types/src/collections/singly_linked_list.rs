@@ -9,6 +9,7 @@ use crate::collections::{
     BorrowingLinkedList, ListNodeData, TinyListNodeData, UnlinkableListGuard,
 };
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct TinyListNode<T: Sized> {
     next: Option<NonNull<TinyListNode<T>>>,
@@ -216,7 +217,7 @@ impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
     }
 
     /// Insert the entries from other list
-    /// after the head in current list 
+    /// after the head in current list
     pub fn splice(&mut self, other: TinyLinkedList<'a, T>) {
         if self.is_empty() {
             self.first = other.first;
