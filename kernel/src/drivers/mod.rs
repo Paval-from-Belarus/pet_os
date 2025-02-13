@@ -140,7 +140,7 @@ static DRIVERS_TABLE: SpinLockLazyCell<[VirtualAddress; MAX_DEVICE_COUNT]> =
     SpinLockLazyCell::empty();
 
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Handle(VirtualAddress);
 
 impl Handle {

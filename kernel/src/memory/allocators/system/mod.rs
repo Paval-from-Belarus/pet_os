@@ -2,7 +2,6 @@ mod allocator;
 
 use core::cell::UnsafeCell;
 use core::ops::Add;
-use core::ptr::NonNull;
 use core::{mem, ptr};
 
 use static_assertions::const_assert;
@@ -19,7 +18,6 @@ use crate::memory::{
     PhysicalAllocator, ToPhysicalAddress, VirtualAddress,
 };
 use crate::utils::atomics::SpinLock;
-use crate::utils::SpinBox;
 
 use super::physical::BuddyBatch;
 
@@ -39,8 +37,7 @@ struct MemBounds {
 pub struct SlabPiece(u16);
 
 pub struct SystemAllocator {
-    // i: spin::Mutex<SlabAllocatorInner>,
-    inner: UnsafeCell<SlabAllocatorInner>,
+    inner: spin::Mutex<SlabAllocatorInner>,
     //the list of entries ready to be used
     free_pool: UnsafeCell<TinyLinkedList<'static, SlabEntry>>,
     lock: SpinLock,
@@ -186,7 +183,7 @@ impl SystemAllocator {
         inner.enlarge_pool(&mut free_pool, Self::POOL_SIZE)?;
 
         Ok(Self {
-            inner: UnsafeCell::new(inner),
+            inner: spin::Mutex::new(inner),
             free_pool: UnsafeCell::new(free_pool),
             lock: SpinLock::new(),
         })
@@ -197,26 +194,23 @@ impl SystemAllocator {
         piece: SlabPiece,
         _alignment: Alignment,
     ) -> Result<VirtualAddress, OsAllocationError> {
-        let inner = self.synchronized_inner();
+        let mut inner = self.inner.lock();
 
         let free_entries = self.free_pool();
-        let mut raw_inner = unsafe { NonNull::from(inner.leak()) };
         let required_pages_count = Page::upper_bound(usize::from(piece));
 
-        let maybe_entry = unsafe {
-            raw_inner
-                .as_mut()
-                .find_suitable_entry(required_pages_count)?
-        };
+        let maybe_entry = inner.find_suitable_entry(required_pages_count)?;
 
         let entry = match maybe_entry {
-            None => unsafe {
-                raw_inner.as_mut().enlarge_pool(free_entries, 1)?;
-                raw_inner
-                    .as_mut()
+            None => {
+                log::debug!("Enlarging pool");
+                inner.enlarge_pool(free_entries, 1)?;
+
+                inner
                     .find_suitable_entry(required_pages_count)?
                     .expect("Failed to find slab entry")
-            },
+            }
+
             Some(entry) => entry,
         };
 
@@ -225,28 +219,25 @@ impl SystemAllocator {
         Ok(entry.take(required_pages_count))
     }
 
-    #[must_use]
     pub fn virtual_alloc(
         &'static self,
         bytes: usize,
     ) -> Result<VirtualAddress, OsAllocationError> {
-        let mut inner = self.synchronized_inner();
+        let mut inner = self.inner.lock();
+
         let pages_count = Page::upper_bound(bytes);
+
         inner.virtual_alloc(pages_count)
     }
 
     pub fn dealloc(&'static self, offset: VirtualAddress) {
-        let inner = self.synchronized_inner();
-        unsafe { inner.leak().dealloc(offset) };
+        let mut inner = self.inner.lock();
+
+        inner.dealloc(offset);
     }
 
     fn free_pool(&self) -> &'static mut TinyLinkedList<SlabEntry> {
         unsafe { &mut *self.free_pool.get() }
-    }
-
-    fn synchronized_inner(&self) -> SpinBox<'_, 'static, SlabAllocatorInner> {
-        let inner = unsafe { &mut *self.inner.get() };
-        SpinBox::new(&self.lock, inner)
     }
 }
 
@@ -313,24 +304,6 @@ impl SlabAllocatorInner {
         };
 
         Ok(Some(entry))
-
-        // match maybe_entry {
-        //     None => Ok(None),
-        //     Some(entry) => unsafe {
-        //         Ok(Some(entry))
-        // if entry.available() >= required_pages_count {
-        //     return Ok(Some(entry));
-        // }
-        // let mut raw_entry = NonNull::from(entry);
-        // let pages = raw_entry.as_mut().get_pages();
-        // for page in pages.iter_mut() {
-        //     self.allocator.dealloc_page(page)
-        // }
-        // let pages = self.allocator.alloc_pages(required_pages_count)?;
-        // raw_entry.as_mut().set_pages(pages);
-        // Ok(Some(raw_entry.as_mut()))
-        //     },
-        // }
     }
 
     #[inline(never)]

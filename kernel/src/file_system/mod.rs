@@ -4,9 +4,6 @@ use core::ptr;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 
-
-
-
 use kernel_macro::ListNode;
 use kernel_types::collections::{HashData, HashTable};
 use kernel_types::collections::{LinkedList, ListNode, TinyListNode};

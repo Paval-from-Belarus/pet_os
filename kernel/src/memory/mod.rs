@@ -1,9 +1,11 @@
+use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use core::ops::Range;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{mem, ptr};
 
+use alloc::boxed::Box;
 use static_assertions::assert_eq_size;
 
 pub use allocators::PhysicalAllocator;
@@ -19,9 +21,9 @@ use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
 use crate::memory::paging::{
     BootAllocator, GDTTable, PageMarker, PageMarkerError,
 };
+use crate::process;
 use crate::process::{TaskState, ThreadTask};
 use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
-use crate::{log, process};
 
 mod allocators;
 mod arch;
@@ -368,7 +370,53 @@ pub fn dealloc(pointer: *mut u8) {
     assert!(!pointer.is_null(), "Cannot dealloc null");
 }
 
-///the kernel method to allocate structure in kernel slab pool
+pub struct Kernel;
+
+unsafe impl Allocator for Kernel {
+    fn allocate(
+        &self,
+        layout: core::alloc::Layout,
+    ) -> Result<NonNull<[u8]>, core::alloc::AllocError> {
+        let size = layout.size();
+
+        let piece = if layout.size() <= u16::MAX as usize {
+            SlabPiece::with_capacity(layout.size() as u16)
+        } else {
+            unreachable!("Slab piece too huge");
+        };
+
+        let offset = SLAB_ALLOCATOR
+            .alloc(piece, Alignment::Page)
+            .unwrap_or_else(|_| {
+                panic!("Failed to alloc slab with size={size}")
+            });
+
+        log::info!("Allocated for {offset:04X}");
+
+        let bytes = unsafe {
+            core::slice::from_raw_parts_mut(offset as *mut u8, layout.size())
+        };
+
+        Ok(NonNull::from(bytes))
+    }
+
+    unsafe fn deallocate(
+        &self,
+        ptr: NonNull<u8>,
+        _layout: core::alloc::Layout,
+    ) {
+        let offset = ptr.as_ptr() as VirtualAddress;
+        SLAB_ALLOCATOR.dealloc(offset);
+    }
+}
+
+pub type SlabBox<T> = Box<T, Kernel>;
+
+pub fn box_alloc<T>(value: T) -> Option<SlabBox<T>> {
+    Box::try_new_in(value, Kernel).ok()
+}
+
+/// the kernel method to allocate structure in kernel slab pool
 pub fn slab_alloc<T>(
     _strategy: AllocationStrategy,
 ) -> Option<&'static mut MaybeUninit<T>> {

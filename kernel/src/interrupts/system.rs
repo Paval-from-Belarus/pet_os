@@ -1,4 +1,5 @@
-use core::{u8, usize};
+use core::mem::{self, MaybeUninit};
+
 use kernel_types::{bitflags, declare_constants};
 
 use crate::interrupts::object::InterruptObject;
@@ -6,8 +7,10 @@ use crate::interrupts::{
     pic, CallbackInfo, IDTable, InterruptStackFrame, IrqLine,
     MAX_INTERRUPTS_COUNT,
 };
-use crate::memory::AllocationStrategy::Kernel;
+use crate::memory::{AllocationStrategy, SlabBox};
 use crate::{error_trap, get_eax, log, memory, naked_trap, process, set_eax};
+
+use super::registry;
 
 //the common handlers
 bitflags!(
@@ -58,23 +61,35 @@ pub fn init_irq() -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
     let mut objects: [Option<&'static InterruptObject>; pic::LINES_COUNT] =
         [None; pic::LINES_COUNT];
 
-    objects[u8::from(IrqLine::SYS_TIMER.line) as usize] =
+    objects[IrqLine::SYS_TIMER.line_index()] =
         Some(init_timer(process::init()));
 
     objects
 }
 
+#[inline(never)]
 fn init_timer(info: CallbackInfo) -> &'static InterruptObject {
-    let raw_object = memory::slab_alloc::<InterruptObject>(Kernel)
-        .expect("Failed to init timer");
-
     let timer_object =
-        raw_object.write(InterruptObject::new(IrqLine::SYS_TIMER.line));
+        memory::box_alloc(InterruptObject::new(IrqLine::SYS_TIMER.line))
+            .expect("No memory for timer");
 
-    timer_object.add(info);
+    // let timer_object = {
+    //     let raw_object =
+    //         memory::slab_alloc::<InterruptObject>(AllocationStrategy::Kernel)
+    //             .expect("Failed to init timer");
+    //
+    //     let object = InterruptObject::new(IrqLine::SYS_TIMER.line);
+    //
+    //     raw_object.write(object)
+    // };
 
-    timer_object
+    log::debug!("{timer_object:?}");
+
+    timer_object.append(info);
+
+    SlabBox::leak(timer_object)
 }
+
 declare_constants!(
     pub usize,
     RESERVED_SYSCALL = 0xFFFF_FFFF, "No function to zero can be used; this function used to test system initialization";

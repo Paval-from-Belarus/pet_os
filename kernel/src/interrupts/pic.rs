@@ -1,9 +1,7 @@
 use core::arch::asm;
 
 use kernel_types::declare_constants;
-use num_enum::{
-    IntoPrimitive, TryFromPrimitive,
-};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::utils::io;
 

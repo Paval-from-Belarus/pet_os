@@ -22,6 +22,7 @@ impl RefCounter {
     }
 }
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct SpinLock {
     lock: AtomicBool,
@@ -33,14 +34,17 @@ impl SpinLock {
             lock: AtomicBool::new(false),
         }
     }
+
     pub fn acquire(&self) {
         loop {
             let is_acquired = !self.lock.swap(true, Ordering::Acquire);
+
             if is_acquired {
                 break;
             }
         }
     }
+
     pub fn release(&self) {
         self.lock.store(false, Ordering::Release);
     }

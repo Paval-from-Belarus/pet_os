@@ -20,6 +20,7 @@ impl<T: ListNodeData> TinyListNode<T> {
     pub fn node(&self) -> &ListNode<T> {
         unsafe { mem::transmute(self) }
     }
+
     pub fn node_mut(&mut self) -> &mut ListNode<T> {
         unsafe { mem::transmute(self) }
     }
@@ -83,6 +84,7 @@ impl<T: TinyListNodeData> DerefMut for TinyListNode<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct TinyLinkedList<'a, T: TinyListNodeData + Sized> {
     first: Option<NonNull<TinyListNode<T>>>,
     last: Option<NonNull<TinyListNode<T>>>,

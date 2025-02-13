@@ -10,7 +10,7 @@ path = "src/pet_os.rs"
 [profile.release]
 lto = true
 panic = "abort"
-strip = "none"
+strip = "all"
 incremental = true
 codegen-units = 1
 opt-level = 's'

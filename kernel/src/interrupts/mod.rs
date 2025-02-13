@@ -39,7 +39,7 @@ pub type ErrorExceptionHandler =
 ///the interrupt callback that return true if interrupt was handle (and no more handling is required)
 pub type Callback = fn(is_processed: bool, context: *mut ()) -> bool;
 
-#[derive(ListNode)]
+#[derive(Debug, ListNode)]
 pub struct CallbackInfo {
     driver: Handle,
     callback: Callback,
@@ -103,33 +103,39 @@ impl From<PicLine> for IrqLine {
 }
 
 impl IrqLine {
-    declare_constants!(
-    pub IrqLine,
-    SYS_TIMER = irq_line!(32, IRQ0), "Scheduler and company";
-    KEYBOARD = irq_line!(34, IRQ1);
-    CASCADE_SLAVE = irq_line!(35, IRQ2);
-    COM1 = irq_line!(36, IRQ3);
-    COM2 = irq_line!(37, IRQ4);
-    SOUND_CARD = irq_line!(38, IRQ5);
-    FLOPPY = irq_line!(39, IRQ6);
-    PRINTER = irq_line!(40, IRQ7);
-    CLOCKS = irq_line!(41, IRQ8);
-    POWER = irq_line!(42, IRQ9);
-    NETWORK_CARD = irq_line!(43, IRQ10);
-    UNUSED = irq_line!(44, IRQ11);
-    MOUSE = irq_line!(45,  IRQ12);
-    FLOAT_COPROC = irq_line!(46, IRQ13);
-    PRIMARY_ATA = irq_line!(47, IRQ14);
-    SECONDARY_ATA = irq_line!(48, IRQ15);
-    );
-    declare_constants!(
-    pub usize,
+    declare_constants! {
+        pub IrqLine,
+        SYS_TIMER = irq_line!(32, IRQ0), "Scheduler and company";
+        KEYBOARD = irq_line!(34, IRQ1);
+        CASCADE_SLAVE = irq_line!(35, IRQ2);
+        COM1 = irq_line!(36, IRQ3);
+        COM2 = irq_line!(37, IRQ4);
+        SOUND_CARD = irq_line!(38, IRQ5);
+        FLOPPY = irq_line!(39, IRQ6);
+        PRINTER = irq_line!(40, IRQ7);
+        CLOCKS = irq_line!(41, IRQ8);
+        POWER = irq_line!(42, IRQ9);
+        NETWORK_CARD = irq_line!(43, IRQ10);
+        UNUSED = irq_line!(44, IRQ11);
+        MOUSE = irq_line!(45,  IRQ12);
+        FLOAT_COPROC = irq_line!(46, IRQ13);
+        PRIMARY_ATA = irq_line!(47, IRQ14);
+        SECONDARY_ATA = irq_line!(48, IRQ15);
+    }
+
+    declare_constants! {
+        pub usize,
         //The mapping of IRQ lines to IDT Table
-    //The master's interrupts
-    IRQ_MASTER_OFFSET = 32, "The first interrupt for master";
-    IRQ_SLAVE_OFFSET = 41, "The first interrupt for slave"
-    );
+        //The master's interrupts
+        IRQ_MASTER_OFFSET = 32, "The first interrupt for master";
+        IRQ_SLAVE_OFFSET = 41, "The first interrupt for slave"
+    }
+
+    pub fn line_index(&self) -> usize {
+        (self.line as u8) as usize
+    }
 }
+
 declare_types! {
     pub SystemType as wrap,
     INTERRUPT = SystemType::INTERRUPT_32BIT;
@@ -204,7 +210,7 @@ pub fn registry(_handle: Handle, line: IrqLine, info: CallbackInfo) {
     let index = u8::from(line.line) as usize;
     let interceptors = INTERCEPTORS.get();
     let manager = interceptors[index];
-    manager.add(info);
+    manager.append(info);
 }
 
 //the red zone in thread kernel size:
@@ -321,6 +327,7 @@ fn init_interceptors(table: &mut IDTable) {
 
     let interceptors = created_objects
         .map(|object| object.expect("The object is already initialized"));
+
     for (index, object) in interceptors.iter().enumerate() {
         let irq_line = IrqLine::from(object.line());
         let trap = unsafe { INTERCEPTOR_STUB_ARRAY[index] };
@@ -434,9 +441,12 @@ impl IDTable {
         descriptor: InterruptGate,
     ) -> InterruptGate {
         assert!(index < self.entries.len(), "Invalid index for IDTable");
+
         self.lock.acquire();
+
         let old = self.entries[index];
         self.entries[index] = descriptor;
+
         self.lock.release();
         old
     }
