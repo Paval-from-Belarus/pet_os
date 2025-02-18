@@ -1,5 +1,5 @@
-use core::marker::PhantomData;
 use core::mem;
+use core::{fmt::Debug, marker::PhantomData};
 
 use bitfield::Bit;
 use static_assertions::assert_eq_size;
@@ -14,8 +14,8 @@ pub struct SegmentSelector(u16);
 
 #[derive(PartialEq, PartialOrd)]
 pub enum SelectorType {
-    GDT,
-    LDT,
+    Gdt,
+    Ldt,
 }
 
 impl SegmentSelector {
@@ -29,28 +29,33 @@ impl SegmentSelector {
         USER_DATA = SegmentSelector(0x20);
         TASK = SegmentSelector(0x28)
     );
+
     pub fn new(
         index: usize,
         ring: PrivilegeLevel,
         parent: SelectorType,
     ) -> Self {
         assert!(index < u32::MAX as usize);
-        let type_bit = if parent == SelectorType::LDT {
+        let type_bit = if parent == SelectorType::Ldt {
             0x04
         } else {
             0x00
         };
+
         let selector = (index & !0x3) | type_bit | (ring.bits() as usize);
+
         Self(selector as u16)
     }
+
     pub const fn get_type(&self) -> SelectorType {
         let type_bit = self.0 & 0x04;
         if type_bit == 0 {
-            SelectorType::GDT
+            SelectorType::Gdt
         } else {
-            SelectorType::LDT
+            SelectorType::Ldt
         }
     }
+
     pub const fn get_ring(&self) -> PrivilegeLevel {
         let bits = (self.0 & 0x03) as u8;
         unsafe { PrivilegeLevel::wrap(bits) }
@@ -62,21 +67,32 @@ impl From<SegmentSelector> for u16 {
         value.0
     }
 }
-bitflags!(
-    pub PrivilegeLevel(u8),
-    KERNEL = 0b00,
-    USER = 0b11
-);
-bitflags!(
-    pub MemoryType(u8),
-    DATA = 0b10000, //including memory bit
-    CODE = 0b11000, //as you
-    ACCESSED = 0b1,
-    DATA_WRITABLE = MemoryType::DATA | 0b10,
-    DATA_DOWNABLE = MemoryType::DATA | 0b100,
-    CODE_READABLE = MemoryType::CODE | 0b10,
-    CODE_CONFORMING = MemoryType::CODE | 0b100
-);
+
+impl core::ops::Deref for SegmentSelector {
+    type Target = u16;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+bitflags! {
+pub PrivilegeLevel(u8),
+KERNEL = 0b00,
+USER = 0b11
+}
+
+bitflags! {
+pub MemoryType(u8),
+DATA = 0b10000, //including memory bit
+CODE = 0b11000, //as you
+ACCESSED = 0b1,
+DATA_WRITABLE = MemoryType::DATA | 0b10,
+DATA_DOWNABLE = MemoryType::DATA | 0b100,
+CODE_READABLE = MemoryType::CODE | 0b10,
+CODE_CONFORMING = MemoryType::CODE | 0b100
+}
+
 bitflags!(
     pub SystemType(u8),
     RESERVED = 0b00000, //should include in which field
@@ -93,14 +109,15 @@ bitflags!(
     CALL_32BIT = SystemType::RESERVED | 0b1100,
     INTERRUPT_32BIT = SystemType::RESERVED | 0b1110,
 );
-pub trait DescriptorType {
+
+pub trait DescriptorType: Debug {
     fn bits(&self) -> u8;
 }
 
 //the marker for type
 pub trait Descriptor {}
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct DescriptorFlags<T: DescriptorType> {
     value: u8,
@@ -212,7 +229,7 @@ impl MemoryDescriptor {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct TaskStateDescriptor {
     lower_limit: u16,
     lower_base: u16,
@@ -221,19 +238,26 @@ pub struct TaskStateDescriptor {
     specific: u8,
     upper_base: u8,
 }
+
 assert_eq_size!(TaskStateDescriptor, [u32; 2]);
+
 impl TaskStateDescriptor {
     pub fn active(base: VirtualAddress, limit: usize) -> Self {
         let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
+
         let system_type =
             unsafe { SystemType::wrap(SystemType::TSS_FREE_32BIT) };
+
         let flags = DescriptorFlags::new(true, ring, system_type);
+
         let mut instance = TaskStateDescriptor::null();
         instance.set_base(base.as_physical());
         instance.set_limit(limit);
         instance.set_granularity(false);
+
         Self { flags, ..instance }
     }
+
     pub const fn null() -> Self {
         unsafe { mem::MaybeUninit::zeroed().assume_init() }
     }
@@ -303,12 +327,13 @@ pub struct InterruptGate {
     pub flags: DescriptorFlags<SystemType>,
     upper_offset: u16,
 }
+
 assert_eq_size!(InterruptGate, [u32; 2]);
 impl Descriptor for InterruptGate {}
 
 impl InterruptGate {
     /// The default interrupt gate is kernel ring and not present
-    pub fn default(
+    pub fn new(
         handler_offset: VirtualAddress,
         selector: SegmentSelector,
         flags: SystemType,
@@ -317,6 +342,7 @@ impl InterruptGate {
         let lower_offset = (handler_offset & 0xFFFF) as u16;
         let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
         let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
+
         InterruptGate {
             lower_offset,
             selector,

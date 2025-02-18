@@ -1,5 +1,3 @@
-use core::mem::{self, MaybeUninit};
-
 use kernel_types::{bitflags, declare_constants};
 
 use crate::interrupts::object::InterruptObject;
@@ -7,10 +5,8 @@ use crate::interrupts::{
     pic, CallbackInfo, IDTable, InterruptStackFrame, IrqLine,
     MAX_INTERRUPTS_COUNT,
 };
-use crate::memory::{AllocationStrategy, SlabBox};
+use crate::memory::SlabBox;
 use crate::{error_trap, get_eax, log, memory, naked_trap, process, set_eax};
-
-use super::registry;
 
 //the common handlers
 bitflags!(
@@ -36,6 +32,7 @@ pub fn init_traps(table: &mut IDTable) {
         //setting all interrupts to default handler
         table.set(i, naked_trap!(unknown_trap));
     }
+
     table.set(IDTable::DIVISION_BY_ZERO, naked_trap!(division_by_zero));
     table.set(IDTable::DEBUG, naked_trap!(debug));
     table.set(IDTable::NOT_MASKABLE, naked_trap!(nonmaskable));
@@ -82,91 +79,94 @@ declare_constants!(
     pub usize,
     RESERVED_SYSCALL = 0xFFFF_FFFF, "No function to zero can be used; this function used to test system initialization";
     INVALID = 0;
+    CHECK_CODE = 42;
 );
-pub extern "x86-interrupt" fn syscall(_frame: &mut InterruptStackFrame) {
+
+#[no_mangle]
+pub extern "x86-interrupt" fn syscall(frame: InterruptStackFrame) {
     let id: usize = unsafe { get_eax!() };
     if id == RESERVED_SYSCALL {
-        log!("interrupts are initialized");
-        unsafe { set_eax!(1) };
-    } else {
-        unsafe { set_eax!(INVALID) };
+        log::debug!("{frame:?}");
+
+        unsafe { set_eax!(CHECK_CODE) };
+        return;
     }
+
+    unsafe { set_eax!(INVALID) };
 }
 
-pub extern "x86-interrupt" fn division_by_zero(
-    _from: &mut InterruptStackFrame,
-) {
+pub extern "x86-interrupt" fn division_by_zero(_from: InterruptStackFrame) {
     log!("division by zero");
 }
 
-pub extern "x86-interrupt" fn debug(_frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn debug(_frame: InterruptStackFrame) {
     log!("debug int");
 }
 
-pub extern "x86-interrupt" fn nonmaskable(_frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn nonmaskable(_frame: InterruptStackFrame) {
     log!("nmi int");
 }
 
-pub extern "x86-interrupt" fn breakpoint(_frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn breakpoint(_frame: InterruptStackFrame) {
     log!("breakpoint");
 }
 
-pub extern "x86-interrupt" fn overflow(_frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn overflow(_frame: InterruptStackFrame) {
     log!("overflow");
 }
 
-pub extern "x86-interrupt" fn bound_check(_frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn bound_check(_frame: InterruptStackFrame) {
     log!("bound check failed");
 }
 
-pub extern "x86-interrupt" fn invalid_opcode(_frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn invalid_opcode(_frame: InterruptStackFrame) {
     log!("invalid opcode int");
 }
 
 pub extern "x86-interrupt" fn device_not_available(
-    _frame: &mut InterruptStackFrame,
+    _frame: InterruptStackFrame,
 ) {
     log!("device not available");
 }
 
 //we can do nothing
 pub extern "x86-interrupt" fn double_fault(
-    _frame: &mut InterruptStackFrame,
+    _frame: InterruptStackFrame,
     _code: usize,
 ) {
     panic!("The double fault exception occurs. We can nothing...(");
 }
 
 pub extern "x86-interrupt" fn invalid_tss(
-    _frame: &mut InterruptStackFrame,
+    _frame: InterruptStackFrame,
     code: usize,
 ) {
     log!("Invalid tss code={}", code);
 }
 
 pub extern "x86-interrupt" fn invalid_segment(
-    _frame: &mut InterruptStackFrame,
+    _frame: InterruptStackFrame,
     _code: usize,
 ) {
     log!("invalid segment");
 }
 
 pub extern "x86-interrupt" fn stack_fault(
-    _frame: &mut InterruptStackFrame,
+    _frame: InterruptStackFrame,
     _code: usize,
 ) {
     log!("stack fault");
 }
 
 pub extern "x86-interrupt" fn general_protection(
-    _frame: &mut InterruptStackFrame,
+    _frame: InterruptStackFrame,
     _code: usize,
 ) {
     log!("general protection fault");
 }
 
 pub extern "x86-interrupt" fn page_fault(
-    _frame: &mut InterruptStackFrame,
+    _frame: InterruptStackFrame,
     error_code: usize,
 ) {
     let fault_code = unsafe { PageFaultError::wrap(error_code) };
@@ -177,13 +177,13 @@ pub extern "x86-interrupt" fn page_fault(
 }
 
 pub extern "x86-interrupt" fn alignment_check(
-    _frame: &mut InterruptStackFrame,
+    _frame: InterruptStackFrame,
     _code: usize,
 ) {
     log!("alignment check failed");
 }
 
 ///By default, unknown trap is handled by this function. Even if real error code present on stack
-pub extern "x86-interrupt" fn unknown_trap(_frame: &mut InterruptStackFrame) {
+pub extern "x86-interrupt" fn unknown_trap(_frame: InterruptStackFrame) {
     panic!("Unknown trap is caught!");
 }

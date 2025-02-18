@@ -127,9 +127,11 @@ impl TaskState {
     pub fn set_stack_selector(&mut self, ss0: SegmentSelector) {
         self.ss0 = u16::from(ss0);
     }
+
     pub fn set_io_map(&mut self, address: u16) {
         self.io_map_address = address;
     }
+
     pub fn set_kernel_stack(&mut self, esp0: usize) {
         self.esp0 = esp0 as u32; //the u32 is native word
     }

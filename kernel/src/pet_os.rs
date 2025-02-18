@@ -95,6 +95,8 @@ pub fn rust_main(properties: &mut PagingProperties) {
     let gdt = unsafe { properties.gdt().as_mut() };
     memory::enable_task_switching(gdt);
 
+    log::info!("Task switching is enabled");
+
     let thread_1 =
         process::new_task(task1, ptr::null_mut(), TaskPriority::HIGH);
     let thread_2 = process::new_task(task2, ptr::null_mut(), TaskPriority::LOW);

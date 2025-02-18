@@ -40,6 +40,7 @@ args = ["-r", "${OUTPUT_PATH}"]
 
 [tasks.asm]
 script = '''
+    mkdir -p ${OBJECTS_PATH}
     ${ASM_COMPILER} ${ASM_SOURCE_PATH}/interceptors.asm ${OBJECTS_PATH}/interceptors.o
     ${ASM_COMPILER} ${ASM_SOURCE_PATH}/entry_grub.asm ${OBJECTS_PATH}/entry.o
 '''

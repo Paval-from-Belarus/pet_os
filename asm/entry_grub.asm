@@ -130,7 +130,13 @@ Kernel.setProtectedMode:
      call Kernel.toPhysicalAddress
      mov esp, eax
 
-     jmp ConfigureKernel
+     mov eax, ConfigureKernel
+     call Kernel.toPhysicalAddress
+     
+     push 1 shl 3
+     push eax
+
+     retf 
 
 ;Input:
 ;eax -> KernelProperties

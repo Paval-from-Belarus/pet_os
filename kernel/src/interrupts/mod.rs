@@ -20,7 +20,7 @@ mod object;
 pub(crate) mod pic;
 mod system;
 
-#[allow(unused)]
+#[derive(Debug)]
 #[repr(C)] //the wrapper on real stack frame
 pub struct InterruptStackFrame {
     ip: usize,
@@ -32,10 +32,9 @@ pub struct InterruptStackFrame {
     ss: usize,
 }
 
-pub type NakedExceptionHandler =
-    extern "x86-interrupt" fn(&mut InterruptStackFrame);
+pub type NakedExceptionHandler = extern "x86-interrupt" fn(InterruptStackFrame);
 pub type ErrorExceptionHandler =
-    extern "x86-interrupt" fn(&mut InterruptStackFrame, usize);
+    extern "x86-interrupt" fn(InterruptStackFrame, usize);
 ///the interrupt callback that return true if interrupt was handle (and no more handling is required)
 pub type Callback = fn(is_processed: bool, context: *mut ()) -> bool;
 
@@ -173,10 +172,11 @@ impl InterruptGate {
         let handler_offset =
             handler as *const NakedExceptionHandler as VirtualAddress;
         let mut instance =
-            InterruptGate::default(handler_offset, selector, attributes);
+            InterruptGate::new(handler_offset, selector, attributes);
         instance.flags.set_present(true);
         instance
     }
+
     pub fn with_error_handler(
         handler: ErrorExceptionHandler,
         selector: SegmentSelector,
@@ -185,14 +185,15 @@ impl InterruptGate {
         let handler_offset =
             handler as *const ErrorExceptionHandler as VirtualAddress;
         let mut instance =
-            InterruptGate::default(handler_offset, selector, attributes);
+            InterruptGate::new(handler_offset, selector, attributes);
         instance.flags.set_present(true);
         instance
     }
+
     pub fn syscall(handler: NakedExceptionHandler) -> Self {
         let offset = handler as *const NakedExceptionHandler as VirtualAddress;
         let mut instance =
-            InterruptGate::default(offset, SegmentSelector::CODE, INTERRUPT);
+            InterruptGate::new(offset, SegmentSelector::CODE, INTERRUPT);
         instance.flags.set_present(true);
         unsafe {
             instance
@@ -268,13 +269,16 @@ pub fn init() {
 
     unsafe {
         INTERRUPT_TABLE_HANDLE = IDTHandle::new(&INTERRUPT_TABLE);
+
         asm!(
         "lidt [eax]",
-        in("eax") &INTERRUPT_TABLE_HANDLE
-        );
+        in("eax") &raw const INTERRUPT_TABLE_HANDLE
+        )
     }
+
     unsafe {
         syscall!(system::RESERVED_SYSCALL);
+
         let code: usize = get_eax!();
         if code == system::INVALID {
             panic!("failed to init interrupts");
@@ -374,6 +378,7 @@ impl IDTHandle {
             table_offset: ptr::null_mut(),
         }
     }
+
     pub const fn new(table: &IDTable) -> Self {
         IDTHandle {
             table_size: table.byte_size().saturating_sub(1) as u16,
@@ -391,8 +396,8 @@ pub unsafe fn enable() {
 }
 
 #[no_mangle]
-static mut INTERRUPT_TABLE_HANDLE: IDTHandle =
-    unsafe { IDTHandle::new(&INTERRUPT_TABLE) };
+static mut INTERRUPT_TABLE_HANDLE: IDTHandle = IDTHandle::null();
+
 #[no_mangle]
 static mut INTERRUPT_TABLE: IDTable = IDTable::empty();
 
@@ -464,6 +469,7 @@ mod tests {
             8,
             "Invalid size of IDTEntry"
         );
+
         let table = IDTable::empty();
         assert_eq!(table.byte_size() <= u16::MAX as usize, true);
         assert_eq!(mem::size_of::<IDTHandle>(), 6);

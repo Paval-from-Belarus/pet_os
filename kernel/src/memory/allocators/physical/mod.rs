@@ -262,7 +262,7 @@ impl PhysicalAllocator {
 
         let mut maybe_head = buddies[index].remove_first();
 
-        while maybe_head.is_none() && (index + 1) < MAX_UNIT_POWER {
+        while maybe_head.is_none() && (index + 1) <= MAX_UNIT_POWER {
             index += 1;
             maybe_head = buddies[index].remove_first();
         }

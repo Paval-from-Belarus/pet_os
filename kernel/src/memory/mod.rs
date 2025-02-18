@@ -123,11 +123,15 @@ pub fn enable_task_switching(table: &mut GDTTable) {
     let task = unsafe {
         TASK_STATE.set_io_map(0xFFFF); //setting io_map beyond the TaskState structure -> let's forbid all io instruction in user mode
         TASK_STATE.set_stack_selector(SegmentSelector::DATA);
+
         TaskStateDescriptor::active(
-            &TASK_STATE as *const TaskState as VirtualAddress,
+            &raw const TASK_STATE as VirtualAddress,
             mem::size_of::<TaskState>() - 1,
         )
     };
+    
+    log::debug!("Task state: {task:?}");
+
     table.load_task(task);
 }
 
@@ -653,6 +657,7 @@ extern "C" {
 }
 
 static mut TASK_STATE: TaskState = TaskState::null();
+
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> =
     UnsafeLazyCell::empty();
 static SLAB_ALLOCATOR: UnsafeLazyCell<SystemAllocator> =

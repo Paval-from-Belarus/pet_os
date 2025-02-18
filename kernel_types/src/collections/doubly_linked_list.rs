@@ -173,6 +173,7 @@ impl<'a, T: ListNodeData> BorrowingLinkedList<'a> for LinkedList<'a, T> {
             _marker: PhantomData,
         }
     }
+
     fn push_back(&mut self, node: &'a mut ListNode<T>) {
         let raw_node = NonNull::from(node);
         unsafe {
@@ -184,8 +185,10 @@ impl<'a, T: ListNodeData> BorrowingLinkedList<'a> for LinkedList<'a, T> {
         }
         self.last = Some(raw_node); //we already changed last in list
     }
+
     fn push_front(&mut self, node: &'a mut ListNode<T>) {
         let raw_node = NonNull::from(node);
+
         unsafe {
             if self.is_empty() {
                 self.first_link(raw_node);
@@ -193,8 +196,10 @@ impl<'a, T: ListNodeData> BorrowingLinkedList<'a> for LinkedList<'a, T> {
             }
             self.insert_after_last(raw_node);
         }
+
         self.first = Some(raw_node);
     }
+
     fn remove(&mut self, node: &'a mut ListNode<T>) {
         assert!(!self.is_empty());
 
@@ -324,6 +329,7 @@ impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
             unreachable!("The tail is empty");
         }
     }
+
     pub fn remove_first(&mut self) -> Option<&'a mut ListNode<T>> {
         match self.first {
             Some(mut first) => unsafe {

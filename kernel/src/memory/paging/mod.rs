@@ -67,8 +67,10 @@ impl GDTTable {
     pub const fn null() {
         unsafe { MaybeUninit::zeroed().assume_init() }
     }
+
     pub fn load_task(&mut self, task: TaskStateDescriptor) {
         self.task = task;
+
         unsafe {
             asm!(
             "ltr ax",
