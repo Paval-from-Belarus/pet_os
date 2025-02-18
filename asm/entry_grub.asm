@@ -369,6 +369,9 @@ GlobalDescriptorTable.start:
 .userCode: GDTEntry.valueOf (base: 0, limit: 0xFFFFF, type: CodeSelector.Readable, level: 11b, present: 1, attr: SEG_ATTR_32_BIT, granularity: 1b)
 .userData: GDTEntry.valueOf (base: 0, limit: 0xFFFFF, type: DataSelector.Writable, level: 11b, present: 1, attr: SEG_ATTR_32_BIT, granularity: 1b)
 
+; Task is not initialized here 
+.task: GDTEntry.nullEntry
+
 GlobalDescriptorTable.end:
 
 GlobalDescriptorTable.size = GlobalDescriptorTable.end - GlobalDescriptorTable.start

@@ -54,10 +54,10 @@ pub struct PagingProperties {
 #[repr(C)]
 pub struct GDTTable {
     null: Zeroed<MemoryDescriptor>,
-    kernel_code: UnsafeCell<MemoryDescriptor>,
-    kernel_data: UnsafeCell<MemoryDescriptor>,
-    user_code: UnsafeCell<MemoryDescriptor>,
-    user_data: UnsafeCell<MemoryDescriptor>,
+    kernel_code: MemoryDescriptor,
+    kernel_data: MemoryDescriptor,
+    user_code: MemoryDescriptor,
+    user_data: MemoryDescriptor,
     task: TaskStateDescriptor,
 }
 
