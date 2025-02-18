@@ -42,8 +42,9 @@ pub enum ZoneType {
     Device,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror_no_std::Error)]
 pub enum OsAllocationError {
+    #[error("NoMemory")]
     NoMemory, //no memory to accomplish request
 }
 
@@ -89,7 +90,7 @@ impl ToVirtualAddress for PhysicalAddress {
 
 ///Return crucial structures for kernel
 ///Without them, it's impossible
-#[inline(never)]
+#[no_mangle]
 pub fn init_kernel_space(
     allocator: BootAllocator,
     directory: &'static mut PageDirectory<'static>,
@@ -387,15 +388,14 @@ unsafe impl Allocator for Kernel {
 
         let offset = SLAB_ALLOCATOR
             .alloc(piece, Alignment::Page)
-            .unwrap_or_else(|_| {
-                panic!("Failed to alloc slab with size={size}")
+            .unwrap_or_else(|cause| {
+                panic!("Failed to alloc slab with size={size}: {cause}")
             });
 
-        log::info!("Allocated for {offset:04X}");
+        log::info!("Allocated for {offset:?}");
 
-        let bytes = unsafe {
-            core::slice::from_raw_parts_mut(offset as *mut u8, layout.size())
-        };
+        let bytes =
+            unsafe { core::slice::from_raw_parts_mut(offset, layout.size()) };
 
         Ok(NonNull::from(bytes))
     }
@@ -428,9 +428,12 @@ pub fn slab_alloc<T>(
         unreachable!("Slab piece too huge");
     };
 
-    let offset = SLAB_ALLOCATOR
-        .alloc(piece, Alignment::Page)
-        .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
+    let offset =
+        SLAB_ALLOCATOR
+            .alloc(piece, Alignment::Page)
+            .unwrap_or_else(|cause| {
+                panic!("Failed to alloc slab with size={size}: {cause}")
+            });
 
     Some(unsafe { &mut *(offset as *mut MaybeUninit<T>) })
 }
@@ -448,7 +451,7 @@ pub fn virtual_alloc(size: usize) -> VirtualAddress {
     SLAB_ALLOCATOR
         .get()
         .virtual_alloc(size)
-        .expect("Failed to allocate virtual memory")
+        .expect("Failed to allocate virtual memory") as VirtualAddress
 }
 
 pub fn virtual_dealloc(_offset: VirtualAddress) {

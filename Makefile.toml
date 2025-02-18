@@ -3,10 +3,10 @@ CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
 ASM_SOURCE_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/asm"
 SCRIPTS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/scripts"
 OUTPUT_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target"
+LOGS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/logs"
 
 
 IMAGES_PATH = "${OUTPUT_PATH}/images"
-LOGS_PATH = "${OUTPUT_PATH}/logs"
 OBJECTS_PATH = "${OUTPUT_PATH}/shared"
 
 KERNEL_LIB = "${OUTPUT_PATH}/target/release/libkernel.a"
@@ -152,4 +152,10 @@ args = ["${OUTPUT_PATH}.lock"]
 dependencies = ["image", "unlock-image"]
 script = '''
     bochs-debugger -q -f ${SCRIPTS_PATH}/bochs-config.bxrc
+'''
+
+[tasks.run]
+dependencies = ["image", "unlock-image"]
+script = '''
+    bochs -q -f ${SCRIPTS_PATH}/bochs-config.bxrc
 '''

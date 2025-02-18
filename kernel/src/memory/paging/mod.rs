@@ -42,7 +42,6 @@ pub enum PageMarkerError {
 }
 
 /// show which modules should be disabled/enabled at boot time
-
 #[repr(C)]
 pub struct PagingProperties {
     directory: *mut DirEntry<'static>,
@@ -96,13 +95,37 @@ pub struct GDTHandle {
 
 ///The common information about physical memory region
 ///Supported only ZONE_NORMAL memory (see linux kernel docs)
+#[repr(C)]
 pub struct CaptureMemRec {
+    kind: u32,
     ///The next free page
     next_page: usize,
     ///The common count of pages in region
     page_count: usize,
     ///The start physical offset of region
     memory_offset: PhysicalAddress,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    num_enum::FromPrimitive,
+    num_enum::IntoPrimitive,
+)]
+#[repr(u32)]
+pub enum MemoryKind {
+    Available = 1,
+    /// Usable memory holding ACPI information
+    Acpi = 3,
+    /// Reserved memory which needs to be preserved on hibernation
+    Hibernation = 4,
+    /// Occupied by defective RAM modules
+    DefectiveRam = 5,
+    #[num_enum(default)]
+    Reserved,
 }
 
 pub struct BootAllocator<'a> {
@@ -140,10 +163,13 @@ impl PagingProperties {
 }
 
 impl CaptureMemRec {
-    pub fn new(memory_offset: PhysicalAddress, size: usize) -> Self {
+    // I don't know why, but using MemoryKind instead raw kind
+    // cause invalid kind in struct
+    pub fn new(memory_offset: PhysicalAddress, size: usize, kind: u32) -> Self {
         let page_count = Page::lower_bound(size);
 
         Self {
+            kind,
             next_page: 0,
             page_count,
             memory_offset,
@@ -166,6 +192,10 @@ impl CaptureMemRec {
 
     pub fn free_pages_count(&self) -> usize {
         self.page_count - self.next_page
+    }
+
+    pub fn kind(&self) -> MemoryKind {
+        self.kind.into()
     }
 
     ///return next free physical offset in region
@@ -242,11 +272,21 @@ bitflags!(
 
 #[cfg(test)]
 mod tests {
+    use crate::memory::paging::MemoryKind;
+
     extern crate alloc;
     extern crate std;
 
     #[test]
-    fn import() {
+    fn memory_kind_test() {
+        let zero = MemoryKind::from(0u32);
+        assert_eq!(zero, MemoryKind::Reserved);
+
+        let one = MemoryKind::from(1u32);
+        assert_eq!(one, MemoryKind::Available);
+
+        let two = MemoryKind::from(3u32);
+        assert_eq!(two, MemoryKind::Acpi);
         // let offset: PhysicalAddress = 0;
         // assert_eq!(offset.as_virtual(), 0xC0_000_000);
     }

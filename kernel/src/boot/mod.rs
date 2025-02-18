@@ -79,9 +79,11 @@ pub unsafe fn parse_grub_args_native(
         .iter()
         .zip(boot_allocator.as_slice_mut().iter_mut())
     {
+        let raw_kind: u32 = area.typ().into();
         *kernel_area = CaptureMemRec::new(
             area.start_address() as usize,
             area.size() as usize,
+            raw_kind,
         );
     }
 

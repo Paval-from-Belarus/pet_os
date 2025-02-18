@@ -73,18 +73,6 @@ fn init_timer(info: CallbackInfo) -> &'static InterruptObject {
         memory::box_alloc(InterruptObject::new(IrqLine::SYS_TIMER.line))
             .expect("No memory for timer");
 
-    // let timer_object = {
-    //     let raw_object =
-    //         memory::slab_alloc::<InterruptObject>(AllocationStrategy::Kernel)
-    //             .expect("Failed to init timer");
-    //
-    //     let object = InterruptObject::new(IrqLine::SYS_TIMER.line);
-    //
-    //     raw_object.write(object)
-    // };
-
-    log::debug!("{timer_object:?}");
-
     timer_object.append(info);
 
     SlabBox::leak(timer_object)

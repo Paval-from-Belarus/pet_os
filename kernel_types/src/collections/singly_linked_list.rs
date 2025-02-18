@@ -54,7 +54,8 @@ impl<T: TinyListNodeData> TinyListNode<T> {
         }
     }
     pub fn new(next: Option<&mut TinyListNode<T>>) -> TinyListNode<T> {
-        let next = next.map(|node| NonNull::from(node));
+        let next = next.map(NonNull::from);
+
         Self {
             next,
             _marker: PhantomData,

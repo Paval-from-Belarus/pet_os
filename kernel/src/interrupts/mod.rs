@@ -312,8 +312,6 @@ fn init_interceptors(table: &mut IDTable) {
 
     for (index, object_option) in created_objects.iter_mut().enumerate() {
         if object_option.is_none() {
-            log::info!("Alloc new int object");
-
             let line = PicLine::try_from(index as u8)
                 .expect("index cannot exceed array size");
 

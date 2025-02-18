@@ -13,6 +13,7 @@ ends
 ;@Declare{struct=CaptureRangeRec}
 struct CaptureRangeRec 
 {
+	.dMemoryKind dd ? ;memory kind
 	.dNextPage dd ? ;index of next page
 	.dPageCnt dd ? ;count of pages in current memory range
 	.dMemOffset dd ? ;physical memory offset

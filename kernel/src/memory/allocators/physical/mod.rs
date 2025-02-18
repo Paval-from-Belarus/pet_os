@@ -9,7 +9,7 @@ use kernel_types::declare_constants;
 
 use crate::log;
 use crate::memory::allocators::physical::page::BuddyPage;
-use crate::memory::paging::{BootAllocator, PageMarkerError};
+use crate::memory::paging::{BootAllocator, MemoryKind, PageMarkerError};
 use crate::memory::OsAllocationError::NoMemory;
 use crate::memory::{
     OsAllocationError, Page, PhysicalAddress, ToPhysicalAddress,
@@ -37,7 +37,6 @@ pub type BuddyArray = [LinkedList<'static, Page>; MAX_UNIT_POWER + 1];
 ///todo: allocator should works as buddy allocator
 pub struct PhysicalAllocator {
     buddies: spin::Mutex<BuddyArray>, //all atomic operations should be atomic in system scope
-                                      //it means that no thread switching will be enabled while atomic operations are not finished
 }
 
 unsafe impl Send for PhysicalAllocator {}
@@ -59,6 +58,7 @@ fn is_even_in_memory_map(page: &Page) -> bool {
     unsafe { page.index() % 2 == 0 }
 }
 
+#[no_mangle]
 unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
     unsafe fn reset_pages(offset: VirtualAddress, count: usize) {
         let page = Page::take_unchecked(offset);
@@ -73,13 +73,18 @@ unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
         let pages_count = entry.free_pages_count();
         let region_size = pages_count * Page::SIZE;
         let region_start = entry.next_offset();
+        let kind = entry.kind();
 
-        log::info!("start = {region_start:0X}. size = {region_size}. pages = {pages_count}");
+        log::info!("start = {region_start:0X}. size = {region_size}. pages = {pages_count}. kind = {kind:?}");
     });
 
     let mut buddies: BuddyArray = core::array::from_fn(|_| Default::default());
 
     for pivot in boot_allocator.as_slice_mut() {
+        if pivot.kind() != MemoryKind::Available {
+            continue;
+        }
+
         let mut mem_offset = pivot.next_offset();
 
         if mem_offset == 0x1FF0000 {
@@ -217,7 +222,7 @@ impl PhysicalAllocator {
         }
     }
 
-    ///Be careful with such method: it should, theoretically, batch page in solid memory region, but, truly, doesn't
+    /// Be careful with such method: it should, theoretically, batch page in solid memory region, but, truly, doesn't
     pub fn dealloc_page(&self, page: &'static mut Page) {
         page.release();
         if !page.is_used() {
@@ -226,44 +231,15 @@ impl PhysicalAllocator {
             last_list.push_back(page.as_node());
         }
     }
+
     pub fn fast_pages(
         &'static self,
         pages_count: usize,
     ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
-        let mut list = LinkedList::<'static, Page>::empty();
-        // let mut rest_pages_count = pages_count;
-        // let mut batch_size = 2;//the initial count of pages to wrap
-        // while rest_pages_count > 0 {
-        //     let batch_result = self.new_alloc(batch_size);
-        //     if batch_result.is_err() && batch_size == 1 {
-        //         //
-        //         return Err(NoMemory);
-        //     } else if batch_size == 2 {
-        //         batch_size = 1;
-        //     }
-        //     if let Ok(batch) = batch_result {
-        //
-        //     }
-        // }
-        self.alloc_densely(1)
-        // for _ in 0..pages_count {
-        //     let page_result = self.alloc_pages(1);
-        //     match page_result {
-        //         Ok(page_list) => {
-        //             list.splice(page_list);
-        //         }
-        //         Err(error_code) => {
-        //             for page in list.iter_mut() {
-        //                 self.dealloc_page(page);
-        //             }
-        //             return Err(error_code);
-        //         }
-        //     }
-        // }
-        // Ok(list)
+        self.alloc_densely(pages_count)
     }
 
-    //allocate continuous memory region
+    /// allocate continuous memory region
     pub fn alloc_pages(
         &self,
         count: usize,
@@ -275,6 +251,8 @@ impl PhysicalAllocator {
         &self,
         count: usize,
     ) -> Result<BuddyBatch, OsAllocationError> {
+        log::debug!("Allocating {count} pages");
+
         let mut index = buddy_index(count);
 
         assert!(index <= MAX_UNIT_POWER, "Buddy with too huge power");
@@ -328,7 +306,6 @@ impl PhysicalAllocator {
 
         let mut lock = self.buddies.lock();
         let last_head = lock.last_mut().unwrap();
-        log::debug!("{last_head:?}");
         let mut longest = 0; //the current longest count of pages in same sequence
 
         let mut last_offset = Option::<PhysicalAddress>::None;
