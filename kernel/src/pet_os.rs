@@ -103,11 +103,13 @@ pub fn rust_main(properties: &mut PagingProperties) {
 
     process::submit_task(thread_1);
     process::submit_task(thread_2);
+
     process::run();
 }
 
 fn task1(_context: *mut ()) {
-    log!("task 1 started");
+    log::info!("task 1 started");
+
     loop {
         process::sleep(300);
         log!("task 1 awaken");
@@ -115,7 +117,7 @@ fn task1(_context: *mut ()) {
 }
 
 fn task2(_context: *mut ()) {
-    log!("task 2 started");
+    log::info!("task 2 started");
     loop {
         process::sleep(400);
         log!("task 2 awaken");

@@ -155,7 +155,7 @@ pub struct TaskContext {
 }
 
 pub fn prepare_thread() {
-    log!("prepare thread");
+    log::debug!("prepare thread");
     unsafe { SCHEDULER.get().unlock() };
 }
 
@@ -281,6 +281,8 @@ fn accept(_task: &'static ThreadTask) {}
 
 //run the kernel main loop
 pub fn run() -> ! {
+    log::debug!("Main loop");
+
     SCHEDULER.get().run();
 }
 
@@ -291,14 +293,17 @@ pub fn sleep(milliseconds: usize) {
 
 pub fn init() -> CallbackInfo {
     clocks::init();
+
     let idle = new_task(idle_task, ptr::null_mut(), TaskPriority::HIGH);
     SCHEDULER.set(TaskScheduler::new(idle));
+
     CallbackInfo::default(on_timer)
 }
 
 fn idle_task(_args: *mut ()) {
     loop {
-        log!("Idle task");
+        log::debug!("Idle task");
+
         unsafe {
             asm!("hlt", options(preserves_flags, nomem, nostack));
         }
@@ -311,8 +316,12 @@ fn try_wakeup() {
 }
 
 fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
+    log::debug!("On timer");
+
     clocks::update_time();
+
     try_wakeup();
+
     true
 }
 

@@ -37,6 +37,7 @@ pub fn init() {
     let divisor: u32 = DEFAULT_FREQUENCY / 50;
     let low = (divisor & 0xFF) as u8;
     let high = ((divisor >> 8) & 0xFF) as u8;
+
     unsafe {
         io::outb(0x43, 0x36);
         io::outb(0x40, low);
