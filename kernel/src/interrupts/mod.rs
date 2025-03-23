@@ -272,8 +272,6 @@ pub fn init() {
 
     init_interceptors(table);
 
-    log::info!("Interceptors are initialized");
-
     unsafe {
         INTERRUPT_TABLE_HANDLE = IDTHandle::new(&INTERRUPT_TABLE);
 
@@ -320,7 +318,6 @@ pub unsafe extern "C" fn interceptor_stub() {
 
 fn init_interceptors(table: &mut IDTable) {
     let mut created_objects = system::init_irq();
-    log::info!("1");
 
     for (index, object_option) in created_objects.iter_mut().enumerate() {
         if object_option.is_none() {

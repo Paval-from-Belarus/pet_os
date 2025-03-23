@@ -1,4 +1,4 @@
-use core::alloc::Allocator;
+use core::alloc::{Allocator, GlobalAlloc};
 use core::mem::MaybeUninit;
 use core::ops::Range;
 use core::ptr::NonNull;
@@ -367,14 +367,6 @@ pub enum AllocationStrategy {
     Device,
 }
 
-pub fn alloc(_size: usize, _strategy: AllocationStrategy) -> *mut u8 {
-    ptr::null_mut()
-}
-
-pub fn dealloc(pointer: *mut u8) {
-    assert!(!pointer.is_null(), "Cannot dealloc null");
-}
-
 pub struct Kernel;
 
 unsafe impl Allocator for Kernel {
@@ -411,6 +403,22 @@ unsafe impl Allocator for Kernel {
     ) {
         let offset = ptr.as_ptr() as VirtualAddress;
         SLAB_ALLOCATOR.dealloc(offset);
+    }
+}
+
+unsafe impl GlobalAlloc for Kernel {
+    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+        let mut ptr = Kernel
+            .allocate(layout)
+            .expect("Failed to allocate: {layout:?}");
+
+        ptr.as_mut().as_mut_ptr()
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
+        let ptr = NonNull::new(ptr).expect("Only not null ptr");
+
+        Kernel.deallocate(ptr, layout);
     }
 }
 
@@ -668,11 +676,13 @@ static mut TASK_STATE: TaskState = TaskState::null();
 
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> =
     UnsafeLazyCell::empty();
+
 static SLAB_ALLOCATOR: UnsafeLazyCell<SystemAllocator> =
     UnsafeLazyCell::empty();
-#[cfg(not(test))]
+
 #[global_allocator]
-static RUST_ALLOCATOR: allocators::RustAllocator = allocators::RustAllocator;
+static KERNEL_ALLOCATOR: Kernel = Kernel;
+
 static KERNEL_MARKER: SpinLockLazyCell<PageMarker<'static>> =
     SpinLockLazyCell::empty();
 
