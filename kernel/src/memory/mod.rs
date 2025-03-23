@@ -129,7 +129,7 @@ pub fn enable_task_switching(table: &mut GDTTable) {
             mem::size_of::<TaskState>() - 1,
         )
     };
-    
+
     log::debug!("Task state: {task:?}");
 
     table.load_task(task);
@@ -414,14 +414,20 @@ unsafe impl Allocator for Kernel {
     }
 }
 
+pub trait Slab {
+    const NAME: &str;
+    const ALIGNMENT: Alignment = Alignment::CacheLine;
+}
+
 pub type SlabBox<T> = Box<T, Kernel>;
 
-pub fn box_alloc<T>(value: T) -> Option<SlabBox<T>> {
+pub fn slab_alloc<T>(value: T) -> Option<SlabBox<T>> {
     Box::try_new_in(value, Kernel).ok()
 }
 
 /// the kernel method to allocate structure in kernel slab pool
-pub fn slab_alloc<T>(
+#[must_use]
+pub fn slab_alloc_old<T: Slab>(
     _strategy: AllocationStrategy,
 ) -> Option<&'static mut MaybeUninit<T>> {
     let size = mem::size_of::<T>();
@@ -473,7 +479,9 @@ pub fn physical_dealloc(_offset: *mut u8) {
 //the method should be invoked only by one thread
 //concurrency is forbidden
 pub unsafe fn switch_to_task(task: &mut ThreadTask) {
-    TASK_STATE.set_kernel_stack(task.kernel_stack + process::TASK_STACK_SIZE);
+    TASK_STATE.set_kernel_stack(
+        task.kernel_stack + process::TASK_STACK_SIZE, // - mem::size_of::<TaskContext>()
+    );
 
     let marker = if task.state.is_some() {
         unreachable!("Process functionality is not implemented")
@@ -522,7 +530,7 @@ impl MemoryMap {
 }
 
 fn mem_map_offset() -> *mut Page {
-    unsafe { &mut MEMORY_MAP as *mut MemoryMap as *mut Page }
+    unsafe { &raw mut MEMORY_MAP as *mut Page }
 }
 
 impl ToPhysicalAddress for Page {

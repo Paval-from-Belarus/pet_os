@@ -66,13 +66,17 @@ pub fn init_irq() -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
 
 #[inline(never)]
 fn init_timer(info: CallbackInfo) -> &'static InterruptObject {
-    let timer_object =
-        memory::box_alloc(InterruptObject::new(IrqLine::SYS_TIMER.line))
-            .expect("No memory for timer");
+    let raw_object = memory::slab_alloc_old::<InterruptObject>(
+        memory::AllocationStrategy::Kernel,
+    );
+
+    let timer_object = raw_object
+        .expect("No memory for timer object")
+        .write(InterruptObject::new(IrqLine::SYS_TIMER.line));
 
     timer_object.append(info);
 
-    SlabBox::leak(timer_object)
+    timer_object
 }
 
 declare_constants!(

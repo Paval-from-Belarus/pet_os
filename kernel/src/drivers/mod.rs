@@ -1,3 +1,4 @@
+/// All drivers storing in
 #[allow(unused)]
 use core::ptr::NonNull;
 use core::{mem, slice};
@@ -7,22 +8,25 @@ use kernel_types::collections::{LinkedList, ListNode, Queue};
 use kernel_types::declare_constants;
 use kernel_types::drivers::{Device, DeviceId, DriverId, KernelSymbol};
 
-use crate::file_system::{DeviceChild, FileOperations, IndexNode};
+use crate::file_system::{
+    DeviceChild, FileOperations, IndexNode, SuperBlock, SuperBlockOperations,
+};
 use crate::memory::VirtualAddress;
 use crate::utils::atomics::SpinLockLazyCell;
 
 mod keyboard;
+mod management;
 mod memory;
 mod network;
 mod vga;
 
 ///The only one DriverId for each driver
 ///Each device can be handler as devices as can
-pub fn register(
-    _id: DriverId,
-    //the origin name of driver (device name will be exceeded by additional number)
-    _name: &str,
-) -> Result<DriverId, ()> {
+pub fn register_file_system(_fs: SuperBlock) -> Result<DriverId, ()> {
+    Ok(DriverId::RESERVED)
+}
+
+pub fn register_device_driver(_name: &str) -> Result<DriverId, ()> {
     Ok(DriverId::RESERVED)
 }
 

@@ -5,10 +5,13 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{mem, ptr};
 
+use alloc::sync::Arc;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use kernel_macro::ListNode;
-use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
+use kernel_types::collections::{
+    BorrowingLinkedList, BoxedNode, LinkedList, ListNode, TinyListNode,
+};
 use kernel_types::{bitflags, declare_constants, Zeroed};
 use static_assertions::const_assert;
 
@@ -16,9 +19,9 @@ use crate::file_system::{
     File, FileOpenMode, MountPoint, PathNode, MAX_FILES_COUNT,
 };
 use crate::interrupts::CallbackInfo;
-use crate::memory::AllocationStrategy::Kernel;
 use crate::memory::{
-    Page, ProcessState, SegmentSelector, ThreadRoutine, VirtualAddress,
+    slab_alloc, Kernel, Page, ProcessState, SegmentSelector, Slab, SlabBox,
+    ThreadRoutine, VirtualAddress,
 };
 use crate::process::scheduler::TaskScheduler;
 use crate::utils::atomics::UnsafeLazyCell;
@@ -156,7 +159,7 @@ pub struct TaskContext {
 
 pub fn prepare_thread() {
     log::debug!("prepare thread");
-    unsafe { SCHEDULER.get().unlock() };
+    SCHEDULER.get().unlock();
 }
 
 impl TaskContext {
@@ -169,18 +172,49 @@ impl TaskContext {
     }
 }
 
-pub struct RunnableTask;
+pub type ThreadTaskBox = RunningTaskBox;
 
-pub struct SiblingTask;
+pub struct RunningTaskBox {
+    node: SlabBox<RunningTask>,
+}
+
+impl RunningTaskBox {
+    pub fn into_node(self) -> &'static mut ListNode<RunningTask> {
+        unsafe { &mut *SlabBox::into_raw(self.node) }.as_node()
+    }
+}
+
+impl BoxedNode for RunningTask {
+    type Target = RunningTaskBox;
+
+    fn into_boxed(
+        node: &mut <RunningTask as kernel_types::collections::TinyListNodeData>::Item,
+    ) -> Self::Target {
+        let node = unsafe { SlabBox::from_raw_in(node, Kernel) };
+
+        Self::Target { node }
+    }
+}
 
 #[derive(ListNode)]
+pub struct RunningTask {
+    #[list_pivots]
+    node: ListNode<RunningTask>,
+    pub lock: Arc<spin::RwLock<ThreadTask>>,
+}
+
+impl Clone for RunningTask {
+    fn clone(&self) -> Self {
+        Self {
+            node: ListNode::empty(),
+            lock: Arc::clone(&self.lock),
+        }
+    }
+}
+
 #[repr(C)]
 pub struct ThreadTask {
     //the pivots in scheduler list
-    #[list_pivots]
-    runnable: ListNode<RunnableTask>,
-    #[list_pivots(dangling)]
-    sibling: ListNode<SiblingTask>,
     pub priority: TaskPriority,
     pub status: TaskStatus,
     //the bottom of the thread's kernel stack
@@ -201,6 +235,10 @@ pub struct ThreadTask {
     //todo: consider to add namespace field
 }
 
+impl Slab for ThreadTask {
+    const NAME: &str = "task";
+}
+
 const_assert!(mem::size_of::<ThreadTask>() < Page::SIZE);
 
 pub struct TaskFileSystem {
@@ -211,12 +249,12 @@ pub struct TaskFileSystem {
 }
 
 impl ThreadTask {
-    pub unsafe fn new(
+    pub fn new_boxed(
         id: usize,
         kernel_stack: VirtualAddress,
         priority: TaskPriority,
-    ) -> Self {
-        Self {
+    ) -> ThreadTaskBox {
+        let lock = Arc::new(spin::RwLock::new(ThreadTask {
             kernel_stack,
             id,
             priority,
@@ -227,8 +265,14 @@ impl ThreadTask {
             state: None,
             files: NonNull::dangling(),
             file_system: NonNull::dangling(),
-            runnable: ListNode::empty(),
-            sibling: ListNode::empty(),
+        }));
+
+        ThreadTaskBox {
+            node: slab_alloc(RunningTask {
+                node: ListNode::empty(),
+                lock,
+            })
+            .unwrap(),
         }
     }
 }
@@ -243,17 +287,14 @@ pub fn new_task(
     routine: ThreadRoutine,
     arg: *mut (),
     priority: TaskPriority,
-) -> &'static mut ThreadTask {
+) -> ThreadTaskBox {
     let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
 
-    let raw_task = memory::slab_alloc::<ThreadTask>(Kernel)
-        .expect("Failed to alloc new task");
-
     let task_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
-    let task = unsafe {
-        let task_data = ThreadTask::new(task_id, kernel_stack, priority);
-        raw_task.write(task_data)
-    };
+    let task = ThreadTask::new_boxed(task_id, kernel_stack, priority);
+
+    let task_node = task.into_node();
+    let mut task = task_node.lock.write();
 
     let context = TaskContext::with_return_address(routine as VirtualAddress);
 
@@ -268,10 +309,12 @@ pub fn new_task(
 
     unsafe { arg_offset.write(arg) };
 
-    task
+    drop(task);
+
+    task_node.into_boxed()
 }
 
-pub fn submit_task(task: &'static mut ThreadTask) {
+pub fn submit_task(task: ThreadTaskBox) {
     // let tiny_node = unsafe { task.as_sibling().as_mut() };
     // let raw_tiny_node = NonNull::from(tiny_node);
     SCHEDULER.get().add_task(task);
@@ -305,7 +348,10 @@ fn idle_task(_args: *mut ()) {
         log::debug!("Idle task");
 
         unsafe {
-            asm!("hlt", options(preserves_flags, nomem, nostack));
+            asm! {
+                "hlt",
+                options(preserves_flags, nomem, nostack)
+            }
         }
     }
 }
@@ -332,10 +378,16 @@ pub struct Futex {
     inner: UnsafeCell<NonNull<FutexInner>>,
 }
 
+impl Slab for FutexInner {
+    const NAME: &str = "futex";
+}
+
 impl Futex {
     pub fn new(capacity: usize) -> Self {
-        let raw_futex = memory::slab_alloc::<FutexInner>(Kernel)
-            .expect("Failed to alloc futex");
+        let raw_futex = memory::slab_alloc_old::<FutexInner>(
+            memory::AllocationStrategy::Kernel,
+        )
+        .expect("Failed to alloc futex");
         let futex = raw_futex.write(FutexInner {
             count: AtomicUsize::new(0),
             max_count: capacity,
@@ -344,9 +396,11 @@ impl Futex {
         let inner = UnsafeCell::new(NonNull::from(futex));
         Self { inner }
     }
+
     pub fn mutex() -> Self {
         Self::new(1)
     }
+
     pub fn acquire(&self) {
         SCHEDULER.lock();
         unsafe {
@@ -364,17 +418,19 @@ impl Futex {
             SCHEDULER.unlock();
         }
     }
+
     pub fn release(&self) {
         SCHEDULER.lock();
         unsafe {
             let futex = self.inner();
             let waiting_option = futex.release();
             if let Some(waiting) = waiting_option {
-                SCHEDULER.add_task(waiting);
+                SCHEDULER.add_task(waiting.into_boxed());
             }
             SCHEDULER.unlock();
         }
     }
+
     fn inner(&self) -> &mut FutexInner {
         unsafe { (*self.inner.get()).as_mut() }
     }
@@ -384,7 +440,7 @@ impl Futex {
 struct FutexInner {
     count: AtomicUsize,
     max_count: usize,
-    waiting: LinkedList<'static, RunnableTask>,
+    waiting: LinkedList<'static, RunningTask>,
 }
 
 impl FutexInner {
@@ -395,11 +451,12 @@ impl FutexInner {
         self.count.fetch_add(1, Ordering::Release);
         Ok(())
     }
-    pub fn wait(&mut self, task: &'static mut ThreadTask) {
-        task.status = TaskStatus::Blocked;
-        self.waiting.push_back(task.as_runnable())
+    pub fn wait(&mut self, task: &'static mut RunningTask) {
+        task.lock.write().status = TaskStatus::Blocked;
+
+        self.waiting.push_back(task.as_node())
     }
-    fn release(&mut self) -> Option<&'static mut ListNode<RunnableTask>> {
+    fn release(&mut self) -> Option<&'static mut ListNode<RunningTask>> {
         self.count.fetch_sub(1, Ordering::Release);
         self.waiting.remove_first()
     }

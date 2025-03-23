@@ -3,8 +3,8 @@ use kernel_types::collections::{BorrowingLinkedList, TinyLinkedList};
 use crate::drivers::Handle;
 use crate::interrupts::pic::PicLine;
 use crate::interrupts::{pic, CallbackInfo};
-use crate::memory;
 use crate::memory::AllocationStrategy::Kernel;
+use crate::memory::{self, Slab};
 
 ///The manager struct that handle all request for given interrupt.
 #[derive(Debug)]
@@ -12,6 +12,10 @@ pub struct InterruptObject {
     callbacks: spin::Mutex<TinyLinkedList<'static, CallbackInfo>>,
     //the interrupt number
     line: PicLine,
+}
+
+impl Slab for InterruptObject {
+    const NAME: &str = "int_obj";
 }
 
 unsafe impl Sync for InterruptObject {}
@@ -38,7 +42,7 @@ impl InterruptObject {
 
         if !is_dispatched {
             //todo: replace with system message
-            log::info!("int {:?} is not dispatched", self.line);
+            log::error!("int {:?} is not dispatched", self.line);
             //if no one complete request simply suppress irq
             pic::complete(self.line);
         }
@@ -47,7 +51,7 @@ impl InterruptObject {
     //the registration is appending callback to the end of sequence
     //to remove consider to add DriverHandle
     pub fn append(&self, stack_info: CallbackInfo) {
-        let raw_node = memory::slab_alloc::<CallbackInfo>(Kernel)
+        let raw_node = memory::slab_alloc_old::<CallbackInfo>(Kernel)
             .expect("Failed to alloc interrupt object info");
 
         let node = raw_node.write(stack_info);

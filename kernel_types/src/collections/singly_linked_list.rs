@@ -9,6 +9,8 @@ use crate::collections::{
     BorrowingLinkedList, ListNodeData, TinyListNodeData, UnlinkableListGuard,
 };
 
+use super::BoxedNode;
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct TinyListNode<T: Sized> {
@@ -34,6 +36,40 @@ impl<T: ListNodeData> ListNode<T> {
         unsafe { mem::transmute(self) }
     }
 }
+
+impl<T> TinyListNode<T>
+where
+    T: TinyListNodeData + BoxedNode,
+{
+    pub fn into_boxed(&mut self) -> T::Target {
+        T::into_boxed(self.deref_mut())
+    }
+}
+
+impl<T> ListNode<T>
+where
+    T: ListNodeData + BoxedNode,
+{
+    pub fn into_boxed(&mut self) -> T::Target {
+        T::into_boxed(self.tiny_mut())
+    }
+}
+
+// #[cfg(feature = "alloc")]
+// impl<T, B, ITEM> alloc::borrow::ToOwned for TinyListNode<T>
+// where
+//     T: Sized
+//         + alloc::borrow::ToOwned<Owned = B>
+//         + TinyListNodeData<Item = ITEM>,
+//     B: core::borrow::Borrow<TinyListNode<T>>,
+//     ITEM: AsRef<T>,
+// {
+//     type Owned = B;
+//
+//     fn to_owned(&self) -> Self::Owned {
+//         T::to_owned(self.deref().as_ref())
+//     }
+// }
 
 // impl<T: TinyListNodeData> From<*mut TinyListNode<T>> for TinyListNode<T> {
 //     fn from(value: *mut TinyListNode<T>) -> Self {
@@ -135,6 +171,7 @@ impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a>
             self.last = Some(raw_node);
         }
     }
+
     fn push_front(&mut self, node: &'a mut TinyListNode<T>) {
         node.next = self.first;
         let mut raw_node = NonNull::from(node);

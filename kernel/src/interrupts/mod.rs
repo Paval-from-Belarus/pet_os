@@ -10,7 +10,8 @@ use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
 use crate::memory::AllocationStrategy::Kernel;
 use crate::memory::{
-    InterruptGate, PrivilegeLevel, SegmentSelector, SystemType, VirtualAddress,
+    InterruptGate, PrivilegeLevel, SegmentSelector, Slab, SystemType,
+    VirtualAddress,
 };
 use crate::utils::atomics::{SpinLock, SpinLockLazyCell};
 use crate::{get_eax, memory, syscall};
@@ -45,6 +46,10 @@ pub struct CallbackInfo {
     context: *mut (),
     #[list_pivot]
     next: TinyListNode<CallbackInfo>,
+}
+
+impl Slab for CallbackInfo {
+    const NAME: &str = "int_callback";
 }
 
 impl CallbackInfo {
@@ -267,6 +272,8 @@ pub fn init() {
 
     init_interceptors(table);
 
+    log::info!("Interceptors are initialized");
+
     unsafe {
         INTERRUPT_TABLE_HANDLE = IDTHandle::new(&INTERRUPT_TABLE);
 
@@ -313,13 +320,14 @@ pub unsafe extern "C" fn interceptor_stub() {
 
 fn init_interceptors(table: &mut IDTable) {
     let mut created_objects = system::init_irq();
+    log::info!("1");
 
     for (index, object_option) in created_objects.iter_mut().enumerate() {
         if object_option.is_none() {
             let line = PicLine::try_from(index as u8)
                 .expect("index cannot exceed array size");
 
-            let raw_object = memory::slab_alloc::<InterruptObject>(Kernel)
+            let raw_object = memory::slab_alloc_old::<InterruptObject>(Kernel)
                 .expect("Failed to alloc task struct");
 
             let object = raw_object.write(InterruptObject::new(line));
@@ -388,10 +396,14 @@ impl IDTHandle {
 }
 
 pub unsafe fn disable() {
+    log::debug!("Disable interrupts");
+
     asm!("cli", options(nomem, nostack));
 }
 
 pub unsafe fn enable() {
+    log::debug!("Enable interrupts");
+
     asm!("sti", options(nomem, nostack));
 }
 

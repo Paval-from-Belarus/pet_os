@@ -10,7 +10,7 @@ path = "src/pet_os.rs"
 [profile.release]
 lto = true
 panic = "abort"
-strip = "all"
+strip = "debuginfo"
 incremental = true
 codegen-units = 1
 opt-level = 's'
@@ -36,7 +36,8 @@ kernel-types = { workspace = true }
 
 multiboot2 = { workspace = true }
 multiboot = { workspace = true }
-log = { workspace = true } 
+log = { workspace = true }
+heapless = { version = "0.7.17", default-features = false }
 ##generic-array = { version = "1.0.0", features = ["const-default"]}
 
 #failure = { version = "0.1", features = ["failure_derive"], default-features = false }

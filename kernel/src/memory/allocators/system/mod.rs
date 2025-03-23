@@ -22,6 +22,7 @@ use super::physical::BuddyBatch;
 
 pub enum Alignment {
     Word,
+    CacheLine,
     //the machine word on such architecture
     Page, //the alignment on Page::SIZE
 }

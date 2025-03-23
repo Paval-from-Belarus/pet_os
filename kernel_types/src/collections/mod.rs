@@ -157,3 +157,9 @@ unsafe impl<T: ListNodeData> TinyListNodeData for T {
         ListNodeData::from_node(pivot)
     }
 }
+
+//marker type for any type
+pub trait BoxedNode: TinyListNodeData {
+    type Target;
+    fn into_boxed(node: &mut Self::Item) -> Self::Target;
+}

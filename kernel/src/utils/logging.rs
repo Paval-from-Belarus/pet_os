@@ -2,14 +2,16 @@ use core::fmt;
 use core::fmt::Write;
 use kernel_types::declare_constants;
 
-use crate::utils::atomics::SpinLock;
 use crate::utils::io;
 
 #[macro_export]
 macro_rules! log {
 	( $($arg:tt)* ) => ({
 		use core::fmt::Write;
-		let _ = write!(&mut $crate::utils::logging::Logger::get(), $($arg)*);
+
+                if let Some(logger) = &mut $crate::utils::logging::LOGGER_LOCK.try_lock().as_mut() {
+		    let _ = write!(logger, $($arg)*);
+                }
 	})
 }
 
@@ -35,7 +37,7 @@ pub unsafe fn put_byte_in_serial(byte: u8) {
     io::outb(BOCHS_HACK_PORT, byte);
 }
 
-static LOGGER_LOCK: SpinLock = SpinLock::new();
+pub static LOGGER_LOCK: spin::Mutex<Logger> = spin::Mutex::new(Logger);
 static LOGGER_INSTANCE: Logger = Logger;
 
 #[repr(transparent)]
@@ -52,7 +54,7 @@ impl log::Log for Logger {
         }
 
         log!(
-            "{}:{} -- {}",
+            "[{}][{}] {}\n",
             record.level(),
             record.target(),
             record.args()
@@ -83,21 +85,6 @@ pub fn init() {
 
     log::set_logger(&LOGGER_INSTANCE).expect("Failed to set logger");
     log::set_max_level(log::LevelFilter::Debug);
-}
-
-impl Logger {
-    pub fn get() -> Logger {
-        let instance = Logger;
-        LOGGER_LOCK.acquire();
-        instance
-    }
-}
-
-impl Drop for Logger {
-    fn drop(&mut self) {
-        let _ = writeln!(self);
-        LOGGER_LOCK.release();
-    }
 }
 
 impl Write for Logger {

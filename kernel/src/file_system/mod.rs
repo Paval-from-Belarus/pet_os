@@ -4,12 +4,14 @@ use core::ptr;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 
+use alloc::boxed::Box;
 use kernel_macro::ListNode;
 use kernel_types::collections::{HashData, HashTable};
 use kernel_types::collections::{LinkedList, ListNode, TinyListNode};
-use kernel_types::drivers::Device;
+use kernel_types::drivers::{Device, DriverId};
 use kernel_types::string::{MutString, QuickString};
 use kernel_types::{bitflags, declare_constants};
+pub use super_block::{SuperBlock, SuperBlockOperations};
 
 use crate::drivers::{BlockDevice, CharDevice};
 use crate::utils::atomics::{SpinLock, UnsafeLazyCell};
@@ -17,50 +19,15 @@ use crate::utils::time::Timestamp;
 use crate::utils::SpinBox;
 
 mod fat;
+mod super_block;
 
 pub fn parse_path(_path: MutString) {}
 
-pub fn registry(_file_system: *const FileSystemType) {}
 declare_constants!(
     pub usize,
-    MAX_FILE_NAME = 255, "The maximal length for file name";
+    MAX_FILE_NAME_LEN = 255, "The maximal length for file name";
     MAX_FILES_COUNT = 15, "The count of files for process";
 );
-bitflags! {
-    pub FileSystemStatus(usize),
-    READ_ONLY = 0b01,
-}
-///Immutable object holding information about file system
-#[derive(ListNode)]
-#[repr(C)]
-pub struct FileSystemType {
-    name: &'static str,
-    read_super: Option<fn(&SuperBlock)>,
-    #[list_pivot]
-    node: TinyListNode<FileSystemType>,
-    status: FileSystemStatus,
-}
-
-#[derive(ListNode)]
-#[repr(C)]
-pub struct SuperBlock {
-    lock: SpinLock,
-    files: LinkedList<'static, File>,
-    mounts: LinkedList<'static, MountPoint>,
-    #[list_pivot]
-    node: TinyListNode<SuperBlock>,
-    //the size of elementary block in file system (for hard drive communication)
-    //consider to add block_size_bits
-    block_size: usize,
-    //the limitation of file system about max file size
-    max_file_size: usize,
-    system_type: &'static FileSystemType,
-    operations: NonNull<SuperBlockOperations>,
-    device: Device,
-    private: *mut (),
-}
-
-impl SuperBlock {}
 
 pub enum NodeState {
     Locked,
@@ -281,6 +248,7 @@ pub struct FileOperations {
     ioctl: fn(&mut IndexNode, &mut File, usize),
     //consider additionally implement file_lock and mmap handler
 }
+
 bitflags! {
     pub FileRenameFlag(usize),
     //if target is exist then no replacement can occurred
@@ -288,6 +256,7 @@ bitflags! {
     //both files should exist; swap files by places
     EXCHANGE = 0b10
 }
+
 #[repr(C)]
 pub struct IndexNodeOperations {
     create_directory: fn(&mut IndexNode),
@@ -295,15 +264,6 @@ pub struct IndexNodeOperations {
     rename: fn(&mut IndexNode, &mut IndexNode, FileRenameFlag),
     check_permissions: fn(&mut IndexNode) -> bool,
     truncate: fn(&mut IndexNode, size: usize),
-}
-
-#[repr(C)]
-pub struct SuperBlockOperations {
-    create_node: fn(&mut SuperBlock) -> &mut IndexNode,
-    //mark the node as dirty because its data was modified
-    //this method also flush changes on the disk
-    dirty_node: fn(&mut IndexNode),
-    destroy_node: fn(&mut IndexNode),
 }
 
 ///consider to implement prefix-tree

@@ -2,7 +2,6 @@
 #![feature(fn_ptr_trait)]
 #![feature(tuple_trait)]
 #![feature(let_chains)]
-#![feature(offset_of)]
 #![feature(unboxed_closures)]
 #![feature(maybe_uninit_uninit_array)]
 #![feature(hasher_prefixfree_extras)]
@@ -12,6 +11,8 @@ use thiserror_no_std::Error;
 pub mod collections;
 pub mod drivers;
 pub mod string;
+
+extern crate alloc;
 
 #[macro_export]
 macro_rules! declare_types {

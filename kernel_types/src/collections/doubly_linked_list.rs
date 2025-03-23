@@ -16,13 +16,14 @@ pub struct ListNode<T: Sized + ListNodeData> {
 }
 
 impl<T: ListNodeData + Sized> ListNode<T> {
-    pub const unsafe fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             next: NonNull::dangling(),
             prev: NonNull::dangling(),
             _marker: PhantomData,
         }
     }
+
     pub fn new(next: &mut ListNode<T>, prev: &mut ListNode<T>) -> Self {
         let next = NonNull::from(next);
         let prev = NonNull::from(prev);

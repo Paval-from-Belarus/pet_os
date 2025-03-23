@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 #![crate_name = "kernel"]
-#![feature(slice_ptr_get)]
 #![feature(let_chains)]
 #![feature(const_trait_impl)]
 #![feature(abi_x86_interrupt)]
@@ -63,21 +62,6 @@ pub unsafe extern "C" fn main() {
     unsafe { rust_main(&mut *properties) };
 }
 
-// pub extern "C" fn start(magic: u32, lp_header: *const u32) {
-//     logging::init();
-//
-//     if magic != multiboot2::MAGIC {
-//         log!("Invalid grub2 magic");
-//         return;
-//     }
-//
-//     let mbi_ptr = lp_header.cast();
-//     let mbi =
-//         unsafe { BootInformation::load(mbi_ptr).expect("Failed to load mbi") };
-//
-//     log!("Working");
-// }
-
 pub fn rust_main(properties: &mut PagingProperties) {
     logging::init();
 
@@ -99,6 +83,7 @@ pub fn rust_main(properties: &mut PagingProperties) {
 
     let thread_1 =
         process::new_task(task1, ptr::null_mut(), TaskPriority::HIGH);
+
     let thread_2 = process::new_task(task2, ptr::null_mut(), TaskPriority::LOW);
 
     process::submit_task(thread_1);

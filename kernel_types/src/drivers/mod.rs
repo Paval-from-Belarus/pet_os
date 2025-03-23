@@ -1,3 +1,5 @@
+mod header;
+
 use core::marker::Tuple;
 use core::mem;
 use core::ptr::NonNull;
@@ -62,7 +64,8 @@ impl DriverId {
 }
 
 #[derive(Clone, Copy)]
-pub struct DeviceId(u32);
+pub struct DeviceId(pub u32);
+
 bitfield! {
 /// the representation of any device in system
 /// dev_t alternative type
