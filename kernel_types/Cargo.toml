@@ -10,6 +10,7 @@ num_enum = { workspace = true }
 fallible_collections = { workspace = true }
 bitfield = { workspace = true }
 paste = { workspace = true }
+log.workspace = true
 
 
 [features]

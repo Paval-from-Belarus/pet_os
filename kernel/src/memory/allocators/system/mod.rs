@@ -160,7 +160,7 @@ impl SlabAllocatorInner {
     ) -> Result<*mut u8, OsAllocationError> {
         assert!(pages_count > 0);
 
-        let pages = self.allocator.fast_pages(pages_count)?;
+        let pages = self.allocator.alloc_zeroed_pages(pages_count)?;
         let current_offset = self.heap_offset;
 
         for page in pages.iter() {
@@ -205,13 +205,13 @@ impl SlabAllocatorInner {
                     * mem::size_of::<SlabEntry>(),
             );
 
-            let pages_batch = self.allocator.alloc_pages(additional_pages)?;
+            let pages_batch = self.allocator.alloc_continuous_pages(additional_pages)?;
 
             let new_entries = self.commit_new_entries(pages_batch);
             self.cached_entries.splice(new_entries);
         }
 
-        let heap_batch = self.allocator.alloc_pages(
+        let heap_batch = self.allocator.alloc_continuous_pages(
             entries_count * SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES,
         )?;
 

@@ -87,12 +87,9 @@ unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
 
         let mut mem_offset = pivot.next_offset();
 
-        if mem_offset == 0x1FF0000 {
-            //fixme: collect physical pages more gently
-            break;
-        }
-
         let max_offset = mem_offset + (Page::SIZE * pivot.free_pages_count());
+
+        log::debug!("Mem offset = {mem_offset} Max Offset = {max_offset:0X}");
 
         reset_pages(mem_offset, pivot.free_pages_count());
 
@@ -232,22 +229,25 @@ impl PhysicalAllocator {
         }
     }
 
-    pub fn fast_pages(
+    /// allocate pages in different regions
+    /// but available to be used
+    pub fn alloc_zeroed_pages(
         &'static self,
         pages_count: usize,
     ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
-        self.alloc_densely(pages_count)
+        let batch = self.alloc_continuous_pages(pages_count)?;
+
+        let mut list = LinkedList::empty();
+
+        for page in batch.into_pages() {
+            list.push_back(page.as_node());
+        }
+
+        Ok(list)
     }
 
     /// allocate continuous memory region
-    pub fn alloc_pages(
-        &self,
-        count: usize,
-    ) -> Result<BuddyBatch, OsAllocationError> {
-        self.new_alloc(count)
-    }
-
-    pub fn new_alloc(
+    pub fn alloc_continuous_pages(
         &self,
         count: usize,
     ) -> Result<BuddyBatch, OsAllocationError> {
@@ -276,6 +276,7 @@ impl PhysicalAllocator {
 
         Ok(batch)
     }
+
     //return that reallocation is success or not
     pub fn new_dealloc(&self, piece: BuddyBatch) -> Result<(), ()> {
         let buddy_index = piece.power();
@@ -298,6 +299,7 @@ impl PhysicalAllocator {
         Ok(())
     }
 
+    #[allow(unused)]
     fn alloc_densely(
         &self,
         count: usize,
@@ -308,15 +310,15 @@ impl PhysicalAllocator {
         let last_head = lock.last_mut().unwrap();
         let mut longest = 0; //the current longest count of pages in same sequence
 
-        let mut last_offset = Option::<PhysicalAddress>::None;
+        let mut start_offset = Option::<PhysicalAddress>::None;
 
         for page in last_head.iter() {
             if longest == count {
                 break;
             }
 
-            let Some(offset) = last_offset.as_mut() else {
-                last_offset = Some(page.as_physical());
+            let Some(offset) = start_offset.as_mut() else {
+                start_offset = Some(page.as_physical());
                 longest += 1;
                 continue;
             };
@@ -325,8 +327,9 @@ impl PhysicalAllocator {
 
             //check if page in continous region
             if page.as_physical() != offset {
+                log::debug!("Not continous region");
                 longest = 0;
-                last_offset = Some(page.as_physical()); //update first page
+                start_offset = Some(page.as_physical()); //update first page
                 continue;
             }
 
@@ -334,23 +337,30 @@ impl PhysicalAllocator {
         }
 
         if longest != count {
-            log::warn!("Failed to find {count} pages");
             return Err(OsAllocationError::NoMemory);
         }
 
-        let head_offset = last_offset.expect("Longest == count");
+        let head_offset = start_offset.expect("Longest == count");
 
         let mut list = LinkedList::<'static, Page>::empty();
-        let mut page_iter = last_head.iter_mut().cyclic();
-        let mut should_add = false;
+
+        let mut page_iter = last_head.iter_mut();
+
+        let mut should_add = true;
         let mut added_count = 0;
+
+        log::debug!("Loop started. Request = {count}. Found = {longest}");
 
         loop {
             if added_count == count {
                 break;
             }
 
+            log::debug!("Iter = {page_iter:?}");
+
             let page = page_iter.next().expect("Early was found");
+
+            log::debug!("IterMut next page = {page:?}");
 
             if should_add {
                 let page = page_iter.unlink_watched().expect("Already watched");
