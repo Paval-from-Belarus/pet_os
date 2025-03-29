@@ -330,7 +330,7 @@ fn commit(
     count: usize,
 ) -> *mut u8 {
     let region = MemoryMappingRegion {
-        node: unsafe { ListNode::empty() },
+        node: ListNode::empty(),
         flags: memory::KERNEL_LAYOUT_FLAGS,
         virtual_offset: heap_offset,
         physical_offset: memory_offset,

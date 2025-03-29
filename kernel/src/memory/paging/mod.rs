@@ -1,5 +1,4 @@
 use core::arch::asm;
-use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 

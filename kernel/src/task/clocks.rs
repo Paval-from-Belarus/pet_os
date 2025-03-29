@@ -1,10 +1,12 @@
+#![allow(unused)]
+
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::SeqCst;
 use kernel_types::declare_constants;
 
+use crate::common::io;
+use crate::common::time::Timestamp;
 use crate::interrupts::pic;
-use crate::utils::io;
-use crate::utils::time::Timestamp;
 
 pub enum ClockType {
     //the time since epoch

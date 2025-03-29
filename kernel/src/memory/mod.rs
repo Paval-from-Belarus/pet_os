@@ -17,13 +17,13 @@ use kernel_types::collections::{
 use kernel_types::{bitflags, declare_constants};
 pub use paging::PagingProperties;
 
+use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
 use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
 use crate::memory::paging::{
     BootAllocator, GDTTable, PageMarker, PageMarkerError,
 };
-use crate::process;
-use crate::process::{TaskState, ThreadTask};
-use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
+use crate::task;
+use crate::task::{Task, TaskState};
 
 mod allocators;
 mod arch;
@@ -486,9 +486,9 @@ pub fn physical_dealloc(_offset: *mut u8) {
 
 //the method should be invoked only by one thread
 //concurrency is forbidden
-pub unsafe fn switch_to_task(task: &mut ThreadTask) {
+pub unsafe fn switch_to_task(task: &mut Task) {
     TASK_STATE.set_kernel_stack(
-        task.kernel_stack + process::TASK_STACK_SIZE, // - mem::size_of::<TaskContext>()
+        task.kernel_stack + task::TASK_STACK_SIZE, // - mem::size_of::<TaskContext>()
     );
 
     let marker = if task.state.is_some() {
@@ -538,7 +538,7 @@ impl MemoryMap {
 }
 
 fn mem_map_offset() -> *mut Page {
-    unsafe { &raw mut MEMORY_MAP as *mut Page }
+    &raw mut MEMORY_MAP as *mut Page
 }
 
 impl ToPhysicalAddress for Page {
@@ -575,7 +575,7 @@ impl Page {
         Self {
             flags: unsafe { PageFlag::wrap(PageFlag::UNUSED) },
             ref_count: AtomicUsize::new(0),
-            node: unsafe { ListNode::empty() },
+            node: ListNode::empty(),
         }
     }
 

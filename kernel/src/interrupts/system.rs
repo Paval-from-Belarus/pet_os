@@ -5,8 +5,7 @@ use crate::interrupts::{
     pic, CallbackInfo, IDTable, InterruptStackFrame, IrqLine,
     MAX_INTERRUPTS_COUNT,
 };
-use crate::memory::SlabBox;
-use crate::{error_trap, get_eax, log, memory, naked_trap, process, set_eax};
+use crate::{error_trap, get_eax, log, memory, naked_trap, set_eax, task};
 
 //the common handlers
 bitflags!(
@@ -58,8 +57,7 @@ pub fn init_irq() -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
     let mut objects: [Option<&'static InterruptObject>; pic::LINES_COUNT] =
         [None; pic::LINES_COUNT];
 
-    objects[IrqLine::SYS_TIMER.line_index()] =
-        Some(init_timer(process::init()));
+    objects[IrqLine::SYS_TIMER.line_index()] = Some(init_timer(task::init()));
 
     objects
 }

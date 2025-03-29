@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::ptr;
@@ -10,10 +12,10 @@ use kernel_types::collections::{
     UnlinkableListGuard,
 };
 
-use crate::process::{RunningTask, TaskContext, TaskStatus, ThreadTask};
+use crate::task::{RunningTask, TaskContext, TaskStatus};
 use crate::{interrupts, memory};
 
-use super::ThreadTaskBox;
+use super::TaskBox;
 
 #[macro_export]
 macro_rules! current_task {
@@ -60,7 +62,7 @@ struct TaskSchedulerInner {
 impl TaskSchedulerInner {
     //always should be the current task!
     ///task is simple idle task
-    pub fn new(task: ThreadTaskBox) -> Self {
+    pub fn new(task: TaskBox) -> Self {
         let node = task.into_node();
         node.lock.write().status = TaskStatus::Active; //the status of idle task is never changed
         let priority_level = node.lock.read().priority.into();
@@ -77,7 +79,7 @@ impl TaskSchedulerInner {
         }
     }
 
-    pub fn add_task(&mut self, task: ThreadTaskBox) {
+    pub fn add_task(&mut self, task: TaskBox) {
         let node = task.into_node();
         node.lock.write().status = TaskStatus::Delayed;
 
@@ -195,7 +197,7 @@ unsafe impl Sync for TaskScheduler {}
 
 ///all time-consuming methods are marked as unsafe
 impl TaskScheduler {
-    pub fn new(idle_task: ThreadTaskBox) -> Self {
+    pub fn new(idle_task: TaskBox) -> Self {
         Self {
             inner: spin::Mutex::new(TaskSchedulerInner::new(idle_task)),
             locked_count: AtomicUsize::new(1),
@@ -230,7 +232,7 @@ impl TaskScheduler {
         unsafe { interrupts::disable() };
     }
 
-    pub fn add_task(&self, task: ThreadTaskBox) {
+    pub fn add_task(&self, task: TaskBox) {
         self.lock();
 
         self.inner.lock().add_task(task);

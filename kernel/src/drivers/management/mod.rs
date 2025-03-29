@@ -4,7 +4,7 @@ use kernel_types::drivers::DriverId;
 use crate::{
     memory::{PhysicalAddress, VirtualAddress},
     syscall,
-    utils::SystemCall,
+    common::SystemCall,
 };
 
 /// This module contains basic functionality for driver subssystem

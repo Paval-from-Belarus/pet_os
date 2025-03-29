@@ -5,6 +5,7 @@ use kernel_macro::ListNode;
 use kernel_types::collections::TinyListNode;
 use kernel_types::{declare_constants, declare_types};
 
+use crate::common::atomics::{SpinLock, SpinLockLazyCell};
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
@@ -13,7 +14,6 @@ use crate::memory::{
     InterruptGate, PrivilegeLevel, SegmentSelector, Slab, SystemType,
     VirtualAddress,
 };
-use crate::utils::atomics::{SpinLock, SpinLockLazyCell};
 use crate::{get_eax, memory, syscall};
 
 mod lock;
@@ -256,6 +256,7 @@ unsafe fn leave_kernel_trap() {
 
 pub fn init() {
     let table = unsafe { &mut INTERRUPT_TABLE };
+
     system::init_traps(table);
 
     table.set(

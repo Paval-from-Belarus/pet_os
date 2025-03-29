@@ -1,5 +1,6 @@
+#![allow(unused)]
+
 /// All drivers storing in
-#[allow(unused)]
 use core::ptr::NonNull;
 use core::{mem, slice};
 
@@ -8,11 +9,11 @@ use kernel_types::collections::{LinkedList, ListNode, Queue};
 use kernel_types::declare_constants;
 use kernel_types::drivers::{Device, DeviceId, DriverId, KernelSymbol};
 
-use crate::file_system::{
-    DeviceChild, FileOperations, IndexNode, SuperBlock, SuperBlockOperations,
+use crate::common::atomics::SpinLockLazyCell;
+use crate::fs::{
+    FileOperations, IndexNode, IndexNodeItem, SuperBlock, SuperBlockOperations,
 };
 use crate::memory::VirtualAddress;
-use crate::utils::atomics::SpinLockLazyCell;
 
 mod keyboard;
 mod management;
@@ -70,6 +71,8 @@ extern "Rust" {
     static SYMBOL_TABLE_END: *const KernelSymbol;
 }
 
+pub struct CharDeviceBox {}
+
 pub struct CharDevice {
     ///the id of driver + id of this device
     device: Device,
@@ -77,7 +80,7 @@ pub struct CharDevice {
     //to easily create IndexNode
     fs_ops: NonNull<FileOperations>,
     count: usize,
-    inodes: LinkedList<'static, DeviceChild>,
+    inodes: LinkedList<'static, IndexNodeItem>,
     //the count of minor devices uses the device
     // count: usize,
     // currently, there is no need in several minor devices for device;
@@ -85,6 +88,8 @@ pub struct CharDevice {
 }
 
 impl CharDevice {}
+
+pub struct BlockDeviceBox {}
 
 pub struct BlockDevice {
     device: Device,

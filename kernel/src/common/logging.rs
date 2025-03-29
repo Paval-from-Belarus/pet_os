@@ -2,14 +2,14 @@ use core::fmt;
 use core::fmt::Write;
 use kernel_types::declare_constants;
 
-use crate::utils::io;
+use crate::common::io;
 
 #[macro_export]
 macro_rules! log {
 	( $($arg:tt)* ) => ({
 		use core::fmt::Write;
 
-                if let Some(logger) = &mut $crate::utils::logging::LOGGER_LOCK.try_lock().as_mut() {
+                if let Some(logger) = &mut $crate::common::logging::LOGGER_LOCK.try_lock().as_mut() {
 		    let _ = write!(logger, $($arg)*);
                 }
 	})

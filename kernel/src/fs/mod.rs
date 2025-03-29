@@ -4,21 +4,24 @@ use core::ptr;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 
-use alloc::boxed::Box;
+pub use file::*;
+pub use index_node::*;
+pub use super_block::*;
+
 use kernel_macro::ListNode;
+use kernel_types::collections::ListNode;
 use kernel_types::collections::{HashData, HashTable};
-use kernel_types::collections::{LinkedList, ListNode, TinyListNode};
-use kernel_types::drivers::{Device, DriverId};
+use kernel_types::drivers::Device;
 use kernel_types::string::{MutString, QuickString};
 use kernel_types::{bitflags, declare_constants};
-pub use super_block::{SuperBlock, SuperBlockOperations};
 
-use crate::drivers::{BlockDevice, CharDevice};
-use crate::utils::atomics::{SpinLock, UnsafeLazyCell};
-use crate::utils::time::Timestamp;
-use crate::utils::SpinBox;
+use crate::common::atomics::{SpinLock, UnsafeLazyCell};
+use crate::common::SpinBox;
+use crate::drivers::{BlockDeviceBox, CharDeviceBox};
 
 mod fat;
+mod file;
+mod index_node;
 mod super_block;
 
 pub fn parse_path(_path: MutString) {}
@@ -33,40 +36,11 @@ pub enum NodeState {
     Locked,
 }
 
-pub struct SuperBlockChild;
-
-pub struct DeviceChild;
-
-///the i-node implementation
-#[derive(ListNode)]
-#[repr(C)]
-pub struct IndexNode {
-    #[list_pivots]
-    super_child: ListNode<SuperBlockChild>,
-    #[list_pivots]
-    device_child: ListNode<DeviceChild>,
-    parent: NonNull<SuperBlock>,
-    //the unique id of the node
-    id: usize,
-    permissions: FilePermissions,
-    // type: u8,//file type?
-    size: usize,
-    //block_count: usize,
-    change_time: Timestamp,
-    access_time: Timestamp,
-    modify_time: Timestamp,
-    node_operations: NonNull<IndexNodeOperations>,
-    file_operations: Option<NonNull<FileOperations>>,
-    //for block/chart file devices only
-    device_ty: NodeType,
-    device: Device,
-    // real_device: Option<RealDevice>,
+pub enum DeviceKind {
+    BlockDevice(BlockDeviceBox),
+    CharDevice(CharDeviceBox),
 }
 
-union RealDevice {
-    block: NonNull<BlockDevice>,
-    char: NonNull<CharDevice>,
-}
 bitflags! {
     pub NodeType(usize),
     FILE = 0x1,
@@ -91,25 +65,6 @@ pub fn file_open(_path: &str) -> Result<usize, ()> {
 
 pub fn file_close(_handle: usize) -> Result<(), ()> {
     todo!()
-}
-
-impl IndexNode {}
-
-#[derive(ListNode)]
-#[repr(C)]
-pub struct File {
-    file_system: NonNull<MountPoint>,
-    path: PathNode,
-    //the next offset to be read
-    offset: usize,
-    mode: FileOpenMode,
-    #[list_pivots]
-    node: ListNode<File>,
-    //copy of the IndexNode file operations
-    operations: NonNull<FileOperations>,
-    //the pointer to private data used, eg, by device driver
-    data: *mut (),
-    use_count: AtomicUsize,
 }
 
 #[derive(ListNode)]
@@ -257,51 +212,6 @@ bitflags! {
     EXCHANGE = 0b10
 }
 
-#[repr(C)]
-pub struct IndexNodeOperations {
-    create_directory: fn(&mut IndexNode),
-    remove_directory: fn(&mut IndexNode),
-    rename: fn(&mut IndexNode, &mut IndexNode, FileRenameFlag),
-    check_permissions: fn(&mut IndexNode) -> bool,
-    truncate: fn(&mut IndexNode, size: usize),
-}
-
-///consider to implement prefix-tree
-pub struct FileName([u8]);
-bitflags! {
-    pub FilePermissions(u8),
-    EXECUTABLE = 0x01,
-    WRITABLE = 0x02,
-    READABLE = 0x04,
-}
-bitflags! {
-    pub FileAccessMode(u8),
-    READ = 0x01,
-    WRITE = 0x02
-}
-bitflags! {
-    pub FileOpenMode(u8),
-    READ = 0x1,
-    WRITE = 0x2,
-    CREATE = 0x4,
-    APPEND = 0x8 | FileOpenMode::WRITE,
-    TRUNC = 0x10
-}
-impl FileOpenMode {
-    pub fn is_accessible(&self, mode: FileAccessMode) -> bool {
-        match mode.bits() {
-            FileAccessMode::READ => !self.test_with(FileOpenMode::WRITE),
-            FileAccessMode::WRITE => self.test_with(FileOpenMode::WRITE),
-            _ => panic!("Unknown access mode"),
-        }
-    }
-}
-bitflags! {
-    pub FileSeekMode(u8),
-    CURRENT = 0x1,
-    START = 0x2,
-    END = 0x4
-}
 #[cfg(test)]
 mod tests {
     extern crate alloc;

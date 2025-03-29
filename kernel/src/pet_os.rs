@@ -24,9 +24,9 @@ use core::arch::asm;
 use core::ptr;
 
 use memory::PagingProperties;
-use utils::logging;
+use common::logging;
 
-use crate::process::TaskPriority;
+use crate::task::TaskPriority;
 
 #[cfg(not(target_arch = "x86"))]
 compile_error!("Operation system is suitable for x86 CPU only");
@@ -34,14 +34,16 @@ compile_error!("Operation system is suitable for x86 CPU only");
 mod boot;
 mod drivers;
 #[allow(dead_code)]
-mod file_system;
+mod fs;
 #[allow(dead_code)]
 mod interrupts;
 #[allow(dead_code)]
 mod memory;
-mod process;
+
+mod object;
+mod task;
 #[allow(dead_code)]
-mod utils;
+mod common;
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -82,22 +84,21 @@ pub fn rust_main(properties: &mut PagingProperties) {
     log::info!("Task switching is enabled");
 
     let thread_1 =
-        process::new_task(task1, ptr::null_mut(), TaskPriority::Module(0));
+        task::new_task(task1, ptr::null_mut(), TaskPriority::Module(0));
 
-    let thread_2 =
-        process::new_task(task2, ptr::null_mut(), TaskPriority::Kernel);
+    let thread_2 = task::new_task(task2, ptr::null_mut(), TaskPriority::Kernel);
 
-    process::submit_task(thread_1);
-    process::submit_task(thread_2);
+    task::submit_task(thread_1);
+    task::submit_task(thread_2);
 
-    process::run();
+    task::run();
 }
 
 fn task1(_context: *mut ()) {
     log::info!("task 1 started");
 
     loop {
-        process::sleep(300);
+        task::sleep(300);
         log!("task 1 awaken");
     }
 }
@@ -105,7 +106,7 @@ fn task1(_context: *mut ()) {
 fn task2(_context: *mut ()) {
     log::info!("task 2 started");
     loop {
-        process::sleep(400);
+        task::sleep(400);
         log!("task 2 awaken");
     }
 }

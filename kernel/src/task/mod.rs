@@ -1,33 +1,35 @@
 use core::arch::asm;
-use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{mem, ptr};
 
 use alloc::sync::Arc;
+use context::TaskContext;
+use fs::FilePool;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use kernel_macro::ListNode;
-use kernel_types::collections::{
-    BorrowingLinkedList, BoxedNode, LinkedList, ListNode, TinyListNode,
-};
+use kernel_types::collections::{BoxedNode, ListNode};
 use kernel_types::{bitflags, declare_constants, Zeroed};
 use static_assertions::const_assert;
 
-use crate::file_system::{
-    File, FileOpenMode, MountPoint, PathNode, MAX_FILES_COUNT,
-};
+use crate::common::atomics::UnsafeLazyCell;
+
+use crate::fs::{FileOpenMode, MountPoint, PathNode, MAX_FILES_COUNT};
+
 use crate::interrupts::CallbackInfo;
 use crate::memory::{
     slab_alloc, Kernel, Page, ProcessState, SegmentSelector, Slab, SlabBox,
     ThreadRoutine, VirtualAddress,
 };
-use crate::process::scheduler::TaskScheduler;
-use crate::utils::atomics::UnsafeLazyCell;
-use crate::{interrupts, log, memory};
+use crate::task::scheduler::TaskScheduler;
+use crate::{interrupts, memory};
 
 mod clocks;
+mod context;
+mod fs;
+mod futex;
 mod pid;
 mod scheduler;
 
@@ -44,10 +46,12 @@ pub enum TaskStatus {
     //the task is died
     Killed,
 }
+
 bitflags!(
     pub TaskSignalMask(u8),
     NO_USER1 = TaskSignal::User1 as u8
 );
+
 #[derive(PartialOrd, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]
 pub enum TaskSignal {
@@ -83,16 +87,6 @@ impl From<TaskPriority> for u16 {
             TaskPriority::Kernel => 31,
         }
     }
-}
-
-///The
-#[repr(C)]
-pub struct SysContext {
-    edi: usize,
-    esi: usize,
-    ebx: usize,
-    ds: u16,
-    es: u16,
 }
 
 #[cfg(target_arch = "x86")]
@@ -154,40 +148,14 @@ impl TaskState {
         self.esp0 = esp0 as u32; //the u32 is native word
     }
 }
+
 declare_constants!(
     pub usize,
     MAX_THREAD_COUNT = 200, "The maximal count of thread in system";
     TASK_STACK_SIZE = Page::SIZE, "The size of kernel stack for each thread";
 );
 
-#[cfg(target_arch = "x86")]
-#[repr(C)]
-#[derive(Default)]
-pub struct TaskContext {
-    ebp: u32,
-    edi: u32,
-    esi: u32,
-    ebx: u32,
-    eip: VirtualAddress,
-    wrapper_eip: VirtualAddress,
-}
-
-pub fn prepare_thread() {
-    log::debug!("prepare thread");
-    SCHEDULER.get().unlock();
-}
-
-impl TaskContext {
-    pub fn with_return_address(eip: VirtualAddress) -> Self {
-        Self {
-            wrapper_eip: prepare_thread as VirtualAddress,
-            eip,
-            ..Self::default()
-        }
-    }
-}
-
-pub type ThreadTaskBox = RunningTaskBox;
+pub type TaskBox = RunningTaskBox;
 
 pub struct RunningTaskBox {
     node: SlabBox<RunningTask>,
@@ -215,7 +183,7 @@ impl BoxedNode for RunningTask {
 pub struct RunningTask {
     #[list_pivots]
     node: ListNode<RunningTask>,
-    pub lock: Arc<spin::RwLock<ThreadTask>>,
+    pub lock: Arc<spin::RwLock<Task>>,
 }
 
 impl Clone for RunningTask {
@@ -242,7 +210,7 @@ pub struct TaskMetrics {
 }
 
 #[repr(C)]
-pub struct ThreadTask {
+pub struct Task {
     //the pivots in scheduler list
     pub priority: TaskPriority,
     pub status: TaskStatus,
@@ -267,12 +235,13 @@ pub struct ThreadTask {
     //todo: consider to add namespace field
 }
 
-impl Slab for ThreadTask {
+impl Slab for Task {
     const NAME: &str = "task";
 }
 
-const_assert!(mem::size_of::<ThreadTask>() < Page::SIZE);
+const_assert!(mem::size_of::<Task>() < Page::SIZE);
 
+#[allow(unused)]
 pub struct TaskFileSystem {
     mask: FileOpenMode,
     working_dir: &'static PathNode,
@@ -280,13 +249,13 @@ pub struct TaskFileSystem {
     use_count: AtomicUsize,
 }
 
-impl ThreadTask {
+impl Task {
     pub fn new_boxed(
         id: usize,
         kernel_stack: VirtualAddress,
         priority: TaskPriority,
-    ) -> ThreadTaskBox {
-        let lock = Arc::new(spin::RwLock::new(ThreadTask {
+    ) -> TaskBox {
+        let lock = Arc::new(spin::RwLock::new(Task {
             kernel_stack,
             id,
             priority,
@@ -306,7 +275,7 @@ impl ThreadTask {
             },
         }));
 
-        ThreadTaskBox {
+        TaskBox {
             node: slab_alloc(RunningTask {
                 node: ListNode::empty(),
                 lock,
@@ -316,6 +285,7 @@ impl ThreadTask {
     }
 }
 
+#[allow(unused)]
 fn default_thread_routine(_arg: *mut ()) {
     unsafe { interrupts::enable() };
 }
@@ -326,11 +296,11 @@ pub fn new_task(
     routine: ThreadRoutine,
     arg: *mut (),
     priority: TaskPriority,
-) -> ThreadTaskBox {
+) -> TaskBox {
     let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
 
     let task_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
-    let task = ThreadTask::new_boxed(task_id, kernel_stack, priority);
+    let task = Task::new_boxed(task_id, kernel_stack, priority);
 
     let task_node = task.into_node();
     let mut task = task_node.lock.write();
@@ -353,13 +323,11 @@ pub fn new_task(
     task_node.into_boxed()
 }
 
-pub fn submit_task(task: ThreadTaskBox) {
+pub fn submit_task(task: TaskBox) {
     // let tiny_node = unsafe { task.as_sibling().as_mut() };
     // let raw_tiny_node = NonNull::from(tiny_node);
     SCHEDULER.get().add_task(task);
 }
-
-fn accept(_task: &'static ThreadTask) {}
 
 //run the kernel main loop
 pub fn run() -> ! {
@@ -412,98 +380,3 @@ fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
 
 static SCHEDULER: UnsafeLazyCell<TaskScheduler> = UnsafeLazyCell::empty();
 static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(1);
-
-pub struct Futex {
-    inner: UnsafeCell<NonNull<FutexInner>>,
-}
-
-impl Slab for FutexInner {
-    const NAME: &str = "futex";
-}
-
-impl Futex {
-    pub fn new(capacity: usize) -> Self {
-        let raw_futex = memory::slab_alloc_old::<FutexInner>(
-            memory::AllocationStrategy::Kernel,
-        )
-        .expect("Failed to alloc futex");
-        let futex = raw_futex.write(FutexInner {
-            count: AtomicUsize::new(0),
-            max_count: capacity,
-            waiting: LinkedList::empty(),
-        });
-        let inner = UnsafeCell::new(NonNull::from(futex));
-        Self { inner }
-    }
-
-    pub fn mutex() -> Self {
-        Self::new(1)
-    }
-
-    pub fn acquire(&self) {
-        SCHEDULER.lock();
-        unsafe {
-            //if failed to acquire
-            let futex = self.inner();
-            loop {
-                if futex.try_acquire().is_ok() {
-                    break;
-                }
-                let current = SCHEDULER.block_current();
-                //we are not in queue now, therefore we should put ourself in queue again
-                futex.wait(current);
-                SCHEDULER.switch();
-            }
-            SCHEDULER.unlock();
-        }
-    }
-
-    pub fn release(&self) {
-        SCHEDULER.lock();
-        unsafe {
-            let futex = self.inner();
-            let waiting_option = futex.release();
-            if let Some(waiting) = waiting_option {
-                SCHEDULER.add_task(waiting.into_boxed());
-            }
-            SCHEDULER.unlock();
-        }
-    }
-
-    fn inner(&self) -> &mut FutexInner {
-        unsafe { (*self.inner.get()).as_mut() }
-    }
-}
-
-///the struct is absolutely not thread-safe
-struct FutexInner {
-    count: AtomicUsize,
-    max_count: usize,
-    waiting: LinkedList<'static, RunningTask>,
-}
-
-impl FutexInner {
-    pub fn try_acquire(&mut self) -> Result<(), ()> {
-        if self.count.load(Ordering::Acquire) == self.max_count {
-            return Err(());
-        }
-        self.count.fetch_add(1, Ordering::Release);
-        Ok(())
-    }
-    pub fn wait(&mut self, task: &'static mut RunningTask) {
-        task.lock.write().status = TaskStatus::Blocked;
-
-        self.waiting.push_back(task.as_node())
-    }
-    fn release(&mut self) -> Option<&'static mut ListNode<RunningTask>> {
-        self.count.fetch_sub(1, Ordering::Release);
-        self.waiting.remove_first()
-    }
-}
-
-pub struct FilePool {
-    opened_files_count: usize,
-    //the next index of file
-    next_index: Option<usize>,
-    files: [NonNull<File>; MAX_FILES_COUNT],
-}

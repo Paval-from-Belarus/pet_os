@@ -24,8 +24,6 @@ pub enum BootStatus {
 
     MemoryMapNotPresent = 4,
 
-    InvalidBootAllocator = 5,
-
     Okay = 42,
 }
 
@@ -141,6 +139,7 @@ unsafe fn enable_paging() {
     // mark_region(DirEntryFlag(DirEntryFlag::), table_flag, dir, p_o, v_o, pages_count)
 }
 
+#[allow(unused)]
 fn mark_region(
     dir_flag: DirEntryFlag,
     table_flag: TableEntryFlag,

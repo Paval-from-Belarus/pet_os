@@ -1,9 +1,4 @@
-use core::{
-    borrow::{Borrow, BorrowMut},
-    ops::DerefMut,
-};
-
-use alloc::{borrow::ToOwned, sync::Arc};
+use alloc::sync::Arc;
 use kernel_macro::ListNode;
 use kernel_types::{
     bitflags,
@@ -12,12 +7,12 @@ use kernel_types::{
         TinyListNode,
     },
     declare_constants,
-    drivers::{Device, DeviceId, DriverId},
+    drivers::{DeviceId, DriverId},
 };
 
 use crate::{
     drivers::BlockDevice,
-    memory::{slab_alloc, slab_dealloc, Kernel, SlabBox},
+    memory::{slab_alloc, Kernel, SlabBox},
 };
 
 use super::{File, IndexNode, MountPoint};

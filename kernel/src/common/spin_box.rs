@@ -1,7 +1,7 @@
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
 
-use crate::utils::atomics::SpinLock;
+use crate::common::atomics::SpinLock;
 
 pub struct SpinBox<'a, 'b, T> {
     lock: &'a SpinLock,
