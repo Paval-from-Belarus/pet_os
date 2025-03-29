@@ -1,37 +1,33 @@
 use core::arch::asm;
 use core::mem::MaybeUninit;
-use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{mem, ptr};
 
-use alloc::sync::Arc;
-use context::TaskContext;
-use fs::FilePool;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use kernel_macro::ListNode;
-use kernel_types::collections::{BoxedNode, ListNode};
 use kernel_types::{bitflags, declare_constants, Zeroed};
-use static_assertions::const_assert;
 
 use crate::common::atomics::UnsafeLazyCell;
 
-use crate::fs::{FileOpenMode, MountPoint, PathNode, MAX_FILES_COUNT};
+use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
 use crate::interrupts::CallbackInfo;
-use crate::memory::{
-    slab_alloc, Kernel, Page, ProcessState, SegmentSelector, Slab, SlabBox,
-    ThreadRoutine, VirtualAddress,
-};
+use crate::memory::{Page, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::task::scheduler::TaskScheduler;
 use crate::{interrupts, memory};
 
+mod arch;
 mod clocks;
 mod context;
 mod fs;
 mod futex;
 mod pid;
 mod scheduler;
+mod state;
+
+pub use context::*;
+pub use fs::*;
+pub use state::*;
 
 #[derive(PartialOrd, PartialEq)]
 pub enum TaskStatus {
@@ -155,134 +151,12 @@ declare_constants!(
     TASK_STACK_SIZE = Page::SIZE, "The size of kernel stack for each thread";
 );
 
-pub type TaskBox = RunningTaskBox;
-
-pub struct RunningTaskBox {
-    node: SlabBox<RunningTask>,
-}
-
-impl RunningTaskBox {
-    pub fn into_node(self) -> &'static mut ListNode<RunningTask> {
-        unsafe { &mut *SlabBox::into_raw(self.node) }.as_node()
-    }
-}
-
-impl BoxedNode for RunningTask {
-    type Target = RunningTaskBox;
-
-    fn into_boxed(
-        node: &mut <RunningTask as kernel_types::collections::TinyListNodeData>::Item,
-    ) -> Self::Target {
-        let node = unsafe { SlabBox::from_raw_in(node, Kernel) };
-
-        Self::Target { node }
-    }
-}
-
-#[derive(ListNode)]
-pub struct RunningTask {
-    #[list_pivots]
-    node: ListNode<RunningTask>,
-    pub lock: Arc<spin::RwLock<Task>>,
-}
-
-impl Clone for RunningTask {
-    fn clone(&self) -> Self {
-        Self {
-            node: unsafe { ListNode::empty() },
-            lock: Arc::clone(&self.lock),
-        }
-    }
-}
-
-#[repr(C)]
-pub struct TaskMetrics {
-    /// The kernel lock's count
-    pub lock_count: usize,
-    /// The count of full execution
-    pub exec_count: usize,
-    /// the working time of thread (usize::max if too much)
-    pub elapsed: usize,
-
-    //the ratio to incrase time quantum according
-    //task history
-    pub jump_ratio: usize,
-}
-
-#[repr(C)]
-pub struct Task {
-    //the pivots in scheduler list
-    pub priority: TaskPriority,
-    pub status: TaskStatus,
-    //the bottom of the thread's kernel stack
-    //that is, last byt is kernel_stack + TASK_STACK_SIZE
-    pub kernel_stack: VirtualAddress,
-    pub context: *mut TaskContext,
-    //the unique identifier of thread
-    pub id: usize,
-    //the time when task should be started
-    //the value should be greater then 0
-    pub start_time: usize,
-    //the process context for thread
-    pub state: Option<&'static mut ProcessState>,
-    pub file_system: NonNull<TaskFileSystem>,
-
-    /// The base execution duration for task
-    pub base_duration: u32,
-    pub metrics: TaskMetrics,
-
-    pub files: NonNull<FilePool>,
-    //todo: consider to add namespace field
-}
-
-impl Slab for Task {
-    const NAME: &str = "task";
-}
-
-const_assert!(mem::size_of::<Task>() < Page::SIZE);
-
 #[allow(unused)]
 pub struct TaskFileSystem {
     mask: FileOpenMode,
     working_dir: &'static PathNode,
     file_system: &'static MountPoint,
     use_count: AtomicUsize,
-}
-
-impl Task {
-    pub fn new_boxed(
-        id: usize,
-        kernel_stack: VirtualAddress,
-        priority: TaskPriority,
-    ) -> TaskBox {
-        let lock = Arc::new(spin::RwLock::new(Task {
-            kernel_stack,
-            id,
-            priority,
-            status: TaskStatus::Embryo,
-            context: ptr::null_mut(),
-            start_time: 0,
-            state: None,
-            files: NonNull::dangling(),
-            file_system: NonNull::dangling(),
-
-            base_duration: 100,
-            metrics: TaskMetrics {
-                elapsed: 0,
-                lock_count: 0,
-                exec_count: 0,
-                jump_ratio: 0,
-            },
-        }));
-
-        TaskBox {
-            node: slab_alloc(RunningTask {
-                node: unsafe { ListNode::empty() },
-                lock,
-            })
-            .unwrap(),
-        }
-    }
 }
 
 #[allow(unused)]
@@ -299,7 +173,7 @@ pub fn new_task(
 ) -> TaskBox {
     let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
 
-    let task_id = NEXT_THREAD_ID.fetch_add(1, Ordering::SeqCst);
+    let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
     let task = Task::new_boxed(task_id, kernel_stack, priority);
 
     let task_node = task.into_node();
@@ -379,4 +253,4 @@ fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
 }
 
 static SCHEDULER: UnsafeLazyCell<TaskScheduler> = UnsafeLazyCell::empty();
-static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(1);
+static NEXT_TASK_ID: AtomicUsize = AtomicUsize::new(1);

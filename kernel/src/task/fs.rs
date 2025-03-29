@@ -1,8 +1,7 @@
-use crate::fs::File;
+#![allow(unused)]
 
-use super::MAX_FILES_COUNT;
+use crate::fs::{File, MAX_FILES_COUNT};
 
-#[allow(unused)]
 pub struct FilePool {
     opened_files_count: usize,
     //the next index of file

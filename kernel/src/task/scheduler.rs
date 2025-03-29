@@ -43,6 +43,7 @@ unsafe fn switch_context(old: &mut *mut TaskContext, new: *mut TaskContext) {
         options(nostack)
     }
 }
+const PRIORIY_LEVEL_SIZE: usize = 32;
 
 struct TaskSchedulerInner {
     //the queue of delayed tasks
@@ -50,12 +51,14 @@ struct TaskSchedulerInner {
     //the queue of tasks consider to be clean up
     killed: TinyLinkedList<'static, RunningTask>,
     sleeping: TinyLinkedList<'static, RunningTask>,
+
     current: NonNull<ListNode<RunningTask>>,
     idle_task: NonNull<ListNode<RunningTask>>,
 
     /// current level of running task
     /// must be the highest value of all possible task
     priority_level: u16,
+
 }
 
 impl TaskSchedulerInner {
