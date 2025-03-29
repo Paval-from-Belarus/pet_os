@@ -48,7 +48,7 @@ impl<'a> PageMarker<'a> {
             dealloc_handler,
         };
 
-        for region in regions.limit_iter() {
+        for region in regions.iter() {
             marker.map_user_range(region)?;
         }
 

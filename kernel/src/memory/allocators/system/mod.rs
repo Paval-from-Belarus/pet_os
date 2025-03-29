@@ -163,7 +163,7 @@ impl SlabAllocatorInner {
         let pages = self.allocator.fast_pages(pages_count)?;
         let current_offset = self.heap_offset;
 
-        for page in pages.iter().limit() {
+        for page in pages.iter() {
             let _ = commit(page.as_physical(), self.heap_offset, 1);
 
             self.heap_offset += Page::SIZE;
@@ -330,7 +330,7 @@ fn commit(
     count: usize,
 ) -> *mut u8 {
     let region = MemoryMappingRegion {
-        node: ListNode::empty(),
+        node: unsafe { ListNode::empty() },
         flags: memory::KERNEL_LAYOUT_FLAGS,
         virtual_offset: heap_offset,
         physical_offset: memory_offset,

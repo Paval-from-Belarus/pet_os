@@ -69,46 +69,14 @@ pub trait HashData {
 pub trait BorrowingLinkedList<'a> {
     type Item: 'a;
     fn empty() -> Self;
-    fn push_back(&mut self, node: &'a mut Self::Item);
-    fn push_front(&mut self, node: &'a mut Self::Item);
-    fn remove(&mut self, node: &'a mut Self::Item);
-    fn is_empty(&self) -> bool;
-}
 
-pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
-    fn parent(&self) -> NonNull<T>;
-    unsafe fn collect<I: IntoIterator<Item = &'a mut T::Item>>(
-        self,
-        iter: I,
-    ) -> T {
-        self.collect_map(iter, |node| node)
-    }
-    unsafe fn collect_map<
-        I: IntoIterator<Item = &'a mut T::Item>,
-        S: 'a,
-        R: BorrowingLinkedList<'a, Item = S>,
-        F,
-    >(
-        self,
-        iter: I,
-        mut map: F,
-    ) -> R
-    where
-        F: FnMut(&'a mut T::Item) -> &'a mut S,
-    {
-        let owner = self.parent().as_mut();
-        let mut target = R::empty();
-        for node in iter {
-            if owner.is_empty() {
-                break;
-            }
-            let mut raw_node = NonNull::from(node);
-            owner.remove(raw_node.as_mut());
-            let mapped_node = map(raw_node.as_mut());
-            target.push_back(mapped_node);
-        }
-        target
-    }
+    fn push_back(&mut self, node: &'a mut Self::Item);
+
+    fn push_front(&mut self, node: &'a mut Self::Item);
+
+    fn remove(&mut self, node: &'a mut Self::Item);
+
+    fn is_empty(&self) -> bool;
 }
 
 /// Mnemonic trait that allow any kind of list node be independent (without head element of list).
@@ -124,11 +92,14 @@ pub unsafe trait DanglingData {}
 
 pub unsafe trait ListNodeData: Sized {
     type Item;
+
     fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item;
+
     unsafe fn from_node_unchecked(
         mut raw_node: NonNull<ListNode<Self>>,
     ) -> NonNull<Self::Item> {
         let node = Self::from_node(raw_node.as_mut());
+
         NonNull::from(node)
     }
 }

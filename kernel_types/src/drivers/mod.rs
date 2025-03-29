@@ -94,6 +94,7 @@ impl Device {
     }
 }
 
+#[allow(unused)]
 pub struct DeviceEntry {
     code: Device,
     range: usize,

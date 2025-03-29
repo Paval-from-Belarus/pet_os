@@ -310,7 +310,7 @@ impl PhysicalAllocator {
 
         let mut last_offset = Option::<PhysicalAddress>::None;
 
-        for page in last_head.iter().limit() {
+        for page in last_head.iter() {
             if longest == count {
                 break;
             }
@@ -341,7 +341,7 @@ impl PhysicalAllocator {
         let head_offset = last_offset.expect("Longest == count");
 
         let mut list = LinkedList::<'static, Page>::empty();
-        let mut page_iter = last_head.iter_mut();
+        let mut page_iter = last_head.iter_mut().cyclic();
         let mut should_add = false;
         let mut added_count = 0;
 
@@ -355,7 +355,10 @@ impl PhysicalAllocator {
             if should_add {
                 let page = page_iter.unlink_watched().expect("Already watched");
 
-                log::debug!("Page {page:?} at {:0X}", page.as_ptr() as usize);
+                log::debug!(
+                    "Page {page:?} at {:0X}",
+                    page as *mut ListNode<_> as usize
+                );
 
                 page.acquire();
                 list.push_back(page);

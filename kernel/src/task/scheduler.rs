@@ -9,7 +9,6 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use kernel_types::collections::{
     BorrowingLinkedList, LinkedList, ListNode, TinyLinkedList,
-    UnlinkableListGuard,
 };
 
 use crate::task::{RunningTask, TaskContext, TaskStatus};
@@ -96,28 +95,34 @@ impl TaskSchedulerInner {
 
     ///try to move task from sleeping list
     pub fn awake_sleeping(&mut self, current_time: usize) {
-        let guard = self.sleeping.link_guard();
+        let mut iter = self.sleeping.iter_mut();
 
-        let iter = self
-            .sleeping
-            .iter_mut()
-            .filter(|task| task.lock.read().start_time <= current_time);
+        let mut awaked_tasks = TinyLinkedList::empty();
 
-        let mut list = unsafe { guard.collect(iter) };
+        loop {
+            let Some(task) = iter.next() else {
+                break;
+            };
 
-        for tiny in list.iter_mut() {
-            let node = tiny.node_mut();
-            self.add_task(node.into_boxed());
+            if task.lock.try_read().unwrap().start_time <= current_time {
+                awaked_tasks.push_back(task.node_mut().tiny_mut());
+            }
+        }
+
+        for task in awaked_tasks.into_iter() {
+
         }
     }
     ///Try to fetch the next task
     ///If task is killed then it will be pushed in list of killed tasks
     ///If no task is available in list then idle task will return
     pub fn next_task(&mut self) -> &'static mut ListNode<RunningTask> {
-        let mut iterator = self.delayed.iter_mut();
+        let mut iter = self.delayed.iter_mut();
+
         let mut next_task = None;
+
         while next_task.is_none()
-            && let Some(task) = iterator.next()
+            && let Some(task) = iter.next()
         {
             if task.lock.read().status == TaskStatus::Killed {
                 self.killed.push_back(task.tiny_mut());
@@ -129,8 +134,9 @@ impl TaskSchedulerInner {
                 "No active task can be in delayed queue"
             );
 
-            next_task = iterator.unlink_watched();
+            next_task = iter.unlink_watched();
         }
+
         if let Some(task) = next_task {
             task
         } else {
@@ -139,19 +145,23 @@ impl TaskSchedulerInner {
     }
 
     pub fn cleanup(&'static mut self) -> TinyLinkedList<'static, RunningTask> {
-        let guard = unsafe { self.delayed.link_guard() };
-        let iter = self
-            .delayed
-            .iter_mut()
-            .limit()
-            .filter(|task| task.lock.read().status == TaskStatus::Killed);
+        let mut iter = self.delayed.iter_mut();
+        let mut list = TinyLinkedList::empty();
 
-        let list: TinyLinkedList<RunningTask> =
-            unsafe { guard.collect_map(iter, |node| node.tiny_mut()) };
+        loop {
+            let Some(next) = iter.next() else {
+                break;
+            };
+
+            if next.lock.try_read().unwrap().status == TaskStatus::Killed {
+                let node = iter.unlink_watched().unwrap();
+                list.push_front(node.tiny_mut());
+            }
+        }
+
         self.killed.splice(list);
-        let list = unsafe { self.killed.clone() };
-        self.killed = TinyLinkedList::empty();
-        list
+
+        self.killed.take()
     }
     //replace current task and place it in delayed queue
     pub fn replace_current(&mut self, next: &'static mut RunningTask) {

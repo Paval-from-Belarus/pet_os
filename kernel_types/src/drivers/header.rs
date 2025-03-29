@@ -1,4 +1,4 @@
-use super::DriverId;
+#![allow(unused)]
 
 pub enum DriverKind {
     /// the driver is intended to use io regulary

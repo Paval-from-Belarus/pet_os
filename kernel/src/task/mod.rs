@@ -189,7 +189,7 @@ pub struct RunningTask {
 impl Clone for RunningTask {
     fn clone(&self) -> Self {
         Self {
-            node: ListNode::empty(),
+            node: unsafe { ListNode::empty() },
             lock: Arc::clone(&self.lock),
         }
     }
@@ -277,7 +277,7 @@ impl Task {
 
         TaskBox {
             node: slab_alloc(RunningTask {
-                node: ListNode::empty(),
+                node: unsafe { ListNode::empty() },
                 lock,
             })
             .unwrap(),

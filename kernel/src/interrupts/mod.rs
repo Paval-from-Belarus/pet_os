@@ -5,7 +5,7 @@ use kernel_macro::ListNode;
 use kernel_types::collections::TinyListNode;
 use kernel_types::{declare_constants, declare_types};
 
-use crate::common::atomics::{SpinLock, SpinLockLazyCell};
+use crate::common::atomics::SpinLockLazyCell;
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
@@ -255,9 +255,9 @@ unsafe fn leave_kernel_trap() {
 }
 
 pub fn init() {
-    let table = unsafe { &mut INTERRUPT_TABLE };
+    let mut table = INTERRUPT_TABLE.try_write().expect("Single core");
 
-    system::init_traps(table);
+    system::init_traps(&mut table);
 
     table.set(
         IDTable::SYSTEM_CALL,
@@ -271,10 +271,10 @@ pub fn init() {
         )
     };
 
-    init_interceptors(table);
+    init_interceptors(&mut table);
 
     unsafe {
-        INTERRUPT_TABLE_HANDLE = IDTHandle::new(&INTERRUPT_TABLE);
+        INTERRUPT_TABLE_HANDLE = IDTHandle::new(&table);
 
         asm!(
         "lidt [eax]",
@@ -304,11 +304,8 @@ static INTERCEPTORS: SpinLockLazyCell<
 ///the interceptor_stub is invoked by corresponding asm stub for certain interrupt
 #[no_mangle]
 pub unsafe extern "C" fn interceptor_stub() {
-    let index: usize;
-    asm!(
-    "",
-    out("eax") index,
-    options(preserves_flags, nomem, nostack));
+    let index: usize = get_eax!();
+
     enter_kernel_trap();
 
     let object = &mut INTERCEPTORS.get()[index];
@@ -354,7 +351,11 @@ const fn suppress_irq(_is_processed: bool, _context: *mut ()) -> bool {
 
 /// set custom interrupt handler
 pub fn set(index: usize, descriptor: InterruptGate) -> InterruptGate {
-    unsafe { INTERRUPT_TABLE.set(index, descriptor) }
+    let mut table = INTERRUPT_TABLE
+        .try_write()
+        .expect("Already taken in single core");
+
+    table.set(index, descriptor)
 }
 
 #[repr(C, packed)]
@@ -368,7 +369,6 @@ unsafe impl Sync for IDTHandle {}
 #[repr(C)]
 struct IDTable {
     entries: [InterruptGate; MAX_INTERRUPTS_COUNT],
-    lock: SpinLock,
     //the interrupt objects that should handle exceptions
     // objects: SimpleList<InterruptObject>
 }
@@ -409,7 +409,8 @@ pub unsafe fn enable() {
 static mut INTERRUPT_TABLE_HANDLE: IDTHandle = IDTHandle::null();
 
 #[no_mangle]
-static mut INTERRUPT_TABLE: IDTable = IDTable::empty();
+static INTERRUPT_TABLE: spin::RwLock<IDTable> =
+    spin::RwLock::new(IDTable::empty());
 
 impl IDTable {
     declare_constants!(
@@ -438,16 +439,17 @@ impl IDTable {
         //other reserved
         TRAP_COUNT = 32, "The average count of exception reserved by Intel";
     );
+
     pub const fn empty() -> Self {
         let entries: [InterruptGate; MAX_INTERRUPTS_COUNT] =
             [InterruptGate::null(); MAX_INTERRUPTS_COUNT];
-        let lock = SpinLock::new();
-        IDTable { entries, lock }
+        IDTable { entries }
     }
     ///the size of table in bytes
     pub const fn byte_size(&self) -> usize {
         self.entries.len() * mem::size_of::<InterruptGate>()
     }
+
     pub fn set(
         &mut self,
         index: usize,
@@ -455,12 +457,9 @@ impl IDTable {
     ) -> InterruptGate {
         assert!(index < self.entries.len(), "Invalid index for IDTable");
 
-        self.lock.acquire();
-
         let old = self.entries[index];
         self.entries[index] = descriptor;
 
-        self.lock.release();
         old
     }
 }

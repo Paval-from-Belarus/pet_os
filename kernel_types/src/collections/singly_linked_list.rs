@@ -5,9 +5,7 @@ use core::ops::DerefMut;
 use core::ptr::NonNull;
 
 use crate::collections::ListNode;
-use crate::collections::{
-    BorrowingLinkedList, ListNodeData, TinyListNodeData, UnlinkableListGuard,
-};
+use crate::collections::{BorrowingLinkedList, ListNodeData, TinyListNodeData};
 
 use super::BoxedNode;
 
@@ -97,9 +95,11 @@ impl<T: TinyListNodeData> TinyListNode<T> {
             _marker: PhantomData,
         }
     }
+
     pub fn set_next(&mut self, next: &mut TinyListNode<T>) {
         self.next.replace(NonNull::from(next));
     }
+
     pub fn remove_next(&mut self) {
         self.next = None;
     }
@@ -128,19 +128,10 @@ pub struct TinyLinkedList<'a, T: TinyListNodeData + Sized> {
     _marker: PhantomData<&'a mut T>,
 }
 
-pub struct UnlinkableGuard<'a, T: TinyListNodeData> {
-    parent: NonNull<TinyLinkedList<'a, T>>,
-}
-
-impl<'a, T: TinyListNodeData> UnlinkableListGuard<'a, TinyLinkedList<'a, T>>
-    for UnlinkableGuard<'a, T>
+impl<T> Default for TinyLinkedList<'_, T>
+where
+    T: TinyListNodeData,
 {
-    fn parent(&self) -> NonNull<TinyLinkedList<'a, T>> {
-        self.parent
-    }
-}
-
-impl<'a, T: TinyListNodeData> Default for TinyLinkedList<'a, T> {
     fn default() -> Self {
         TinyLinkedList::empty()
     }
@@ -184,6 +175,7 @@ impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a>
         }
         self.first = Some(raw_node);
     }
+
     fn remove(&mut self, node: &'a mut TinyListNode<T>) {
         assert!(!self.is_empty());
         let mut raw_node = NonNull::from(node);
@@ -234,11 +226,15 @@ impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
         }
     }
 
-    pub unsafe fn clone(&self) -> Self {
+    /// Create new linked list and set current as empty
+    pub fn take(&mut self) -> Self {
+        let first = self.first.take();
+        let last = self.last.take();
+
         Self {
-            first: self.first,
-            last: self.last,
-            _marker: PhantomData,
+            first,
+            last,
+            ..Default::default()
         }
     }
 
@@ -248,12 +244,6 @@ impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
 
     pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
         MutListIterator::new(self)
-    }
-
-    pub fn link_guard(&self) -> UnlinkableGuard<'a, T> {
-        UnlinkableGuard {
-            parent: NonNull::from(self),
-        }
     }
 
     /// Insert the entries from other list
@@ -290,12 +280,25 @@ impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
     }
 }
 
+impl<'data, 'parent, T> IntoIterator for &'parent mut TinyLinkedList<'data, T>
+where
+    T: 'data + TinyListNodeData,
+{
+    type Item = &'data mut TinyListNode<T>;
+
+    type IntoIter = MutListIterator<'data, 'parent, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
 pub struct ListIterator<'a, T: TinyListNodeData> {
     next: Option<NonNull<TinyListNode<T>>>,
     _marker: PhantomData<&'a T>,
 }
 
-impl<'a, T: TinyListNodeData> ListIterator<'a, T> {
+impl<T: TinyListNodeData> ListIterator<'_, T> {
     pub fn new(list: &TinyLinkedList<T>) -> Self {
         ListIterator {
             next: list.first,
@@ -319,11 +322,11 @@ impl<'a, T: TinyListNodeData> Iterator for ListIterator<'a, T> {
     }
 }
 
-pub struct MutListIterator<'a, 'b, T: TinyListNodeData> {
+pub struct MutListIterator<'data, 'parent, T: TinyListNodeData> {
     next: Option<NonNull<TinyListNode<T>>>,
     watched: Option<NonNull<TinyListNode<T>>>,
-    parent: &'b mut TinyLinkedList<'a, T>,
-    _marker: PhantomData<&'a mut T>,
+    parent: &'parent mut TinyLinkedList<'data, T>,
+    _marker: PhantomData<&'data mut T>,
 }
 
 impl<'a, 'b, T: TinyListNodeData> MutListIterator<'a, 'b, T> {
@@ -349,7 +352,7 @@ impl<'a, 'b, T: TinyListNodeData> MutListIterator<'a, 'b, T> {
     }
 }
 
-impl<'a, 'b, T: TinyListNodeData> Iterator for MutListIterator<'a, 'b, T> {
+impl<'a, T: TinyListNodeData> Iterator for MutListIterator<'a, '_, T> {
     type Item = &'a mut TinyListNode<T>;
     fn next(&mut self) -> Option<Self::Item> {
         match self.next {
@@ -397,6 +400,15 @@ mod tests {
         value: usize,
     }
 
+    impl Clone for TestStruct {
+        fn clone(&self) -> Self {
+            Self {
+                node: TinyListNode::empty(),
+                value: self.value,
+            }
+        }
+    }
+
     impl PartialEq for TestStruct {
         fn eq(&self, other: &Self) -> bool {
             self.value == other.value
@@ -438,34 +450,39 @@ mod tests {
     #[test]
     fn splice_test() {
         let mut list = TinyLinkedList::<TestStruct>::empty();
+
         unsafe {
-            let numbers: Vec<TestStruct> = vec![
+            let numbers: Vec<_> = vec![
                 TestStruct::new(10),
                 TestStruct::new(11),
                 TestStruct::new(12),
                 TestStruct::new(13),
                 TestStruct::new(14),
             ];
+
             for number in numbers[0..3].iter() {
                 let mut raw_node = NonNull::from(number);
                 list.push_back(raw_node.as_mut().as_node())
             }
+
             let mut other_list = TinyLinkedList::<TestStruct>::empty();
+
             other_list.push_back(fetch_unchecked!(numbers, 3));
             other_list.push_back(fetch_unchecked!(numbers, 4));
+
             list.splice(other_list);
-            assert!(
-                list.first
-                    .unwrap()
-                    .eq(&NonNull::from(fetch_unchecked!(numbers, 3)))
-                    && NonNull::from(fetch_unchecked!(numbers, 4))
-                        .eq(&NonNull::from(fetch_unchecked!(numbers, 0)))
-            );
+
+            {
+                let first = list.first.unwrap();
+                let other = fetch_unchecked!(numbers, 3).into();
+
+                assert_eq!(first, other);
+            }
+
             list.remove(fetch_unchecked!(numbers, 3));
-            assert_eq!(
-                list.first,
-                Some(NonNull::from(fetch_unchecked!(numbers, 4)))
-            );
+
+            assert_eq!(list.first, Some(fetch_unchecked!(numbers, 4).into()));
+
             list.remove(fetch_unchecked!(numbers, 1));
         }
     }

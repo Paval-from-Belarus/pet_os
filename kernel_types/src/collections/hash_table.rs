@@ -10,6 +10,7 @@ use crate::collections::{
 };
 use crate::lambda_const_assert;
 
+#[allow(unused)]
 struct HashBucket<'a, V: TinyListNodeData<Item = V> + HashData> {
     list: TinyLinkedList<'a, V>,
     _marker: PhantomData<V>,

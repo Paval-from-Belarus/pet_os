@@ -120,15 +120,15 @@ pub fn init_kernel_space(
 }
 
 pub fn enable_task_switching(table: &mut GDTTable) {
-    let task = unsafe {
-        TASK_STATE.set_io_map(0xFFFF); //setting io_map beyond the TaskState structure -> let's forbid all io instruction in user mode
-        TASK_STATE.set_stack_selector(SegmentSelector::DATA);
+    let mut state = TASK_STATE.try_write().expect("Singe core");
 
-        TaskStateDescriptor::active(
-            &raw const TASK_STATE as VirtualAddress,
-            mem::size_of::<TaskState>() - 1,
-        )
-    };
+    state.set_io_map(0xFFFF);
+    state.set_stack_selector(SegmentSelector::DATA);
+
+    let task = TaskStateDescriptor::active(
+        &raw const TASK_STATE as VirtualAddress,
+        mem::size_of::<TaskState>() - 1,
+    );
 
     log::debug!("Task state: {task:?}");
 
@@ -487,9 +487,12 @@ pub fn physical_dealloc(_offset: *mut u8) {
 //the method should be invoked only by one thread
 //concurrency is forbidden
 pub unsafe fn switch_to_task(task: &mut Task) {
-    TASK_STATE.set_kernel_stack(
-        task.kernel_stack + task::TASK_STACK_SIZE, // - mem::size_of::<TaskContext>()
-    );
+    let kernel_stack = task.kernel_stack + task::TASK_STACK_SIZE; // - mem::size_of::<TaskContext>();
+
+    TASK_STATE
+        .try_write()
+        .expect("Singe core")
+        .set_kernel_stack(kernel_stack);
 
     let marker = if task.state.is_some() {
         unreachable!("Process functionality is not implemented")
@@ -575,7 +578,7 @@ impl Page {
         Self {
             flags: unsafe { PageFlag::wrap(PageFlag::UNUSED) },
             ref_count: AtomicUsize::new(0),
-            node: ListNode::empty(),
+            node: unsafe { ListNode::empty() },
         }
     }
 
@@ -672,7 +675,8 @@ extern "C" {
     static mut MEMORY_MAP: MemoryMap;
 }
 
-static mut TASK_STATE: TaskState = TaskState::null();
+static TASK_STATE: spin::RwLock<TaskState> =
+    spin::RwLock::new(TaskState::null());
 
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> =
     UnsafeLazyCell::empty();
