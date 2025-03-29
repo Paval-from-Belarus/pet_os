@@ -24,20 +24,23 @@ macro_rules! current_task {
 
 #[inline(never)]
 unsafe fn switch_context(old: &mut *mut TaskContext, new: *mut TaskContext) {
-    asm!(
-    "push ebx",
-    "push esi",
-    "push edi",
-    "push ebp",
-    "mov [eax], esp",
-    "mov esp, edx",
-    "pop ebp",
-    "pop edi",
-    "pop esi",
-    "pop ebx",
-    in("eax") old,
-    in("edx") new,
-    options(nostack));
+    asm! {
+        "push ebx",
+        "push esi",
+        "push edi",
+        "push ebp",
+        "mov [eax], esp",
+        "mov esp, edx",
+        "pop ebp",
+        "pop edi",
+        "pop esi",
+        "pop ebx",
+
+        in("eax") old,
+        in("edx") new,
+
+        options(nostack)
+    }
 }
 
 struct TaskSchedulerInner {
@@ -48,6 +51,10 @@ struct TaskSchedulerInner {
     sleeping: TinyLinkedList<'static, RunningTask>,
     current: NonNull<ListNode<RunningTask>>,
     idle_task: NonNull<ListNode<RunningTask>>,
+
+    /// current level of running task
+    /// must be the highest value of all possible task
+    priority_level: u16,
 }
 
 impl TaskSchedulerInner {
@@ -56,6 +63,7 @@ impl TaskSchedulerInner {
     pub fn new(task: ThreadTaskBox) -> Self {
         let node = task.into_node();
         node.lock.write().status = TaskStatus::Active; //the status of idle task is never changed
+        let priority_level = node.lock.read().priority.into();
         let raw_task = NonNull::from(node);
 
         Self {
@@ -64,6 +72,7 @@ impl TaskSchedulerInner {
             sleeping: TinyLinkedList::empty(),
             current: raw_task,
             idle_task: raw_task,
+            priority_level,
             //set the linked list as empty
         }
     }
@@ -172,9 +181,11 @@ impl TaskSchedulerInner {
 
 pub struct TaskScheduler {
     inner: spin::Mutex<TaskSchedulerInner>,
+
     locked_count: AtomicUsize,
     postponed_count: AtomicUsize,
     should_reschedule: AtomicBool,
+
     context: UnsafeCell<*mut TaskContext>,
 }
 
@@ -293,7 +304,7 @@ impl TaskScheduler {
         let current = self.current_task();
 
         memory::switch_to_task(&mut current.lock.write());
-        switch_context(&mut *self.context.get(), current.lock.read(). context);
+        switch_context(&mut *self.context.get(), current.lock.read().context);
         memory::switch_to_kernel();
     }
 

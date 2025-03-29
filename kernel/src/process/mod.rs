@@ -65,9 +65,24 @@ pub enum TaskSignal {
 }
 
 //consider to merge status and priority into single field
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
 pub enum TaskPriority {
-    LOW,
-    HIGH,
+    Idle,
+    User(u16),
+    Module(u16),
+    Kernel,
+}
+
+impl From<TaskPriority> for u16 {
+    fn from(value: TaskPriority) -> Self {
+        match value {
+            TaskPriority::Idle => 0,
+            TaskPriority::User(v) => v,
+            TaskPriority::Module(v) => v,
+            TaskPriority::Kernel => 31,
+        }
+    }
 }
 
 ///The
@@ -213,6 +228,20 @@ impl Clone for RunningTask {
 }
 
 #[repr(C)]
+pub struct TaskMetrics {
+    /// The kernel lock's count
+    pub lock_count: usize,
+    /// The count of full execution
+    pub exec_count: usize,
+    /// the working time of thread (usize::max if too much)
+    pub elapsed: usize,
+
+    //the ratio to incrase time quantum according
+    //task history
+    pub jump_ratio: usize,
+}
+
+#[repr(C)]
 pub struct ThreadTask {
     //the pivots in scheduler list
     pub priority: TaskPriority,
@@ -223,14 +252,17 @@ pub struct ThreadTask {
     pub context: *mut TaskContext,
     //the unique identifier of thread
     pub id: usize,
-    //the working time of thread (usize::max if too much)
-    pub elapsed: usize,
     //the time when task should be started
     //the value should be greater then 0
     pub start_time: usize,
     //the process context for thread
     pub state: Option<&'static mut ProcessState>,
     pub file_system: NonNull<TaskFileSystem>,
+
+    /// The base execution duration for task
+    pub base_duration: u32,
+    pub metrics: TaskMetrics,
+
     pub files: NonNull<FilePool>,
     //todo: consider to add namespace field
 }
@@ -243,7 +275,7 @@ const_assert!(mem::size_of::<ThreadTask>() < Page::SIZE);
 
 pub struct TaskFileSystem {
     mask: FileOpenMode,
-    current_path: &'static PathNode,
+    working_dir: &'static PathNode,
     file_system: &'static MountPoint,
     use_count: AtomicUsize,
 }
@@ -260,11 +292,18 @@ impl ThreadTask {
             priority,
             status: TaskStatus::Embryo,
             context: ptr::null_mut(),
-            elapsed: 0,
             start_time: 0,
             state: None,
             files: NonNull::dangling(),
             file_system: NonNull::dangling(),
+
+            base_duration: 100,
+            metrics: TaskMetrics {
+                elapsed: 0,
+                lock_count: 0,
+                exec_count: 0,
+                jump_ratio: 0,
+            },
         }));
 
         ThreadTaskBox {
@@ -337,7 +376,7 @@ pub fn sleep(milliseconds: usize) {
 pub fn init() -> CallbackInfo {
     clocks::init();
 
-    let idle = new_task(idle_task, ptr::null_mut(), TaskPriority::HIGH);
+    let idle = new_task(idle_task, ptr::null_mut(), TaskPriority::Idle);
     SCHEDULER.set(TaskScheduler::new(idle));
 
     CallbackInfo::default(on_timer)
