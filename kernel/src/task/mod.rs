@@ -13,8 +13,9 @@ use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
 use crate::interrupts::CallbackInfo;
 use crate::memory::{Page, SegmentSelector, ThreadRoutine, VirtualAddress};
+use crate::object::Handle;
 use crate::task::scheduler::TaskScheduler;
-use crate::{interrupts, memory};
+use crate::{interrupts, memory, object};
 
 mod arch;
 mod clocks;
@@ -34,13 +35,22 @@ pub enum TaskStatus {
     //never was in queue
     Embryo,
     //the task is currently running
-    Active,
+    Running,
     //the task is waiting in queue
-    Delayed,
+    Sleeping,
     //the task is blocked in waiting for something
-    Blocked,
+    Blocked(object::Handle),
     //the task is died
     Killed,
+}
+
+impl TaskStatus {
+    pub fn blocking_reason(&self) -> Option<&object::Handle> {
+        match self {
+            TaskStatus::Blocked(handle) => Some(handle),
+            _ => None,
+        }
+    }
 }
 
 bitflags!(
@@ -74,9 +84,9 @@ pub enum TaskPriority {
     Kernel,
 }
 
-impl From<TaskPriority> for u16 {
-    fn from(value: TaskPriority) -> Self {
-        match value {
+impl TaskPriority {
+    pub fn into_raw(self) -> u16 {
+        match self {
             TaskPriority::Idle => 0,
             TaskPriority::User(v) => v,
             TaskPriority::Module(v) => v,

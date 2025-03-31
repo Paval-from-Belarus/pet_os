@@ -38,3 +38,27 @@ impl TaskContext {
         }
     }
 }
+
+#[inline(never)]
+pub unsafe fn switch_context(
+    old: &mut *mut TaskContext,
+    new: *mut TaskContext,
+) {
+    core::arch::asm! {
+        "push ebx",
+        "push esi",
+        "push edi",
+        "push ebp",
+        "mov [eax], esp",
+        "mov esp, edx",
+        "pop ebp",
+        "pop edi",
+        "pop esi",
+        "pop ebx",
+
+        in("eax") old,
+        in("edx") new,
+
+        options(nostack)
+    }
+}

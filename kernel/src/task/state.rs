@@ -5,11 +5,14 @@ use core::{
 
 use alloc::sync::Arc;
 use kernel_macro::ListNode;
-use kernel_types::collections::{BoxedNode, ListNode};
+use kernel_types::collections::{BoxedNode, HashData, ListNode};
 use static_assertions::const_assert;
 
-use crate::memory::{
-    slab_alloc, Kernel, Page, ProcessState, Slab, SlabBox, VirtualAddress,
+use crate::{
+    memory::{
+        slab_alloc, Kernel, Page, ProcessState, Slab, SlabBox, VirtualAddress,
+    },
+    object,
 };
 
 use super::{FilePool, TaskContext, TaskFileSystem, TaskPriority, TaskStatus};
@@ -56,8 +59,34 @@ pub struct Task {
 
 pub type TaskBox = RunningTaskBox;
 
+#[derive(ListNode)]
+pub struct RunningTask {
+    #[list_pivots]
+    node: ListNode<RunningTask>,
+    pub lock: Arc<spin::RwLock<Task>>,
+}
+
 pub struct RunningTaskBox {
     node: SlabBox<RunningTask>,
+}
+
+pub type BlockedTask = RunningTask;
+
+impl RunningTask {
+    pub fn into_blocked(self, handle: object::Handle) -> BlockedTask {
+        self.lock.write().status = TaskStatus::Blocked(handle);
+
+        BlockedTask {
+            node: unsafe { ListNode::empty() },
+            lock: self.lock,
+        }
+    }
+
+    pub fn into_running(self) -> RunningTask {
+        self.lock.write().status = TaskStatus::Running;
+
+        self
+    }
 }
 
 impl RunningTaskBox {
@@ -78,19 +107,20 @@ impl BoxedNode for RunningTask {
     }
 }
 
-#[derive(ListNode)]
-pub struct RunningTask {
-    #[list_pivots]
-    node: ListNode<RunningTask>,
-    pub lock: Arc<spin::RwLock<Task>>,
-}
-
 impl Clone for RunningTask {
     fn clone(&self) -> Self {
         Self {
             node: unsafe { ListNode::empty() },
             lock: Arc::clone(&self.lock),
         }
+    }
+}
+
+impl HashData for BlockedTask {
+    type Item<'a> = object::Handle;
+
+    fn key<'a>(&self) -> &Self::Item<'a> {
+        self.lock.read().status.blocking_reason().unwrap()
     }
 }
 

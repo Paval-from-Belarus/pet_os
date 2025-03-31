@@ -1,5 +1,7 @@
 #![allow(unused)]
 
+mod queue;
+
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::ptr;
@@ -8,13 +10,15 @@ use core::sync::atomic::Ordering::Relaxed;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use kernel_types::collections::{
-    BorrowingLinkedList, LinkedList, ListNode, TinyLinkedList,
+    BorrowingLinkedList, HashTable, LinkedList, ListNode, TinyLinkedList,
 };
+use queue::TaskQueue;
 
-use crate::task::{RunningTask, TaskContext, TaskStatus};
+use crate::object;
+use crate::task::{switch_context, RunningTask, TaskContext, TaskStatus};
 use crate::{interrupts, memory};
 
-use super::TaskBox;
+use super::{BlockedTask, TaskBox};
 
 #[macro_export]
 macro_rules! current_task {
@@ -23,69 +27,54 @@ macro_rules! current_task {
     };
 }
 
-#[inline(never)]
-unsafe fn switch_context(old: &mut *mut TaskContext, new: *mut TaskContext) {
-    asm! {
-        "push ebx",
-        "push esi",
-        "push edi",
-        "push ebp",
-        "mov [eax], esp",
-        "mov esp, edx",
-        "pop ebp",
-        "pop edi",
-        "pop esi",
-        "pop ebx",
-
-        in("eax") old,
-        in("edx") new,
-
-        options(nostack)
-    }
-}
-const PRIORIY_LEVEL_SIZE: usize = 32;
-
 struct TaskSchedulerInner {
-    //the queue of delayed tasks
-    delayed: LinkedList<'static, RunningTask>,
-    //the queue of tasks consider to be clean up
-    killed: TinyLinkedList<'static, RunningTask>,
+    // the queue of delayed tasks
+    // which will be running on next stage
+    delayed: &'static mut TaskQueue,
+    running: &'static mut TaskQueue,
+
+    //todo: replace blocked task array
+    blocked: HashTable<'static, BlockedTask, 512>,
+
     sleeping: TinyLinkedList<'static, RunningTask>,
 
-    current: NonNull<ListNode<RunningTask>>,
-    idle_task: NonNull<ListNode<RunningTask>>,
+    current: &'static mut RunningTask,
 
-    /// current level of running task
-    /// must be the highest value of all possible task
-    priority_level: u16,
+    // the list of tasks running
+    // when no active tasks is detected
+    idle_tasks: LinkedList<'static, RunningTask>,
+}
 
+impl TaskSchedulerInner {
+    /// Add idle task that will never will be removed from scheduler list
+    pub fn add_idle_task(&mut self, task: &'static RunningTask) {
+        self.idle_tasks.push_back()
+    }
 }
 
 impl TaskSchedulerInner {
     //always should be the current task!
     ///task is simple idle task
-    pub fn new(task: TaskBox) -> Self {
-        let node = task.into_node();
-        node.lock.write().status = TaskStatus::Active; //the status of idle task is never changed
-        let priority_level = node.lock.read().priority.into();
-        let raw_task = NonNull::from(node);
+    pub fn new(task: &'static RunningTask) -> Self {
+        // Self {
+        //     delayed: TaskQueue::new_leaked(),
+        //     running: TaskQueue::new_leaked(),
+        //     blocked: Default::default(),
+        //     sleeping: TinyLinkedList::empty(),
+        //
+        //     current: node,
+        //
+        //     idle_tasks: LinkedList::empty(),
+        // }
+        todo!()
+    }
 
-        Self {
-            delayed: LinkedList::empty(),
-            killed: TinyLinkedList::empty(),
-            sleeping: TinyLinkedList::empty(),
-            current: raw_task,
-            idle_task: raw_task,
-            priority_level,
-            //set the linked list as empty
-        }
+    pub fn swap_tasks(&mut self) {
+        core::mem::swap(&mut self.delayed, &mut self.running);
     }
 
     pub fn add_task(&mut self, task: TaskBox) {
-        let node = task.into_node();
-        node.lock.write().status = TaskStatus::Delayed;
-
-        self.delayed.push_back(node);
+        self.delayed.push(task.into_node());
     }
 
     pub fn add_sleeping(&mut self, task: &'static mut RunningTask) {
@@ -112,85 +101,100 @@ impl TaskSchedulerInner {
             }
         }
 
-        for task in awaked_tasks.into_iter() {
-
-        }
+        for task in awaked_tasks.into_iter() {}
     }
     ///Try to fetch the next task
     ///If task is killed then it will be pushed in list of killed tasks
     ///If no task is available in list then idle task will return
     pub fn next_task(&mut self) -> &'static mut ListNode<RunningTask> {
-        let mut iter = self.delayed.iter_mut();
-
-        let mut next_task = None;
-
-        while next_task.is_none()
-            && let Some(task) = iter.next()
-        {
-            if task.lock.read().status == TaskStatus::Killed {
-                self.killed.push_back(task.tiny_mut());
-                continue;
-            }
-
-            assert!(
-                task.lock.read().status != TaskStatus::Active,
-                "No active task can be in delayed queue"
-            );
-
-            next_task = iter.unlink_watched();
-        }
-
-        if let Some(task) = next_task {
-            task
-        } else {
-            unsafe { self.idle_task.as_mut() }
-        }
+        // let mut iter = self.running.next();
+        //
+        // let mut next_task = None;
+        //
+        // while next_task.is_none()
+        //     && let Some(task) = iter.next()
+        // {
+        //     if task.lock.read().status == TaskStatus::Killed {
+        //         self.killed.push_back(task.tiny_mut());
+        //         continue;
+        //     }
+        //
+        //     assert!(
+        //         task.lock.read().status != TaskStatus::Active,
+        //         "No active task can be in delayed queue"
+        //     );
+        //
+        //     next_task = iter.unlink_watched();
+        // }
+        //
+        // if let Some(task) = next_task {
+        //     task
+        // } else {
+        //     unsafe { self.idle_task.as_mut() }
+        // }
+        todo!()
     }
 
     pub fn cleanup(&'static mut self) -> TinyLinkedList<'static, RunningTask> {
-        let mut iter = self.delayed.iter_mut();
-        let mut list = TinyLinkedList::empty();
-
-        loop {
-            let Some(next) = iter.next() else {
-                break;
-            };
-
-            if next.lock.try_read().unwrap().status == TaskStatus::Killed {
-                let node = iter.unlink_watched().unwrap();
-                list.push_front(node.tiny_mut());
-            }
-        }
-
-        self.killed.splice(list);
-
-        self.killed.take()
+        todo!()
+        // let mut iter = self.delayed.iter_mut();
+        // let mut list = TinyLinkedList::empty();
+        //
+        // loop {
+        //     let Some(next) = iter.next() else {
+        //         break;
+        //     };
+        //
+        //     if next.lock.try_read().unwrap().status == TaskStatus::Killed {
+        //         let node = iter.unlink_watched().unwrap();
+        //         list.push_front(node.tiny_mut());
+        //     }
+        // }
+        //
+        // self.killed.splice(list);
+        //
+        // self.killed.take()
     }
     //replace current task and place it in delayed queue
     pub fn replace_current(&mut self, next: &'static mut RunningTask) {
-        if !self.current.eq(&self.idle_task) {
-            log::debug!("Replacing idle");
-            let old = unsafe { self.current.as_mut() };
-
-            assert!(old.lock.read().status == TaskStatus::Active);
-
-            self.add_task(old.into_boxed());
-        }
-
-        next.lock.write().status = TaskStatus::Active;
-        //if not current task is specified, simply set it
-        self.current = NonNull::from(next.as_node());
+        todo!()
+        // if !self.current.eq(&self.idle_task) {
+        //     log::debug!("Replacing idle");
+        //     let old = unsafe { self.current.as_mut() };
+        //
+        //     assert!(old.lock.read().status == TaskStatus::Active);
+        //
+        //     self.add_task(old.into_boxed());
+        // }
+        //
+        // next.lock.write().status = TaskStatus::Active;
+        // //if not current task is specified, simply set it
+        // self.current = NonNull::from(next.as_node());
     }
+
+    /// block the current task on object handle
+    pub fn block_on(&mut self, handle: object::Handle) {
+        let mut task = self
+            .current
+            .clone()
+            .into_blocked(handle)
+            .as_node()
+            .into_boxed();
+
+        self.blocked.put(task.into_node().tiny_mut());
+    }
+
     //set status of current task and set idle task as current
     pub fn block_current(&mut self) -> &'static mut ListNode<RunningTask> {
-        assert_ne!(self.current, self.idle_task, "Attempt to block idle task");
-
-        let current_task = unsafe { self.current.as_mut() };
-        current_task.lock.write().status = TaskStatus::Blocked;
-
-        self.current = self.idle_task;
-
-        current_task
+        todo!()
+        // assert_ne!(self.current, self.idle_task, "Attempt to block idle task");
+        //
+        // let current_task = unsafe { self.current.as_mut() };
+        // current_task.lock.write().status = TaskStatus::Blocked;
+        //
+        // self.current = self.idle_task;
+        //
+        // current_task
     }
 }
 
@@ -274,27 +278,28 @@ impl TaskScheduler {
     }
 
     pub fn sleep(&self, period: usize) {
-        self.lock();
-
-        let mut inner = self.inner.lock();
-
-        let blocked_current = inner.block_current();
-        blocked_current.lock.write().start_time += period; //update the time until wait
-                                                           //
-        assert!(
-            !ptr::eq(blocked_current, inner.idle_task.as_ptr()),
-            "Attempt to sleep idle task"
-        );
-
-        inner.add_sleeping(blocked_current);
-
-        drop(inner);
-
-        unsafe {
-            self.reschedule(); //change the current task
-            self.switch();
-            self.unlock();
-        }
+        todo!()
+        // self.lock();
+        //
+        // let mut inner = self.inner.lock();
+        //
+        // let blocked_current = inner.block_current();
+        // blocked_current.lock.write().start_time += period; //update the time until wait
+        //                                                    //
+        // assert!(
+        //     !ptr::eq(blocked_current, inner.idle_task.as_ptr()),
+        //     "Attempt to sleep idle task"
+        // );
+        //
+        // inner.add_sleeping(blocked_current);
+        //
+        // drop(inner);
+        //
+        // unsafe {
+        //     self.reschedule(); //change the current task
+        //     self.switch();
+        //     self.unlock();
+        // }
     }
 
     //wakeup sleeping tasks
@@ -337,8 +342,8 @@ impl TaskScheduler {
         }
     }
 
-    pub fn current_task(&self) -> &'static mut RunningTask {
-        unsafe { self.inner.lock().current.as_mut() }
+    pub fn current_task(&self) -> RunningTask {
+        self.inner.lock().current.clone()
     }
 }
 //the task to be invoked before passing execution to desirable task
