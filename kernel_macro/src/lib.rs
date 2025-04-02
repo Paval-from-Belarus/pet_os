@@ -193,6 +193,10 @@ fn define_node_data_marker(
     marker_type: &Ident,
 ) -> proc_macro2::TokenStream {
     let method_name = Ident::new(&format!("from_{}", field), Span::call_site());
+
+    let field_access_method =
+        Ident::new(&format!("as_{}", field), Span::call_site());
+
     quote! {
         unsafe impl kernel_types::collections::ListNodeData for #marker_type {
 
@@ -210,6 +214,12 @@ fn define_node_data_marker(
             #[deprecated]
             pub fn #method_name(node: &mut kernel_types::collections::ListNode<#marker_type>) -> &mut Self {
                 kernel_types::collections::ListNodeData::from_node(node)
+            }
+        }
+
+        impl<'a> From<&'a mut #target> for &'a mut kernel_types::collections::ListNode<#marker_type> {
+            fn from(value: &'a mut #target) -> Self {
+                value.#field_access_method()
             }
         }
     }

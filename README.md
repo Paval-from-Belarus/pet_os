@@ -63,3 +63,7 @@
   multiboot2 /sys/io.sys
   boot
 ```
+
+issue list:
+1. Unhandled IRQ6 cause system be in not working state
+

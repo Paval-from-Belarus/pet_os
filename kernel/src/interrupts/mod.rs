@@ -358,6 +358,7 @@ pub fn set(index: usize, descriptor: InterruptGate) -> InterruptGate {
     table.set(index, descriptor)
 }
 
+#[derive(Debug)]
 #[repr(C, packed)]
 struct IDTHandle {
     table_size: u16,
@@ -393,16 +394,19 @@ impl IDTHandle {
     }
 }
 
+#[inline(always)]
 pub unsafe fn disable() {
-    log::debug!("Disable interrupts");
-
     asm!("cli", options(nomem, nostack));
+
+    log::debug!("Disable interrupts");
 }
 
+#[inline(always)]
 pub unsafe fn enable() {
     log::debug!("Enable interrupts");
 
     asm!("sti", options(nomem, nostack));
+
 }
 
 #[no_mangle]

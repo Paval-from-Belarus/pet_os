@@ -27,25 +27,19 @@ impl RunningTaskBox {
 }
 
 impl RunningTask {
-    pub fn into_blocked<'a>(
-        &'a mut self,
-        handle: object::Handle,
-    ) -> &'a mut BlockedTask {
+    pub fn into_blocked(&mut self, handle: object::Handle) -> &mut BlockedTask {
         self.task.status = TaskStatus::Blocked(handle);
 
         self
     }
 
-    pub fn into_running<'a>(&'a mut self) -> &'a mut RunningTask {
+    pub fn into_running(&mut self) -> &mut RunningTask {
         self.task.status = TaskStatus::Running;
 
         self
     }
 
-    pub fn into_sleeping<'a>(
-        &'a mut self,
-        timeout: usize,
-    ) -> &'a mut RunningTask {
+    pub fn into_sleeping(&mut self, timeout: usize) -> &mut RunningTask {
         self.task.status = TaskStatus::Sleeping;
         self.task.start_time += timeout;
 

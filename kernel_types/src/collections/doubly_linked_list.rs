@@ -134,8 +134,8 @@ impl<'a, T: ListNodeData> BorrowingLinkedList<'a> for LinkedList<'a, T> {
         }
     }
 
-    fn push_back(&mut self, node: &'a mut ListNode<T>) {
-        let raw_node = NonNull::from(node);
+    fn push_back<K: Into<&'a mut ListNode<T>>>(&mut self, node: K) {
+        let raw_node = NonNull::from(node.into());
 
         unsafe {
             if self.is_empty() {

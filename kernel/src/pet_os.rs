@@ -10,6 +10,7 @@
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(hasher_prefixfree_extras)]
+#![feature(naked_functions)]
 
 extern crate alloc;
 extern crate fallible_collections;
@@ -93,8 +94,10 @@ pub fn rust_main(properties: &mut PagingProperties) {
     task::run();
 }
 
-fn task1(_context: *mut ()) {
+extern "C" fn task1() {
     log::info!("task 1 started");
+
+    log::info!("Task 1 priority: {}", current_task!().priority);
 
     loop {
         task::sleep(300);
@@ -102,8 +105,11 @@ fn task1(_context: *mut ()) {
     }
 }
 
-fn task2(_context: *mut ()) {
+extern "C" fn task2() {
     log::info!("task 2 started");
+
+    log::info!("Task 2 priority: {}", current_task!().priority);
+
     loop {
         task::sleep(400);
         log!("task 2 awaken");

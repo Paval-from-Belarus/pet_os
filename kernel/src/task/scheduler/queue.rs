@@ -25,14 +25,30 @@ impl TaskQueue {
 
         let index = priority.into_raw() as usize;
 
-        self.tasks[index as usize].push_back(task.as_node());
+        self.tasks[index].push_back(task.as_node());
     }
 
     pub fn take_next(&mut self) -> Option<&'static mut RunningTask> {
-        todo!()
+        for tasks in self.tasks.iter_mut() {
+            let mut iter = tasks.iter_mut();
+            if iter.next().is_some() {
+                let task = iter.unlink_watched().unwrap();
+                return Some(task);
+            }
+        }
+
+        None
     }
 
     pub fn probe_next(&self) -> Option<&'static RunningTask> {
-        todo!()
+        for tasks in self.tasks.iter() {
+            let mut iter = tasks.iter();
+
+            if let Some(task) = iter.next() {
+                return Some(task);
+            }
+        }
+
+        None
     }
 }

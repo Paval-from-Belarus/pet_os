@@ -62,7 +62,6 @@ where
     }
 }
 
-
 // #[cfg(feature = "alloc")]
 // impl<T, B, ITEM> alloc::borrow::ToOwned for TinyListNode<T>
 // where
@@ -157,7 +156,9 @@ impl<'a, T: TinyListNodeData> BorrowingLinkedList<'a>
     }
 
     ///it's responsibility of upper level to guarantee that data will live still the whole collection
-    fn push_back(&mut self, node: &'a mut TinyListNode<T>) {
+    fn push_back<K: Into<&'a mut TinyListNode<T>>>(&mut self, node: K) {
+        let node = node.into();
+
         unsafe {
             let mut raw_node = NonNull::from(node);
             if let Some(mut old_last) = self.last {

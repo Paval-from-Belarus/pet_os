@@ -14,7 +14,7 @@ use crate::fs::{FileOpenMode, MountPoint, PathNode};
 use crate::interrupts::CallbackInfo;
 use crate::memory::{Page, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::task::scheduler::SchedulerLock;
-use crate::{interrupts, memory, object};
+use crate::{get_eax, interrupts, memory, object};
 
 mod arch;
 mod clocks;
@@ -28,6 +28,13 @@ mod state;
 pub use context::*;
 pub use fs::*;
 pub use state::*;
+
+#[macro_export]
+macro_rules! current_task {
+    () => {
+        $crate::task::SCHEDULER.access_lock().current_task()
+    };
+}
 
 #[derive(PartialOrd, PartialEq)]
 pub enum TaskStatus {
@@ -83,9 +90,15 @@ pub enum TaskPriority {
     Kernel,
 }
 
+impl core::fmt::Display for TaskPriority {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
 impl PartialOrd for TaskPriority {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        self.into_raw().partial_cmp(&other.into_raw())
+        Some(self.cmp(other))
     }
 }
 
@@ -180,11 +193,6 @@ pub struct TaskFileSystem {
     use_count: AtomicUsize,
 }
 
-#[allow(unused)]
-fn default_thread_routine(_arg: *mut ()) {
-    unsafe { interrupts::enable() };
-}
-
 //the calling convention is: eax, edx, ecx (default x8086)
 //todo: each task should have stub before running to enable interrupts
 pub fn new_task(
@@ -199,7 +207,7 @@ pub fn new_task(
 
     let task = task.into_node();
 
-    let context = TaskContext::with_return_address(routine as VirtualAddress);
+    let context = TaskContext::new(routine as VirtualAddress, arg);
 
     let context_offset = task.kernel_stack + TASK_STACK_SIZE
         - mem::size_of::<TaskContext>()
@@ -208,39 +216,39 @@ pub fn new_task(
     task.context = context_offset as *mut TaskContext;
     unsafe { task.context.write(context) };
 
-    let arg_offset = (context_offset - mem::size_of_val(&arg)) as *mut *mut ();
-
-    unsafe { arg_offset.write(arg) };
-
     task
 }
 
 pub fn submit_task(task: &'static mut RunningTask) {
-    SCHEDULER.lock().push_working_task(task);
+    SCHEDULER.access_lock().push_working_task(task);
 }
 
 //run the kernel main loop
 pub fn run() -> ! {
-    log::debug!("Main loop");
-
     SCHEDULER.get().run();
 }
 
 //mark current task as sleeping
 pub fn sleep(milliseconds: usize) {
-    SCHEDULER.lock().sleep(milliseconds);
+    SCHEDULER.switch_lock().sleep(milliseconds);
 }
 
 pub fn init() -> CallbackInfo {
     clocks::init();
 
     let idle = new_task(idle_task, ptr::null_mut(), TaskPriority::Idle);
+
     SCHEDULER.set(SchedulerLock::new(idle));
 
     CallbackInfo::default(on_timer)
 }
 
-fn idle_task(_args: *mut ()) {
+#[no_mangle]
+extern "C" fn idle_task() {
+    let _args: *mut () = unsafe { get_eax!() };
+
+    unsafe { interrupts::enable() };
+
     loop {
         log::debug!("Idle task");
 
@@ -253,20 +261,15 @@ fn idle_task(_args: *mut ()) {
     }
 }
 
-fn try_wakeup() {
-    let current_time = clocks::get_time_since_boot();
-    SCHEDULER.lock().sleep(current_time)
-}
-
 fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
     log::debug!("On timer");
 
     clocks::update_time();
 
-    SCHEDULER.lock().on_tick();
+    // SCHEDULER.switch_lock().on_tick();
 
     true
 }
 
-static SCHEDULER: UnsafeLazyCell<SchedulerLock> = UnsafeLazyCell::empty();
+pub static SCHEDULER: UnsafeLazyCell<SchedulerLock> = UnsafeLazyCell::empty();
 static NEXT_TASK_ID: AtomicUsize = AtomicUsize::new(1);

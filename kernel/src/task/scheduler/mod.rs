@@ -19,16 +19,9 @@ use crate::task::{switch_context, RunningTask, TaskContext, TaskStatus};
 use crate::{interrupts, memory, ticks_size};
 use crate::{object, ticks_now};
 
-use super::{BlockedTask, RunningTaskBox, Task};
+use super::{BlockedTask, RunningTaskBox, Task, TaskPriority};
 
 pub use lock::SchedulerLock;
-
-#[macro_export]
-macro_rules! current_task {
-    () => {
-        $crate::process::scheduler::SCHEDULER.get().current_task()
-    };
-}
 
 pub struct TaskScheduler {
     // the queue of delayed tasks
@@ -37,7 +30,7 @@ pub struct TaskScheduler {
     running: &'static mut TaskQueue,
 
     //todo: replace blocked task array
-    blocked: HashTable<'static, BlockedTask, 512>,
+    blocked: HashTable<'static, BlockedTask, 16>,
 
     sleeping: LinkedList<'static, RunningTask>,
 
@@ -64,7 +57,7 @@ impl TaskScheduler {
     /// 1. It will never be terminated (busy loop)
     /// 2. It requires no time constraints
     pub fn push_idle_task(&mut self, task: &'static mut RunningTask) {
-        self.idle_tasks.push_back(task.as_node());
+        self.idle_tasks.push_back(task);
     }
 
     pub fn push_working_task(&mut self, task: &'static mut RunningTask) {
@@ -98,7 +91,11 @@ impl TaskScheduler {
             return;
         }
 
-        self.running.push(unblocked_task);
+        if unblocked_task.priority == TaskPriority::Idle {
+            self.idle_tasks.push_back(unblocked_task.as_node());
+        } else {
+            self.running.push(unblocked_task);
+        }
     }
 
     ///add current task to sleeping list
@@ -123,7 +120,12 @@ impl TaskScheduler {
             //fixme: time overflow?
             if task.start_time < ticks_now!() {
                 let awaked_task = iter.unlink_watched().unwrap();
-                self.running.push(awaked_task);
+
+                if awaked_task.priority == TaskPriority::Idle {
+                    self.idle_tasks.push_back(awaked_task);
+                } else {
+                    self.running.push(awaked_task);
+                }
             }
         }
 
@@ -140,8 +142,10 @@ impl TaskScheduler {
                 mem::swap(&mut task, &mut self.current);
 
                 //the problem: if task has too small execution time
-                //should it be executed
-                if task.metrics.elapsed > task.metrics.base_duration {
+                //should it be executed at whole?
+                if task.priority == TaskPriority::Idle {
+                    self.idle_tasks.push_back(task);
+                } else if task.metrics.elapsed > task.metrics.base_duration {
                     self.delayed.push(task);
                 } else {
                     self.running.push(task);
@@ -163,35 +167,14 @@ impl TaskScheduler {
         drop(task)
     }
 
+    pub fn current_task(&mut self) -> &mut RunningTask {
+        self.current
+    }
+
     ///Try to fetch the next task
     ///If task is killed then it will be pushed in list of killed tasks
     ///If no task is available in list then idle task will return
     fn next_task(&mut self) -> &'static mut RunningTask {
-        // let mut iter = self.running.next();
-        //
-        // let mut next_task = None;
-        //
-        // while next_task.is_none()
-        //     && let Some(task) = iter.next()
-        // {
-        //     if task.lock.read().status == TaskStatus::Killed {
-        //         self.killed.push_back(task.tiny_mut());
-        //         continue;
-        //     }
-        //
-        //     assert!(
-        //         task.lock.read().status != TaskStatus::Active,
-        //         "No active task can be in delayed queue"
-        //     );
-        //
-        //     next_task = iter.unlink_watched();
-        // }
-        //
-        // if let Some(task) = next_task {
-        //     task
-        // } else {
-        //     unsafe { self.idle_task.as_mut() }
-        // }
         self.running.take_next().unwrap_or(self.reschedule())
     }
 
@@ -199,6 +182,11 @@ impl TaskScheduler {
     /// and return current next task
     fn reschedule(&mut self) -> &'static mut RunningTask {
         mem::swap(&mut self.delayed, &mut self.running);
-        todo!()
+
+        let Some(task) = self.running.take_next() else {
+            return self.idle_tasks.remove_first().expect("No idle task");
+        };
+
+        task
     }
 }

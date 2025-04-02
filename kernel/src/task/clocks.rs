@@ -44,7 +44,7 @@ macro_rules! ticks_now {
 #[macro_export]
 macro_rules! ticks_size {
     () => {
-        1
+        $crate::task::clocks::TIMEOUT
     };
 }
 

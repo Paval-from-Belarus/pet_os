@@ -1,5 +1,7 @@
 #![allow(unused)]
 
+use kernel_types::Zeroed;
+
 use crate::{memory::VirtualAddress, task::SCHEDULER};
 
 ///The
@@ -20,18 +22,26 @@ pub struct TaskContext {
     edi: u32,
     esi: u32,
     ebx: u32,
-    eip: VirtualAddress,
     wrapper_eip: VirtualAddress,
+    eip: VirtualAddress,
+    arg: VirtualAddress,
 }
 
-pub fn prepare_thread() {
-    log::debug!("prepare thread");
+#[no_mangle]
+#[naked]
+pub unsafe extern "C" fn prepare_thread() {
+    core::arch::naked_asm! {
+        "pop edx",
+        "pop eax",
+        "call edx"
+    }
 }
 
 impl TaskContext {
-    pub fn with_return_address(eip: VirtualAddress) -> Self {
+    pub fn new(eip: VirtualAddress, arg: *mut ()) -> Self {
         Self {
             wrapper_eip: prepare_thread as VirtualAddress,
+            arg: arg as VirtualAddress,
             eip,
             ..Self::default()
         }
@@ -48,8 +58,10 @@ pub unsafe fn switch_context(
         "push esi",
         "push edi",
         "push ebp",
+
         "mov [eax], esp",
         "mov esp, edx",
+
         "pop ebp",
         "pop edi",
         "pop esi",

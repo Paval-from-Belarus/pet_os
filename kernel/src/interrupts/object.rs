@@ -29,7 +29,11 @@ impl InterruptObject {
         Self { callbacks, line }
     }
 
+    #[no_mangle]
     pub fn dispatch(&self) {
+        unsafe { super::disable() };
+
+        log::debug!("Dispatching {:?}", self.line);
         let mut is_dispatched = false;
 
         let callbacks = self.callbacks.lock();
@@ -46,6 +50,8 @@ impl InterruptObject {
             //if no one complete request simply suppress irq
             pic::complete(self.line);
         }
+
+        unsafe { super::enable() };
     }
 
     //the registration is appending callback to the end of sequence

@@ -70,7 +70,7 @@ pub trait BorrowingLinkedList<'a> {
     type Item: 'a;
     fn empty() -> Self;
 
-    fn push_back(&mut self, node: &'a mut Self::Item);
+    fn push_back<K: Into<&'a mut Self::Item>>(&mut self, node: K);
 
     fn push_front(&mut self, node: &'a mut Self::Item);
 
@@ -89,7 +89,6 @@ pub unsafe trait DanglingData {}
 /// Conventional trait allowing any struct be list node in doubly linked list (`LinkedList`)
 /// # Safety
 /// Be careful using this trait. It violates rust memory rules while unappropriate using
-
 pub unsafe trait ListNodeData: Sized {
     type Item;
 

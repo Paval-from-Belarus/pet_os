@@ -55,14 +55,14 @@ impl Futex {
                     break;
                 }
 
-                SCHEDULER.lock().block_on(self.handle());
+                SCHEDULER.switch_lock().block_on(self.handle());
                 //we are not in queue now, therefore we should put ourself in queue again
             }
         }
     }
 
     pub fn release(&self) {
-        SCHEDULER.lock().unblock_on(self.handle());
+        SCHEDULER.switch_lock().unblock_on(self.handle());
     }
 
     fn inner(&self) -> &mut FutexInner {

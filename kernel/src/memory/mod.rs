@@ -215,7 +215,7 @@ pub fn io_remap(_offset: PhysicalAddress, _size: usize) -> VirtualAddress {
 
 pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
 pub type DeallocHandler = fn(PhysicalAddress);
-pub type ThreadRoutine = fn(context: *mut ());
+pub type ThreadRoutine = extern "C" fn();
 
 ///Alternative to linux mm_struct
 pub struct ProcessState {
