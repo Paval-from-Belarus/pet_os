@@ -122,7 +122,7 @@ pub struct BlockDeviceOperations {}
 pub fn init() {
     unsafe {
         let bytes_size = (SYMBOL_TABLE_END as *const u8)
-            .sub_ptr(SYMBOL_TABLE_START as *const u8);
+            .offset_from_unsigned(SYMBOL_TABLE_START as *const u8);
         assert!(
             bytes_size % mem::size_of::<KernelSymbol>() == 0
                 && bytes_size > mem::size_of::<KernelSymbol>(),
@@ -132,7 +132,8 @@ pub fn init() {
 }
 
 fn find_symbol(name: &str) -> Option<VirtualAddress> {
-    let table_size = unsafe { SYMBOL_TABLE_END.sub_ptr(SYMBOL_TABLE_START) };
+    let table_size =
+        unsafe { SYMBOL_TABLE_END.offset_from_unsigned(SYMBOL_TABLE_START) };
     let symbol_table =
         unsafe { slice::from_raw_parts(SYMBOL_TABLE_START, table_size) };
     symbol_table

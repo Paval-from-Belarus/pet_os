@@ -34,6 +34,20 @@ pub fn get_time_since_boot() -> usize {
     TIME.load(SeqCst)
 }
 
+#[macro_export]
+macro_rules! ticks_now {
+    () => {
+        $crate::task::clocks::get_time_since_boot()
+    };
+}
+
+#[macro_export]
+macro_rules! ticks_size {
+    () => {
+        1
+    };
+}
+
 pub fn init() {
     const DEFAULT_FREQUENCY: u32 = 1193180;
     let divisor: u32 = DEFAULT_FREQUENCY / 50;

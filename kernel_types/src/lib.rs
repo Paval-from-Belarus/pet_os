@@ -3,7 +3,7 @@
 #![feature(tuple_trait)]
 #![feature(let_chains)]
 #![feature(unboxed_closures)]
-#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(hasher_prefixfree_extras)]
 
 use thiserror_no_std::Error;

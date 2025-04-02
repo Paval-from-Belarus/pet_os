@@ -13,8 +13,7 @@ use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
 use crate::interrupts::CallbackInfo;
 use crate::memory::{Page, SegmentSelector, ThreadRoutine, VirtualAddress};
-use crate::object::Handle;
-use crate::task::scheduler::TaskScheduler;
+use crate::task::scheduler::SchedulerLock;
 use crate::{interrupts, memory, object};
 
 mod arch;
@@ -82,6 +81,18 @@ pub enum TaskPriority {
     User(u16),
     Module(u16),
     Kernel,
+}
+
+impl PartialOrd for TaskPriority {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.into_raw().partial_cmp(&other.into_raw())
+    }
+}
+
+impl Ord for TaskPriority {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.into_raw().cmp(&other.into_raw())
+    }
 }
 
 impl TaskPriority {
@@ -180,14 +191,13 @@ pub fn new_task(
     routine: ThreadRoutine,
     arg: *mut (),
     priority: TaskPriority,
-) -> TaskBox {
+) -> &'static mut RunningTask {
     let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
 
     let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
     let task = Task::new_boxed(task_id, kernel_stack, priority);
 
-    let task_node = task.into_node();
-    let mut task = task_node.lock.write();
+    let task = task.into_node();
 
     let context = TaskContext::with_return_address(routine as VirtualAddress);
 
@@ -202,15 +212,11 @@ pub fn new_task(
 
     unsafe { arg_offset.write(arg) };
 
-    drop(task);
-
-    task_node.into_boxed()
+    task
 }
 
-pub fn submit_task(task: TaskBox) {
-    // let tiny_node = unsafe { task.as_sibling().as_mut() };
-    // let raw_tiny_node = NonNull::from(tiny_node);
-    SCHEDULER.get().add_task(task);
+pub fn submit_task(task: &'static mut RunningTask) {
+    SCHEDULER.lock().push_working_task(task);
 }
 
 //run the kernel main loop
@@ -222,14 +228,14 @@ pub fn run() -> ! {
 
 //mark current task as sleeping
 pub fn sleep(milliseconds: usize) {
-    SCHEDULER.get().sleep(milliseconds);
+    SCHEDULER.lock().sleep(milliseconds);
 }
 
 pub fn init() -> CallbackInfo {
     clocks::init();
 
     let idle = new_task(idle_task, ptr::null_mut(), TaskPriority::Idle);
-    SCHEDULER.set(TaskScheduler::new(idle));
+    SCHEDULER.set(SchedulerLock::new(idle));
 
     CallbackInfo::default(on_timer)
 }
@@ -249,7 +255,7 @@ fn idle_task(_args: *mut ()) {
 
 fn try_wakeup() {
     let current_time = clocks::get_time_since_boot();
-    SCHEDULER.wakeup(current_time)
+    SCHEDULER.lock().sleep(current_time)
 }
 
 fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
@@ -257,10 +263,10 @@ fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
 
     clocks::update_time();
 
-    try_wakeup();
+    SCHEDULER.lock().on_tick();
 
     true
 }
 
-static SCHEDULER: UnsafeLazyCell<TaskScheduler> = UnsafeLazyCell::empty();
+static SCHEDULER: UnsafeLazyCell<SchedulerLock> = UnsafeLazyCell::empty();
 static NEXT_TASK_ID: AtomicUsize = AtomicUsize::new(1);

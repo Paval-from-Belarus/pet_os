@@ -35,6 +35,15 @@ impl<T: ListNodeData> ListNode<T> {
     }
 }
 
+impl<'a, T> From<&'a mut ListNode<T>> for &'a mut TinyListNode<T>
+where
+    T: ListNodeData,
+{
+    fn from(value: &'a mut ListNode<T>) -> Self {
+        value.tiny_mut()
+    }
+}
+
 impl<T> TinyListNode<T>
 where
     T: TinyListNodeData + BoxedNode,
@@ -52,6 +61,7 @@ where
         T::into_boxed(self.tiny_mut())
     }
 }
+
 
 // #[cfg(feature = "alloc")]
 // impl<T, B, ITEM> alloc::borrow::ToOwned for TinyListNode<T>

@@ -5,10 +5,9 @@
 #![feature(const_trait_impl)]
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
-#![feature(ptr_sub_ptr)]
 #![feature(ascii_char)]
 // really raw features
-#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(hasher_prefixfree_extras)]
 
@@ -23,8 +22,8 @@ extern crate multiboot2;
 use core::arch::asm;
 use core::ptr;
 
-use memory::PagingProperties;
 use common::logging;
+use memory::PagingProperties;
 
 use crate::task::TaskPriority;
 
@@ -40,10 +39,10 @@ mod interrupts;
 #[allow(dead_code)]
 mod memory;
 
-mod object;
-mod task;
 #[allow(dead_code)]
 mod common;
+mod object;
+mod task;
 
 #[cfg(not(test))]
 #[panic_handler]

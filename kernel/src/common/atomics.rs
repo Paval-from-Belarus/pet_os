@@ -70,12 +70,14 @@ impl<T> UnsafeLazyCell<T> {
             cell: UnsafeCell::new(None),
         }
     }
+
     pub fn set(&self, value: T) {
         let option = unsafe { &mut *self.cell.get() };
         if option.is_none() {
             option.replace(value);
         }
     }
+
     pub fn get(&self) -> &T {
         let option = unsafe { &*self.cell.get() };
         if let Some(value) = option {

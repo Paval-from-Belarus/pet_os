@@ -548,7 +548,8 @@ impl ToPhysicalAddress for Page {
     //return which physical address is used for such
     fn as_physical(&self) -> PhysicalAddress {
         let page_offset = ptr::from_ref(self);
-        let page_index = unsafe { page_offset.sub_ptr(mem_map_offset()) };
+        let page_index =
+            unsafe { page_offset.offset_from_unsigned(mem_map_offset()) };
         page_index << Page::SHIFT
     }
 }

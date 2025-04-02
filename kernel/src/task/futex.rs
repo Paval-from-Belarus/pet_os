@@ -8,7 +8,10 @@ use core::{
 
 use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
 
-use crate::memory::{self, Slab};
+use crate::{
+    memory::{self, Slab},
+    object,
+};
 
 use super::{RunningTask, TaskStatus, SCHEDULER};
 
@@ -39,8 +42,11 @@ impl Futex {
         Self::new(1)
     }
 
+    pub fn handle(&self) -> object::Handle {
+        object::Handle(0)
+    }
+
     pub fn acquire(&self) {
-        SCHEDULER.lock();
         unsafe {
             //if failed to acquire
             let futex = self.inner();
@@ -48,25 +54,15 @@ impl Futex {
                 if futex.try_acquire().is_ok() {
                     break;
                 }
-                let current = SCHEDULER.block_current();
+
+                SCHEDULER.lock().block_on(self.handle());
                 //we are not in queue now, therefore we should put ourself in queue again
-                futex.wait(current);
-                SCHEDULER.switch();
             }
-            SCHEDULER.unlock();
         }
     }
 
     pub fn release(&self) {
-        SCHEDULER.lock();
-
-        let futex = self.inner();
-        let waiting_option = futex.release();
-        if let Some(waiting) = waiting_option {
-            SCHEDULER.add_task(waiting.into_boxed());
-        }
-
-        SCHEDULER.unlock();
+        SCHEDULER.lock().unblock_on(self.handle());
     }
 
     fn inner(&self) -> &mut FutexInner {
@@ -88,12 +84,6 @@ impl FutexInner {
         }
         self.count.fetch_add(1, Ordering::Release);
         Ok(())
-    }
-
-    pub fn wait(&mut self, task: &'static mut RunningTask) {
-        task.lock.write().status = TaskStatus::Blocked;
-
-        self.waiting.push_back(task.as_node())
     }
 
     fn release(&mut self) -> Option<&'static mut ListNode<RunningTask>> {

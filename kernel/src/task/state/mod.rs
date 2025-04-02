@@ -1,21 +1,22 @@
+mod running;
+
 use core::{
     mem,
     ptr::{self, NonNull},
 };
 
-use alloc::sync::Arc;
 use kernel_macro::ListNode;
-use kernel_types::collections::{BoxedNode, HashData, ListNode};
+use kernel_types::collections::{HashData, ListNode};
 use static_assertions::const_assert;
 
 use crate::{
-    memory::{
-        slab_alloc, Kernel, Page, ProcessState, Slab, SlabBox, VirtualAddress,
-    },
+    memory::{slab_alloc, Page, ProcessState, Slab, VirtualAddress},
     object,
 };
 
 use super::{FilePool, TaskContext, TaskFileSystem, TaskPriority, TaskStatus};
+
+pub use running::{RunningTask, RunningTaskBox};
 
 #[repr(C)]
 pub struct TaskMetrics {
@@ -25,10 +26,11 @@ pub struct TaskMetrics {
     pub exec_count: usize,
     /// the working time of thread (usize::max if too much)
     pub elapsed: usize,
-
     //the ratio to incrase time quantum according
     //task history
     pub jump_ratio: usize,
+    /// The base execution duration for task
+    pub base_duration: usize,
 }
 
 #[repr(C)]
@@ -49,78 +51,25 @@ pub struct Task {
     pub state: Option<&'static mut ProcessState>,
     pub file_system: NonNull<TaskFileSystem>,
 
-    /// The base execution duration for task
-    pub base_duration: u32,
     pub metrics: TaskMetrics,
 
     pub files: NonNull<FilePool>,
     //todo: consider to add namespace field
 }
 
-pub type TaskBox = RunningTaskBox;
-
-#[derive(ListNode)]
-pub struct RunningTask {
-    #[list_pivots]
-    node: ListNode<RunningTask>,
-    pub lock: Arc<spin::RwLock<Task>>,
-}
-
-pub struct RunningTaskBox {
-    node: SlabBox<RunningTask>,
-}
-
 pub type BlockedTask = RunningTask;
 
-impl RunningTask {
-    pub fn into_blocked(self, handle: object::Handle) -> BlockedTask {
-        self.lock.write().status = TaskStatus::Blocked(handle);
-
-        BlockedTask {
-            node: unsafe { ListNode::empty() },
-            lock: self.lock,
-        }
-    }
-
-    pub fn into_running(self) -> RunningTask {
-        self.lock.write().status = TaskStatus::Running;
-
-        self
-    }
-}
-
-impl RunningTaskBox {
-    pub fn into_node(self) -> &'static mut ListNode<RunningTask> {
-        unsafe { &mut *SlabBox::into_raw(self.node) }.as_node()
-    }
-}
-
-impl BoxedNode for RunningTask {
-    type Target = RunningTaskBox;
-
-    fn into_boxed(
-        node: &mut <RunningTask as kernel_types::collections::TinyListNodeData>::Item,
-    ) -> Self::Target {
-        let node = unsafe { SlabBox::from_raw_in(node, Kernel) };
-
-        Self::Target { node }
-    }
-}
-
-impl Clone for RunningTask {
-    fn clone(&self) -> Self {
-        Self {
-            node: unsafe { ListNode::empty() },
-            lock: Arc::clone(&self.lock),
-        }
-    }
+#[derive(ListNode)]
+pub struct ProccessTask {
+    #[list_pivots]
+    node: ListNode<ProccessTask>,
 }
 
 impl HashData for BlockedTask {
     type Item<'a> = object::Handle;
 
     fn key<'a>(&self) -> &Self::Item<'a> {
-        self.lock.read().status.blocking_reason().unwrap()
+        todo!()
     }
 }
 
@@ -135,8 +84,8 @@ impl Task {
         id: usize,
         kernel_stack: VirtualAddress,
         priority: TaskPriority,
-    ) -> TaskBox {
-        let lock = Arc::new(spin::RwLock::new(Task {
+    ) -> RunningTaskBox {
+        let task = Task {
             kernel_stack,
             id,
             priority,
@@ -147,19 +96,19 @@ impl Task {
             files: NonNull::dangling(),
             file_system: NonNull::dangling(),
 
-            base_duration: 100,
             metrics: TaskMetrics {
                 elapsed: 0,
                 lock_count: 0,
                 exec_count: 0,
                 jump_ratio: 0,
+                base_duration: 100,
             },
-        }));
+        };
 
-        TaskBox {
+        RunningTaskBox {
             node: slab_alloc(RunningTask {
                 node: unsafe { ListNode::empty() },
-                lock,
+                task,
             })
             .unwrap(),
         }

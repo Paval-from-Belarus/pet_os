@@ -26,7 +26,6 @@ pub struct TaskContext {
 
 pub fn prepare_thread() {
     log::debug!("prepare thread");
-    SCHEDULER.get().unlock();
 }
 
 impl TaskContext {

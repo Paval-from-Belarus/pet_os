@@ -21,14 +21,18 @@ impl TaskQueue {
     }
 
     pub fn push(&mut self, task: &'static mut RunningTask) {
-        let priority = task.lock.read().priority;
+        let priority = task.priority;
 
         let index = priority.into_raw() as usize;
 
         self.tasks[index as usize].push_back(task.as_node());
     }
 
-    pub fn next(&mut self) -> Option<&'static mut RunningTask> {
+    pub fn take_next(&mut self) -> Option<&'static mut RunningTask> {
+        todo!()
+    }
+
+    pub fn probe_next(&self) -> Option<&'static RunningTask> {
         todo!()
     }
 }
