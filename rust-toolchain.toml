@@ -2,7 +2,14 @@
 # https://rust-lang.github.io/rustup/overrides.html
 
 [toolchain]
-channel = "nightly"
+channel = "nightly-2025-02-13"
 
 targets = ["i686-unknown-linux-gnu"]
-components = [ "rust-src", "rustc", "cargo", "rust-std", "clippy", "rust_analyzer"]
+components = [
+    "rust-src",
+    "rustc",
+    "cargo",
+    "rust-std",
+    "clippy",
+    "rust_analyzer",
+]
