@@ -60,35 +60,36 @@ pub enum PicLine {
 }
 
 pub unsafe fn set_mask(pic_line: PicLine) {
-    let port: u16;
     let mut line = u8::from(pic_line);
-    if line <= LAST_MASTER_IRQ_LINE {
-        port = PIC1_DATA;
+
+    let port = if line <= LAST_MASTER_IRQ_LINE {
+        PIC1_DATA
     } else {
         line -= CHIP_LINE_COUNT;
-        port = PIC2_DATA;
-    }
+        PIC2_DATA
+    };
     let value = io::inb(port) | (1 << line);
     io::outb(port, value);
 }
 
 pub unsafe fn clear_mask(pic_line: PicLine) {
-    let port: u16;
-    let value: u8;
     let mut line = u8::from(pic_line);
-    if line <= LAST_MASTER_IRQ_LINE {
-        port = PIC1_DATA;
+
+    let port = if line <= LAST_MASTER_IRQ_LINE {
+        PIC1_DATA
     } else {
         line -= CHIP_LINE_COUNT;
-        port = PIC2_DATA;
-    }
-    value = io::inb(port) & !(1 << line);
+        PIC2_DATA
+    };
+
+    let value = io::inb(port) & !(1 << line);
     io::outb(port, value);
 }
 
 ///Remap pic master and slave interrupts to given ranges
 pub unsafe fn remap(master_offset: u8, slave_offset: u8) {
     use io::*;
+
     let old_pic1 = inb(PIC1_DATA);
     let old_pic2 = inb(PIC2_DATA);
     outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4); //starts initialization
@@ -124,9 +125,11 @@ pub unsafe fn disable() {
 
 ///Send signal by irq line that interrupt is processed
 pub fn complete(pic_line: PicLine) {
-    let line = u8::from(pic_line);
+    let line = pic_line as u8;
+
     if line >= 8 {
         unsafe { io::outb(PIC2_COMMAND, PIC_FINALIZE) };
     }
-    unsafe { io::outb(PIC2_COMMAND, PIC_FINALIZE) }
+
+    unsafe { io::outb(PIC1_COMMAND, PIC_FINALIZE) }
 }

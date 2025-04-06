@@ -9,6 +9,8 @@ IRQ_LINES_COUNT equ 16
 section '.text' executable 
 use32
 public INTERCEPTOR_STUB_ARRAY
+;Input:
+;eax -> number if service stub
 extrn 'interceptor_stub' as Interceptors.service
 INTERCEPTOR_STUB_ARRAY:
 rept IRQ_LINES_COUNT index: 0 
@@ -18,7 +20,13 @@ rept IRQ_LINES_COUNT index: 0
 rept IRQ_LINES_COUNT index: 0
 {
     stub#index:
+        push es ds fs gs
+        pusha
+
         mov eax, index
         call Interceptors.service
+
+        popa
+        pop gs fs ds es
         iret
 }

@@ -112,6 +112,7 @@ impl TaskScheduler {
 
     pub fn on_tick(&mut self) {
         let mut iter = self.sleeping.iter_mut();
+
         loop {
             let Some(task) = iter.next() else {
                 break;

@@ -120,10 +120,11 @@ pub fn init_kernel_space(
 }
 
 pub fn enable_task_switching(table: &mut GDTTable) {
-    let mut state = TASK_STATE.try_write().expect("Singe core");
-
+    let mut state = TaskState::null();
     state.set_io_map(0xFFFF);
     state.set_stack_selector(SegmentSelector::DATA);
+
+    unsafe { TASK_STATE = state };
 
     let task = TaskStateDescriptor::active(
         &raw const TASK_STATE as VirtualAddress,
@@ -489,10 +490,7 @@ pub fn physical_dealloc(_offset: *mut u8) {
 pub unsafe fn switch_to_task(task: &mut Task) {
     let kernel_stack = task.kernel_stack + task::TASK_STACK_SIZE; // - mem::size_of::<TaskContext>();
 
-    TASK_STATE
-        .try_write()
-        .expect("Singe core")
-        .set_kernel_stack(kernel_stack);
+    unsafe { TASK_STATE.set_kernel_stack(kernel_stack) };
 
     let marker = if task.state.is_some() {
         unreachable!("Process functionality is not implemented")
@@ -676,8 +674,7 @@ extern "C" {
     static mut MEMORY_MAP: MemoryMap;
 }
 
-static TASK_STATE: spin::RwLock<TaskState> =
-    spin::RwLock::new(TaskState::null());
+static mut TASK_STATE: TaskState = TaskState::null();
 
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> =
     UnsafeLazyCell::empty();

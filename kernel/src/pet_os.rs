@@ -67,6 +67,10 @@ pub unsafe extern "C" fn main() {
 pub fn rust_main(properties: &mut PagingProperties) {
     logging::init();
 
+    unsafe {
+        interrupts::disable();
+    }
+
     let directory = properties.page_directory();
     let heap_offset = properties.heap_offset();
 

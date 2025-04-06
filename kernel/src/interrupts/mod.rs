@@ -1,20 +1,19 @@
 use core::arch::asm;
+use core::sync::atomic::AtomicUsize;
 use core::{mem, ptr};
 
 use kernel_macro::ListNode;
-use kernel_types::collections::TinyListNode;
-use kernel_types::{declare_constants, declare_types};
+use kernel_types::collections::ListNode;
+use kernel_types::{declare_constants, declare_types, Zeroed};
 
-use crate::common::atomics::SpinLockLazyCell;
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
-use crate::memory::AllocationStrategy::Kernel;
 use crate::memory::{
-    InterruptGate, PrivilegeLevel, SegmentSelector, Slab, SystemType,
-    VirtualAddress,
+    slab_alloc, InterruptGate, PrivilegeLevel, SegmentSelector, Slab, SlabBox,
+    SystemType, VirtualAddress,
 };
-use crate::{get_eax, memory, syscall};
+use crate::{get_eax, get_edx, interrupts, syscall};
 
 mod lock;
 mod object;
@@ -37,15 +36,17 @@ pub type NakedExceptionHandler = extern "x86-interrupt" fn(InterruptStackFrame);
 pub type ErrorExceptionHandler =
     extern "x86-interrupt" fn(InterruptStackFrame, usize);
 ///the interrupt callback that return true if interrupt was handle (and no more handling is required)
-pub type Callback = fn(is_processed: bool, context: *mut ()) -> bool;
+pub type Callback =
+    fn(is_processed: bool, context: *mut (), frame: &mut IrqStackFrame) -> bool;
 
 #[derive(Debug, ListNode)]
+#[repr(C)]
 pub struct CallbackInfo {
     driver: Handle,
     callback: Callback,
     context: *mut (),
-    #[list_pivot]
-    next: TinyListNode<CallbackInfo>,
+    #[list_pivots]
+    next: ListNode<CallbackInfo>,
 }
 
 impl Slab for CallbackInfo {
@@ -54,18 +55,23 @@ impl Slab for CallbackInfo {
 
 impl CallbackInfo {
     //the default kernel callback with no context
-    pub const fn default(callback: Callback) -> Self {
+    pub const fn new(callback: Callback) -> Self {
         Self {
             callback,
             driver: Handle::KERNEL,
             context: ptr::null_mut(),
-            next: TinyListNode::empty(),
+            next: unsafe { ListNode::empty() },
         }
     }
+
     #[inline]
-    pub fn invoke(&self, is_dispatched: bool) -> bool {
+    pub fn invoke(
+        &self,
+        is_dispatched: bool,
+        frame: &mut IrqStackFrame,
+    ) -> bool {
         let callback = self.callback;
-        callback(is_dispatched, self.context)
+        callback(is_dispatched, self.context, frame)
     }
 }
 
@@ -214,7 +220,7 @@ const MAX_INTERRUPTS_COUNT: usize = 256;
 ///the method to registry InterruptObject
 pub fn registry(_handle: Handle, line: IrqLine, info: CallbackInfo) {
     let index = u8::from(line.line) as usize;
-    let interceptors = INTERCEPTORS.get();
+    let interceptors = INTERCEPTORS.try_lock().unwrap().unwrap();
     let manager = interceptors[index];
     manager.append(info);
 }
@@ -224,38 +230,8 @@ pub fn registry(_handle: Handle, line: IrqLine, info: CallbackInfo) {
 pub const KERNEL_TRAP_SIZE: usize =
     4 * 2 + 8 * 4 + mem::size_of::<InterruptStackFrame>() + 4 + 4 * 2;
 
-//save all registers
-unsafe fn enter_kernel_trap() {
-    asm!(
-        "push es",
-        "push ds",
-        "push fs",
-        "push gs",
-        "pusha",
-        "push ax", //save ax from future changing
-        options(preserves_flags)
-    );
-    asm!(
-    "mov ds, ax",
-    "mov es, ax",
-    "pop ax",
-    in("ax") u16::from(SegmentSelector::DATA),//the data is already here?
-    options(preserves_flags));
-}
-
-unsafe fn leave_kernel_trap() {
-    asm!(
-        "popa",
-        "pop gs",
-        "pop fs",
-        "pop ds",
-        "pop es",
-        options(preserves_flags)
-    );
-}
-
 pub fn init() {
-    let mut table = INTERRUPT_TABLE.try_write().expect("Single core");
+    let mut table = IDTable::empty();
 
     system::init_traps(&mut table);
 
@@ -274,7 +250,8 @@ pub fn init() {
     init_interceptors(&mut table);
 
     unsafe {
-        INTERRUPT_TABLE_HANDLE = IDTHandle::new(&table);
+        INTERRUPT_TABLE = table;
+        INTERRUPT_TABLE_HANDLE = IDTHandle::new(&INTERRUPT_TABLE);
 
         asm!(
         "lidt [eax]",
@@ -297,65 +274,82 @@ extern "C" {
 }
 
 #[no_mangle]
-static INTERCEPTORS: SpinLockLazyCell<
-    [&'static InterruptObject; pic::LINES_COUNT],
-> = SpinLockLazyCell::empty();
+static INTERCEPTORS: spin::Mutex<
+    Option<[&'static InterruptObject; pic::LINES_COUNT]>,
+> = spin::Mutex::new(None);
 
+#[repr(C)]
+pub struct IrqStackFrame {
+    frame: InterruptStackFrame,
+    _reserved_1: Zeroed<[u8; 4]>,
+    _reserved_2: Zeroed<[u8; 32]>,
+}
 ///the interceptor_stub is invoked by corresponding asm stub for certain interrupt
+///The following invarians are supported:
+/// - All registers can be modified (pusha saves all)
+/// - Interrupts are disabled (to prevent nested interrupts)
 #[no_mangle]
 pub unsafe extern "C" fn interceptor_stub() {
     let index: usize = get_eax!();
+    let frame: &mut IrqStackFrame = {
+        let raw_frame: *mut IrqStackFrame = get_edx!();
+        &mut *raw_frame
+    };
 
-    enter_kernel_trap();
+    interrupts::disable();
 
-    let object = &mut INTERCEPTORS.get()[index];
+    asm! {
+        "mov ds, ax",
+        "mov es, ax",
+        in("ax") u16::from(SegmentSelector::DATA),
+        options(preserves_flags)
+    };
 
-    object.dispatch();
-    leave_kernel_trap();
+    let object = &mut INTERCEPTORS
+        .try_lock()
+        .expect("Busy loop on interrupts")
+        .unwrap()[index];
+
+    object.dispatch(frame);
 }
 
 fn init_interceptors(table: &mut IDTable) {
-    let mut created_objects = system::init_irq();
-
-    for (index, object_option) in created_objects.iter_mut().enumerate() {
-        if object_option.is_none() {
-            let line = PicLine::try_from(index as u8)
+    let objects = core::array::from_fn(|index| {
+        let object = if index == IrqLine::SYS_TIMER.line_index() {
+            system::init_timer_isr()
+        } else {
+            let pic_line = PicLine::try_from(index as u8)
                 .expect("index cannot exceed array size");
 
-            let raw_object = memory::slab_alloc_old::<InterruptObject>(Kernel)
-                .expect("Failed to alloc task struct");
+            let object = slab_alloc(InterruptObject::new(pic_line)).unwrap();
 
-            let object = raw_object.write(InterruptObject::new(line));
-            *object_option = Some(object);
-        }
-    }
+            SlabBox::leak(object)
+        };
 
-    let interceptors = created_objects
-        .map(|object| object.expect("The object is already initialized"));
-
-    for (index, object) in interceptors.iter().enumerate() {
         let irq_line = IrqLine::from(object.line());
         let trap = unsafe { INTERCEPTOR_STUB_ARRAY[index] };
         table.set(irq_line.interrupt as usize, naked_trap!(trap));
-    }
 
-    let _ = INTERCEPTORS.set(interceptors);
+        object
+    });
+
+    *INTERCEPTORS.try_lock().unwrap() = objects.into();
 }
 //this function is invoked directly from interrupt stub
 
-const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::default(suppress_irq);
+const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::new(suppress_irq);
 
-const fn suppress_irq(_is_processed: bool, _context: *mut ()) -> bool {
+const fn suppress_irq(
+    _is_processed: bool,
+    _context: *mut (),
+    _frame: &mut IrqStackFrame,
+) -> bool {
     false
 }
 
 /// set custom interrupt handler
 pub fn set(index: usize, descriptor: InterruptGate) -> InterruptGate {
-    let mut table = INTERRUPT_TABLE
-        .try_write()
-        .expect("Already taken in single core");
-
-    table.set(index, descriptor)
+    unsafe { INTERRUPT_TABLE.set(index, descriptor) }
 }
 
 #[derive(Debug)]
@@ -394,27 +388,51 @@ impl IDTHandle {
     }
 }
 
-#[inline(always)]
-pub unsafe fn disable() {
-    asm!("cli", options(nomem, nostack));
+static INTERRUPT_LOCK_REQUESTS: AtomicUsize = AtomicUsize::new(0);
 
-    log::debug!("Disable interrupts");
+pub unsafe fn disable() {
+    use core::sync::atomic::Ordering;
+
+    INTERRUPT_LOCK_REQUESTS.fetch_add(1, Ordering::SeqCst);
+
+    asm!("cli", options(nomem, nostack));
 }
 
-#[inline(always)]
 pub unsafe fn enable() {
-    log::debug!("Enable interrupts");
+    use core::sync::atomic::Ordering;
 
-    asm!("sti", options(nomem, nostack));
+    let locked_times = INTERRUPT_LOCK_REQUESTS.fetch_sub(1, Ordering::SeqCst);
 
+    if locked_times == 1 {
+        log::debug!(
+            "Interrupts are enabled. COUNT = {}",
+            INTERRUPT_LOCK_REQUESTS.load(Ordering::SeqCst)
+        );
+        asm!("sti", options(nomem, nostack));
+    }
+}
+
+/// true if interrupts are enabled
+/// false if interrupts are disabled
+pub unsafe fn status() -> bool {
+    let is_flag_set: u16;
+
+    core::arch::asm! {
+        "pushf",
+        "pop eax",
+        "bt eax, 9",
+        "setc ax",
+        out("ax") is_flag_set
+    };
+
+    is_flag_set == 1
 }
 
 #[no_mangle]
 static mut INTERRUPT_TABLE_HANDLE: IDTHandle = IDTHandle::null();
 
 #[no_mangle]
-static INTERRUPT_TABLE: spin::RwLock<IDTable> =
-    spin::RwLock::new(IDTable::empty());
+static mut INTERRUPT_TABLE: IDTable = IDTable::empty();
 
 impl IDTable {
     declare_constants!(

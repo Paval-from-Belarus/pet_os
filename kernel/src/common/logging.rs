@@ -10,7 +10,7 @@ macro_rules! log {
 		use core::fmt::Write;
 
                 if let Some(logger) = &mut $crate::common::logging::LOGGER_LOCK.try_lock().as_mut() {
-		    let _ = write!(logger, $($arg)*);
+	            let _ = write!(logger, $($arg)*);
                 }
 	})
 }
@@ -38,8 +38,9 @@ pub unsafe fn put_byte_in_serial(byte: u8) {
 }
 
 pub static LOGGER_LOCK: spin::Mutex<Logger> = spin::Mutex::new(Logger);
-static LOGGER_INSTANCE: Logger = Logger;
+pub static LOGGER_INSTANCE: Logger = Logger;
 
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct Logger;
 

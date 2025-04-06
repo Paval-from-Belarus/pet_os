@@ -63,5 +63,6 @@ pub fn init() {
 
 pub fn update_time() {
     pic::complete(pic::PicLine::IRQ0);
+
     let _ = TIME.fetch_add(TIMEOUT, SeqCst);
 }

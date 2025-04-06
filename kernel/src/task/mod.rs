@@ -11,13 +11,13 @@ use crate::common::atomics::UnsafeLazyCell;
 
 use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
-use crate::interrupts::CallbackInfo;
+use crate::interrupts::{CallbackInfo, IrqStackFrame};
 use crate::memory::{Page, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::task::scheduler::SchedulerLock;
 use crate::{get_eax, interrupts, memory, object};
 
 mod arch;
-mod clocks;
+pub mod clocks;
 mod context;
 mod fs;
 mod futex;
@@ -104,7 +104,7 @@ impl PartialOrd for TaskPriority {
 
 impl Ord for TaskPriority {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.into_raw().cmp(&other.into_raw())
+        self.into_raw().cmp(&other.into_raw()).reverse()
     }
 }
 
@@ -240,14 +240,12 @@ pub fn init() -> CallbackInfo {
 
     SCHEDULER.set(SchedulerLock::new(idle));
 
-    CallbackInfo::default(on_timer)
+    CallbackInfo::new(on_timer)
 }
 
 #[no_mangle]
 extern "C" fn idle_task() {
     let _args: *mut () = unsafe { get_eax!() };
-
-    unsafe { interrupts::enable() };
 
     loop {
         log::debug!("Idle task");
@@ -261,12 +259,17 @@ extern "C" fn idle_task() {
     }
 }
 
-fn on_timer(_is_processed: bool, _context: *mut ()) -> bool {
-    log::debug!("On timer");
-
+fn on_timer(
+    _is_processed: bool,
+    _context: *mut (),
+    _frame: &mut IrqStackFrame,
+) -> bool {
     clocks::update_time();
 
-    // SCHEDULER.switch_lock().on_tick();
+    let mut scheduler = SCHEDULER.access_lock();
+    scheduler.on_tick();
+
+    // let switch_context = scheduler.current_task().context;
 
     true
 }

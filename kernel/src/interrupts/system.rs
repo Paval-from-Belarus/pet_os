@@ -52,21 +52,12 @@ pub fn init_traps(table: &mut IDTable) {
     table.set(IDTable::ALIGNMENT_CHECK, error_trap!(alignment_check));
 }
 
-///Init IRQ lines
-pub fn init_irq() -> [Option<&'static InterruptObject>; pic::LINES_COUNT] {
-    let mut objects: [Option<&'static InterruptObject>; pic::LINES_COUNT] =
-        [None; pic::LINES_COUNT];
-
-    objects[IrqLine::SYS_TIMER.line_index()] = Some(init_timer(task::init()));
-
-    objects
-}
-
-#[inline(never)]
-fn init_timer(info: CallbackInfo) -> &'static InterruptObject {
+pub fn init_timer_isr() -> &'static InterruptObject {
     let raw_object = memory::slab_alloc_old::<InterruptObject>(
         memory::AllocationStrategy::Kernel,
     );
+
+    let info = task::init();
 
     let timer_object = raw_object
         .expect("No memory for timer object")
@@ -121,8 +112,8 @@ pub extern "x86-interrupt" fn bound_check(_frame: InterruptStackFrame) {
     log!("bound check failed");
 }
 
-pub extern "x86-interrupt" fn invalid_opcode(_frame: InterruptStackFrame) {
-    log!("invalid opcode int");
+pub extern "x86-interrupt" fn invalid_opcode(frame: InterruptStackFrame) {
+    log::warn!("Invalid Opcode. EIP = {:X}, CS = {:X}", frame.ip, frame.cs);
 }
 
 pub extern "x86-interrupt" fn device_not_available(
@@ -168,10 +159,17 @@ pub extern "x86-interrupt" fn general_protection(
 }
 
 pub extern "x86-interrupt" fn page_fault(
-    _frame: InterruptStackFrame,
+    frame: InterruptStackFrame,
     error_code: usize,
 ) {
     let fault_code = unsafe { PageFaultError::wrap(error_code) };
+
+    log::debug!(
+        "Page Fault: {error_code} at IP={} CS={}",
+        frame.ip,
+        frame.cs
+    );
+
     let _code = fault_code.contains_with_mask(
         PageFaultError::CAUSE_MASK,
         PageFaultError::MODE_MASK,
@@ -187,5 +185,5 @@ pub extern "x86-interrupt" fn alignment_check(
 
 ///By default, unknown trap is handled by this function. Even if real error code present on stack
 pub extern "x86-interrupt" fn unknown_trap(_frame: InterruptStackFrame) {
-    panic!("Unknown trap is caught!");
+    log::warn!("Unknown trap is caught!")
 }

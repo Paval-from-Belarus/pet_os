@@ -82,7 +82,7 @@ impl SystemAllocator {
     ) -> Result<*mut u8, OsAllocationError> {
         let required_pages_count = Page::upper_bound(usize::from(piece));
 
-        let mut inner = self.inner.lock();
+        let mut inner = self.inner.try_lock().unwrap();
 
         let maybe_entry = inner.find_suitable_entry(required_pages_count)?;
 
@@ -119,7 +119,7 @@ impl SystemAllocator {
     }
 
     pub fn dealloc(&'static self, offset: VirtualAddress) {
-        let mut inner = self.inner.lock();
+        let mut inner = self.inner.try_lock().unwrap();
 
         inner.dealloc(offset);
     }
@@ -205,7 +205,8 @@ impl SlabAllocatorInner {
                     * mem::size_of::<SlabEntry>(),
             );
 
-            let pages_batch = self.allocator.alloc_continuous_pages(additional_pages)?;
+            let pages_batch =
+                self.allocator.alloc_continuous_pages(additional_pages)?;
 
             let new_entries = self.commit_new_entries(pages_batch);
             self.cached_entries.splice(new_entries);
