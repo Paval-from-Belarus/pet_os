@@ -14,7 +14,7 @@ use crate::fs::{FileOpenMode, MountPoint, PathNode};
 use crate::interrupts::CallbackInfo;
 use crate::memory::{Page, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::task::scheduler::SchedulerLock;
-use crate::{get_eax, interrupts, memory, object};
+use crate::{get_eax, memory, object};
 
 mod arch;
 pub mod clocks;
@@ -22,11 +22,13 @@ mod context;
 mod fs;
 mod futex;
 mod pid;
+mod priority;
 mod scheduler;
 mod state;
 
 pub use context::*;
 pub use fs::*;
+pub use priority::*;
 pub use state::*;
 
 #[macro_export]
@@ -78,45 +80,6 @@ pub enum TaskSignal {
     //user defined signals
     User1 = 0x10,
     User2 = 0x20,
-}
-
-//consider to merge status and priority into single field
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u16)]
-pub enum TaskPriority {
-    Idle,
-    User(u16),
-    Module(u16),
-    Kernel,
-}
-
-impl core::fmt::Display for TaskPriority {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-impl PartialOrd for TaskPriority {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for TaskPriority {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.into_raw().cmp(&other.into_raw()).reverse()
-    }
-}
-
-impl TaskPriority {
-    pub fn into_raw(self) -> u16 {
-        match self {
-            TaskPriority::Idle => 0,
-            TaskPriority::User(v) => v,
-            TaskPriority::Module(v) => v,
-            TaskPriority::Kernel => 31,
-        }
-    }
 }
 
 #[cfg(target_arch = "x86")]
@@ -218,20 +181,30 @@ pub fn new_task(
     context.ds = *SegmentSelector::KERNEL_DATA;
     context.es = *SegmentSelector::KERNEL_DATA;
 
+    context.fs = *SegmentSelector::USER_CODE;
+    context.gs = *SegmentSelector::USER_CODE;
+
     context.esp = (task.kernel_stack_bottom + TASK_STACK_SIZE - 1) as u32;
+    context.eflags = 0x200; //enable interrupts for each task
 
     log::debug!("Kernel Stack={:X}", kernel_stack);
     let context_offset = task.kernel_stack_bottom;
 
-    let wrapper_offset = context.esp - 4;
-
     context.esp -= 4; //move sp before wrapper eip
 
+
     unsafe {
-        let wrapper_ptr = wrapper_offset as *mut VirtualAddress;
-        *wrapper_ptr = routine as VirtualAddress; //returning from prepare_task routine go to task
+        let routine_ptr = context.esp as *mut VirtualAddress;
+        *routine_ptr = routine as VirtualAddress; //returning from prepare_task routine go to task
     }
 
+    context.esp -= context.size() as u32; //copy task context to the stack top
+
+    unsafe {
+        let top_context_ptr = context.esp as *mut TaskContext;
+        context.copy_to(&mut *top_context_ptr);
+        context.esp += 32; //popa is performing from stack bottom
+    }
     task.context = context_offset as *mut TaskContext;
     unsafe { task.context.write(context) };
 
@@ -239,7 +212,7 @@ pub fn new_task(
 }
 
 pub fn submit_task(task: &'static mut RunningTask) {
-    SCHEDULER.access_lock().push_working_task(task);
+    SCHEDULER.access_lock().push_task(task);
 }
 
 //run the kernel main loop
@@ -285,13 +258,33 @@ fn on_timer(
 ) -> bool {
     clocks::update_time();
 
-    let mut scheduler = SCHEDULER.access_lock();
-    scheduler.on_tick();
+    let old_context = current_task!().context;
 
+    SCHEDULER.access_lock().on_tick();
 
-    // unsafe { scheduler.current_task().context.write(*frame) };
+    let new_context = current_task!().context;
 
-    // let switch_context = scheduler.current_task().context;
+    if !ptr::eq(old_context, new_context) {
+        log::debug!("Interrupt switching");
+        //task has been switched
+
+        let context_size = frame.size();
+        let frame = frame as *mut TaskContext;
+
+        unsafe {
+            log::debug!("IRET Frame Before: {:?}", &*frame);
+
+            log::debug!("Old context: {:?}", &*old_context);
+            log::debug!("New context: {:?}", &*new_context);
+
+            old_context.copy_from(frame, context_size);
+            frame.copy_from(new_context, context_size);
+
+            log::debug!("IRET Frame After: {:?}", &*frame);
+
+            memory::switch_to_task(current_task!());
+        }
+    }
 
     true
 }

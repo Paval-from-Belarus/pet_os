@@ -108,10 +108,9 @@ impl SchedulerLock {
             let context = *self.context.get();
 
             core::arch::asm! {
-                "mov esp, edx",
-                "jmp eax",
-                in("eax") (*context).eip,
-                in("edx") (*context).esp,
+                "mov esp, eax",
+                "iretd",
+                in("eax") (*context).esp + 16,
                 options(noreturn)
             }
         }

@@ -29,7 +29,7 @@ impl TaskQueue {
     }
 
     pub fn take_next(&mut self) -> Option<&'static mut RunningTask> {
-        for tasks in self.tasks.iter_mut() {
+        for tasks in self.tasks.iter_mut().rev() {
             let mut iter = tasks.iter_mut();
             if iter.next().is_some() {
                 let task = iter.unlink_watched().unwrap();
@@ -50,5 +50,9 @@ impl TaskQueue {
         }
 
         None
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tasks.iter().all(|list| list.is_empty())
     }
 }

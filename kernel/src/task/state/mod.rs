@@ -101,7 +101,7 @@ impl Task {
                 lock_count: 0,
                 exec_count: 0,
                 jump_ratio: 0,
-                base_duration: 100,
+                base_duration: priority.static_duration(),
             },
         };
 

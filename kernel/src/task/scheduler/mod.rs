@@ -56,12 +56,15 @@ impl TaskScheduler {
     /// Each idle task has several limitation:
     /// 1. It will never be terminated (busy loop)
     /// 2. It requires no time constraints
-    pub fn push_idle_task(&mut self, task: &'static mut RunningTask) {
-        self.idle_tasks.push_back(task);
-    }
+    pub fn push_task(&mut self, task: &'static mut RunningTask) {
+        task.metrics.elapsed = 0;
+        task.metrics.base_duration = task.priority.static_duration();
 
-    pub fn push_working_task(&mut self, task: &'static mut RunningTask) {
-        self.delayed.push(task);
+        if task.priority == TaskPriority::Idle {
+            self.idle_tasks.push_back(task);
+        } else {
+            self.delayed.push(task);
+        }
     }
 
     /// block the current task on object handle
@@ -91,11 +94,7 @@ impl TaskScheduler {
             return;
         }
 
-        if unblocked_task.priority == TaskPriority::Idle {
-            self.idle_tasks.push_back(unblocked_task.as_node());
-        } else {
-            self.running.push(unblocked_task);
-        }
+        self.push_task(unblocked_task);
     }
 
     ///add current task to sleeping list
@@ -130,11 +129,14 @@ impl TaskScheduler {
             }
         }
 
+        log::debug!("On tick");
+
         self.current.metrics.elapsed += ticks_size!();
 
         if let Some(candidate) = self.running.probe_next() {
+            log::debug!("Replacing task with higher");
             assert!(
-                candidate.metrics.elapsed > candidate.metrics.base_duration
+                candidate.metrics.elapsed < candidate.metrics.base_duration
             );
 
             if candidate.priority > self.current.priority {
@@ -145,6 +147,7 @@ impl TaskScheduler {
                 //the problem: if task has too small execution time
                 //should it be executed at whole?
                 if task.priority == TaskPriority::Idle {
+                    task.metrics.elapsed = 0;
                     self.idle_tasks.push_back(task);
                 } else if task.metrics.elapsed > task.metrics.base_duration {
                     self.delayed.push(task);
@@ -154,7 +157,27 @@ impl TaskScheduler {
             }
         }
 
-        if self.current.metrics.elapsed > self.current.metrics.base_duration {}
+        if self.current.metrics.elapsed > self.current.metrics.base_duration {
+            self.current.metrics.elapsed = 0;
+
+            if let Some(mut task) = self.running.take_next() {
+                mem::swap(&mut self.current, &mut task);
+
+                self.push_task(task);
+            } else if self.running.is_empty() && !self.delayed.is_empty() {
+                let mut task = self.reschedule();
+
+                mem::swap(&mut self.current, &mut task);
+
+                self.push_task(task);
+            } else {
+                assert!(self.running.is_empty() && self.delayed.is_empty());
+                //do nothing as task is already running
+                //and we cannot take another task
+
+                log::debug!("Saving current task");
+            }
+        }
     }
 
     /// terminate the current task by
@@ -182,6 +205,8 @@ impl TaskScheduler {
     /// update the task ordering
     /// and return current next task
     fn reschedule(&mut self) -> &'static mut RunningTask {
+        log::debug!("Rescheduling");
+
         mem::swap(&mut self.delayed, &mut self.running);
 
         let Some(task) = self.running.take_next() else {

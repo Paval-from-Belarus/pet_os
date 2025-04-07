@@ -3,6 +3,7 @@
 use core::mem::{self, offset_of};
 
 use kernel_types::Zeroed;
+use static_assertions::const_assert_eq;
 
 use crate::{current_task, memory::VirtualAddress, task::SCHEDULER};
 
@@ -17,8 +18,8 @@ pub struct SysContext {
 }
 
 #[cfg(target_arch = "x86")]
-#[repr(C)]
-#[derive(Default)]
+#[repr(C, packed)]
+#[derive(Default, Clone, Debug)]
 pub struct TaskContext {
     //registers saved via pusha
     pub edi: u32,
@@ -32,26 +33,33 @@ pub struct TaskContext {
 
     //segment registers
     pub gs: u16,
+    _reserved_1: Zeroed<u16>,
     pub fs: u16,
+    _reserved_2: Zeroed<u16>,
     pub es: u16,
+    _reserved_3: Zeroed<u16>,
+
     pub ds: u16,
+    _reserved_4: Zeroed<u16>,
 
     //previous
     pub eip: VirtualAddress,
 
     //interrupt handling fields
     pub cs: u16,
+    _reserved_5: Zeroed<u16>,
     pub eflags: u32,
 
     //saved during kernel-space user-space switching
     //but also duplicate kernel during switching
     pub user_esp: VirtualAddress,
     pub user_ss: u16,
+    _reserved_6: Zeroed<u16>,
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn prepare_task() {
-    log::debug!("Prepared task");
+    log::debug!("Prepare task#{}", current_task!().id);
 
     let context = &*current_task!().context;
 
@@ -68,20 +76,32 @@ impl TaskContext {
     }
 
     pub fn copy_to(&self, context: &mut TaskContext) {
-        //only user space context has rinq = 3
-        let is_user_space_context = self.cs & 0x03 == 0x03;
+        let context_size = self.size();
 
-        let context_size = if is_user_space_context {
+        unsafe {
+            let source = self as *const TaskContext as *const u8;
+            let target = context as *mut TaskContext as *mut u8;
+
+            target.copy_from(source, context_size);
+        }
+    }
+
+    //size in bytes
+    pub fn size(&self) -> usize {
+        if self.is_user_space_context() {
             mem::size_of::<TaskContext>()
         } else {
             //skip user_esp and user_ss
-            mem::size_of::<TaskContext>() - (4 + 2)
-        };
+            mem::size_of::<TaskContext>() - (4 + 4)
+        }
+    }
 
-        assert!(context_size % 2 == 0, "Context is not aligned to 2 bytes");
+    pub fn is_user_space_context(&self) -> bool {
+        self.cs & 0x03 == 0x03
+    }
 
-        // let self_bytes: *const u16 = mem::transmute
-        // let source = core::slice::from_raw_parts(data, len)
+    pub fn is_kernel_space_context(&self) -> bool {
+        !self.is_user_space_context()
     }
 }
 

@@ -87,13 +87,13 @@ pub fn rust_main(properties: &mut PagingProperties) {
 
     log::info!("Task switching is enabled");
 
-    // let thread_1 =
-    //     task::new_task(task1, ptr::null_mut(), TaskPriority::Module(0));
-    //
-    // let thread_2 = task::new_task(task2, ptr::null_mut(), TaskPriority::Kernel);
-    //
-    // task::submit_task(thread_1);
-    // task::submit_task(thread_2);
+    let thread_1 =
+        task::new_task(task1, ptr::null_mut(), TaskPriority::Module(0));
+
+    let thread_2 = task::new_task(task2, ptr::null_mut(), TaskPriority::Kernel);
+
+    task::submit_task(thread_1);
+    task::submit_task(thread_2);
 
     task::run();
 }

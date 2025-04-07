@@ -397,8 +397,8 @@ pub unsafe fn status() -> bool {
     core::arch::asm! {
         "pushfd",
         "pop eax",
-        "bt eax, 9",
-        "setc al",
+        "test eax, 0x200",
+        "setnz al",
         out("al") is_flag_set,
         options(nostack)
     };
