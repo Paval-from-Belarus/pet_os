@@ -4,7 +4,7 @@ use core::{mem, ptr};
 
 use kernel_macro::ListNode;
 use kernel_types::collections::ListNode;
-use kernel_types::{declare_constants, declare_types, Zeroed};
+use kernel_types::{declare_constants, declare_types};
 
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
@@ -13,6 +13,7 @@ use crate::memory::{
     slab_alloc, InterruptGate, PrivilegeLevel, SegmentSelector, Slab, SlabBox,
     SystemType, VirtualAddress,
 };
+use crate::task::TaskContext;
 use crate::{get_eax, get_edx, interrupts, syscall};
 
 mod lock;
@@ -37,7 +38,7 @@ pub type ErrorExceptionHandler =
     extern "x86-interrupt" fn(InterruptStackFrame, usize);
 ///the interrupt callback that return true if interrupt was handle (and no more handling is required)
 pub type Callback =
-    fn(is_processed: bool, context: *mut (), frame: &mut IrqStackFrame) -> bool;
+    fn(is_processed: bool, context: *mut (), frame: &mut TaskContext) -> bool;
 
 #[derive(Debug, ListNode)]
 #[repr(C)]
@@ -65,11 +66,7 @@ impl CallbackInfo {
     }
 
     #[inline]
-    pub fn invoke(
-        &self,
-        is_dispatched: bool,
-        frame: &mut IrqStackFrame,
-    ) -> bool {
+    pub fn invoke(&self, is_dispatched: bool, frame: &mut TaskContext) -> bool {
         let callback = self.callback;
         callback(is_dispatched, self.context, frame)
     }
@@ -158,7 +155,7 @@ macro_rules! naked_trap {
         use $crate::interrupts::InterruptGate;
         InterruptGate::with_naked_handler(
             $handler,
-            $crate::memory::SegmentSelector::CODE,
+            $crate::memory::SegmentSelector::KERNEL_CODE,
             $crate::interrupts::TRAP,
         )
     }};
@@ -169,7 +166,7 @@ macro_rules! error_trap {
         use $crate::interrupts::InterruptGate;
         InterruptGate::with_error_handler(
             $handler,
-            $crate::memory::SegmentSelector::CODE,
+            $crate::memory::SegmentSelector::KERNEL_CODE,
             $crate::interrupts::TRAP,
         )
     }};
@@ -204,7 +201,7 @@ impl InterruptGate {
     pub fn syscall(handler: NakedExceptionHandler) -> Self {
         let offset = handler as *const NakedExceptionHandler as VirtualAddress;
         let mut instance =
-            InterruptGate::new(offset, SegmentSelector::CODE, INTERRUPT);
+            InterruptGate::new(offset, SegmentSelector::KERNEL_CODE, INTERRUPT);
         instance.flags.set_present(true);
         unsafe {
             instance
@@ -278,12 +275,6 @@ static INTERCEPTORS: spin::Mutex<
     Option<[&'static InterruptObject; pic::LINES_COUNT]>,
 > = spin::Mutex::new(None);
 
-#[repr(C)]
-pub struct IrqStackFrame {
-    frame: InterruptStackFrame,
-    _reserved_1: Zeroed<[u8; 4]>,
-    _reserved_2: Zeroed<[u8; 32]>,
-}
 ///the interceptor_stub is invoked by corresponding asm stub for certain interrupt
 ///The following invarians are supported:
 /// - All registers can be modified (pusha saves all)
@@ -291,8 +282,8 @@ pub struct IrqStackFrame {
 #[no_mangle]
 pub unsafe extern "C" fn interceptor_stub() {
     let index: usize = get_eax!();
-    let frame: &mut IrqStackFrame = {
-        let raw_frame: *mut IrqStackFrame = get_edx!();
+    let frame: &mut TaskContext = {
+        let raw_frame: *mut TaskContext = get_edx!();
         &mut *raw_frame
     };
 
@@ -301,7 +292,7 @@ pub unsafe extern "C" fn interceptor_stub() {
     asm! {
         "mov ds, ax",
         "mov es, ax",
-        in("ax") u16::from(SegmentSelector::DATA),
+        in("ax") u16::from(SegmentSelector::KERNEL_DATA),
         options(preserves_flags)
     };
 
@@ -342,7 +333,7 @@ const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::new(suppress_irq);
 const fn suppress_irq(
     _is_processed: bool,
     _context: *mut (),
-    _frame: &mut IrqStackFrame,
+    _frame: &mut TaskContext,
 ) -> bool {
     false
 }
@@ -391,38 +382,25 @@ impl IDTHandle {
 static INTERRUPT_LOCK_REQUESTS: AtomicUsize = AtomicUsize::new(0);
 
 pub unsafe fn disable() {
-    use core::sync::atomic::Ordering;
-
-    INTERRUPT_LOCK_REQUESTS.fetch_add(1, Ordering::SeqCst);
-
     asm!("cli", options(nomem, nostack));
 }
 
 pub unsafe fn enable() {
-    use core::sync::atomic::Ordering;
-
-    let locked_times = INTERRUPT_LOCK_REQUESTS.fetch_sub(1, Ordering::SeqCst);
-
-    if locked_times == 1 {
-        log::debug!(
-            "Interrupts are enabled. COUNT = {}",
-            INTERRUPT_LOCK_REQUESTS.load(Ordering::SeqCst)
-        );
-        asm!("sti", options(nomem, nostack));
-    }
+    asm!("sti", options(nomem, nostack));
 }
 
 /// true if interrupts are enabled
 /// false if interrupts are disabled
 pub unsafe fn status() -> bool {
-    let is_flag_set: u16;
+    let is_flag_set: u8;
 
     core::arch::asm! {
-        "pushf",
+        "pushfd",
         "pop eax",
         "bt eax, 9",
-        "setc ax",
-        out("ax") is_flag_set
+        "setc al",
+        out("al") is_flag_set,
+        options(nostack)
     };
 
     is_flag_set == 1

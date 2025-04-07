@@ -22,9 +22,9 @@ impl SegmentSelector {
     declare_constants!(
         pub SegmentSelector,
         NULL = SegmentSelector(0);
-        CODE = SegmentSelector(0x08);
-        DATA = SegmentSelector(0x10);
-        STACK = SegmentSelector(0x10);
+        KERNEL_CODE = SegmentSelector(0x08);
+        KERNEL_DATA = SegmentSelector(0x10);
+        KERNEL_STACK = SegmentSelector(0x10);
         USER_CODE = SegmentSelector(0x18);
         USER_DATA = SegmentSelector(0x20);
         TASK = SegmentSelector(0x28)

@@ -7,7 +7,7 @@ use crate::memory::AllocationStrategy::Kernel;
 use crate::memory::{self, Slab};
 use crate::ticks_now;
 
-use super::IrqStackFrame;
+use super::TaskContext;
 
 ///The manager struct that handle all request for given interrupt.
 #[derive(Debug)]
@@ -33,7 +33,7 @@ impl InterruptObject {
     }
 
     #[no_mangle]
-    pub fn dispatch(&self, frame: &mut IrqStackFrame) {
+    pub fn dispatch(&self, frame: &mut TaskContext) {
         log::debug!("Dispatching {:?}. Time = {}", self.line, ticks_now!());
 
         let mut is_dispatched = false;

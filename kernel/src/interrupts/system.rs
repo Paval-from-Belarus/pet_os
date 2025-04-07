@@ -165,7 +165,7 @@ pub extern "x86-interrupt" fn page_fault(
     let fault_code = unsafe { PageFaultError::wrap(error_code) };
 
     log::debug!(
-        "Page Fault: {error_code} at IP={} CS={}",
+        "Page Fault: {error_code} at IP={:X} CS={:X}",
         frame.ip,
         frame.cs
     );

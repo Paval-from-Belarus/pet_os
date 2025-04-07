@@ -122,7 +122,7 @@ pub fn init_kernel_space(
 pub fn enable_task_switching(table: &mut GDTTable) {
     let mut state = TaskState::null();
     state.set_io_map(0xFFFF);
-    state.set_stack_selector(SegmentSelector::DATA);
+    state.set_stack_selector(SegmentSelector::KERNEL_DATA);
 
     unsafe { TASK_STATE = state };
 
@@ -487,8 +487,11 @@ pub fn physical_dealloc(_offset: *mut u8) {
 
 //the method should be invoked only by one thread
 //concurrency is forbidden
+/// Set ss:esp in TSS
+/// This stack will be used during
+/// user-space to kernel-space switching
 pub unsafe fn switch_to_task(task: &mut Task) {
-    let kernel_stack = task.kernel_stack + task::TASK_STACK_SIZE; // - mem::size_of::<TaskContext>();
+    let kernel_stack = task.kernel_stack_bottom + task::TASK_STACK_SIZE; // - mem::size_of::<TaskContext>();
 
     unsafe { TASK_STATE.set_kernel_stack(kernel_stack) };
 

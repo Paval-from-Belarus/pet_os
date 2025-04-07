@@ -11,7 +11,7 @@ use crate::common::atomics::UnsafeLazyCell;
 
 use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
-use crate::interrupts::{CallbackInfo, IrqStackFrame};
+use crate::interrupts::CallbackInfo;
 use crate::memory::{Page, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::task::scheduler::SchedulerLock;
 use crate::{get_eax, interrupts, memory, object};
@@ -195,6 +195,7 @@ pub struct TaskFileSystem {
 
 //the calling convention is: eax, edx, ecx (default x8086)
 //todo: each task should have stub before running to enable interrupts
+#[inline(never)]
 pub fn new_task(
     routine: ThreadRoutine,
     arg: *mut (),
@@ -207,11 +208,29 @@ pub fn new_task(
 
     let task = task.into_node();
 
-    let context = TaskContext::new(routine as VirtualAddress, arg);
+    let mut context = TaskContext::zeroed();
 
-    let context_offset = task.kernel_stack + TASK_STACK_SIZE
-        - mem::size_of::<TaskContext>()
-        - interrupts::KERNEL_TRAP_SIZE;
+    context.eax = (arg as VirtualAddress) as u32;
+
+    context.eip = prepare_task as VirtualAddress; //firstly task go to prepare_task routine
+    context.cs = *SegmentSelector::KERNEL_CODE;
+
+    context.ds = *SegmentSelector::KERNEL_DATA;
+    context.es = *SegmentSelector::KERNEL_DATA;
+
+    context.esp = (task.kernel_stack_bottom + TASK_STACK_SIZE - 1) as u32;
+
+    log::debug!("Kernel Stack={:X}", kernel_stack);
+    let context_offset = task.kernel_stack_bottom;
+
+    let wrapper_offset = context.esp - 4;
+
+    context.esp -= 4; //move sp before wrapper eip
+
+    unsafe {
+        let wrapper_ptr = wrapper_offset as *mut VirtualAddress;
+        *wrapper_ptr = routine as VirtualAddress; //returning from prepare_task routine go to task
+    }
 
     task.context = context_offset as *mut TaskContext;
     unsafe { task.context.write(context) };
@@ -236,7 +255,7 @@ pub fn sleep(milliseconds: usize) {
 pub fn init() -> CallbackInfo {
     clocks::init();
 
-    let idle = new_task(idle_task, ptr::null_mut(), TaskPriority::Idle);
+    let idle = new_task(idle_task, 42 as _, TaskPriority::Idle);
 
     SCHEDULER.set(SchedulerLock::new(idle));
 
@@ -262,12 +281,15 @@ extern "C" fn idle_task() {
 fn on_timer(
     _is_processed: bool,
     _context: *mut (),
-    _frame: &mut IrqStackFrame,
+    frame: &mut TaskContext,
 ) -> bool {
     clocks::update_time();
 
     let mut scheduler = SCHEDULER.access_lock();
     scheduler.on_tick();
+
+
+    // unsafe { scheduler.current_task().context.write(*frame) };
 
     // let switch_context = scheduler.current_task().context;
 

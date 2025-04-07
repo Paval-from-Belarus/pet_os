@@ -40,7 +40,7 @@ pub struct Task {
     pub status: TaskStatus,
     //the bottom of the thread's kernel stack
     //that is, last byt is kernel_stack + TASK_STACK_SIZE
-    pub kernel_stack: VirtualAddress,
+    pub kernel_stack_bottom: VirtualAddress,
     pub context: *mut TaskContext,
     //the unique identifier of thread
     pub id: usize,
@@ -86,7 +86,7 @@ impl Task {
         priority: TaskPriority,
     ) -> RunningTaskBox {
         let task = Task {
-            kernel_stack,
+            kernel_stack_bottom: kernel_stack,
             id,
             priority,
             status: TaskStatus::Embryo,
