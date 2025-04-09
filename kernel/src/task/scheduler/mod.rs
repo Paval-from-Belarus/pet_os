@@ -134,12 +134,13 @@ impl TaskScheduler {
         self.current.metrics.elapsed += ticks_size!();
 
         if let Some(candidate) = self.running.probe_next() {
-            log::debug!("Replacing task with higher");
             assert!(
                 candidate.metrics.elapsed < candidate.metrics.base_duration
             );
 
             if candidate.priority > self.current.priority {
+                log::debug!("Replacing task with higher");
+
                 let mut task = self.running.take_next().expect("Success probe");
 
                 mem::swap(&mut task, &mut self.current);
@@ -175,7 +176,7 @@ impl TaskScheduler {
                 //do nothing as task is already running
                 //and we cannot take another task
 
-                log::debug!("Saving current task");
+                log::debug!("No more tasks");
             }
         }
     }

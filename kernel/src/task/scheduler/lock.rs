@@ -14,14 +14,13 @@ use super::TaskScheduler;
 
 pub struct SchedulerLock {
     scheduler: UnsafeCell<TaskScheduler>,
-    context: UnsafeCell<*mut TaskContext>,
 }
 
 pub struct SchedulerGuard<'a> {
     allow_task_switching: bool,
     restore_interrupts: bool,
     lock: &'a SchedulerLock,
-    task_id: usize,
+    old_context: *mut TaskContext,
 }
 
 unsafe impl Send for SchedulerLock {}
@@ -30,9 +29,11 @@ unsafe impl Sync for SchedulerLock {}
 
 impl<'a> Drop for SchedulerGuard<'a> {
     fn drop(&mut self) {
-        if self.allow_task_switching && self.task_id != self.current.task.id {
+        if self.allow_task_switching
+            && !ptr::eq(self.old_context, self.current.context_ptr())
+        {
             log::debug!("Switching task");
-            unsafe { self.lock.switch(self.current) }
+            unsafe { self.lock.switch(self.old_context, self.current) }
         }
 
         if self.restore_interrupts {
@@ -59,11 +60,8 @@ impl<'a> core::ops::DerefMut for SchedulerGuard<'a> {
 ///all time-consuming methods are marked as unsafe
 impl SchedulerLock {
     pub fn new(task: &'static mut RunningTask) -> Self {
-        let context = task.context.into();
-
         Self {
             scheduler: UnsafeCell::new(TaskScheduler::new(task)),
-            context,
         }
     }
 
@@ -75,13 +73,14 @@ impl SchedulerLock {
 
         unsafe { interrupts::disable() };
 
-        let task_id = unsafe { &*self.scheduler.get() }.current.id;
+        let old_context =
+            unsafe { &*self.scheduler.get() }.current.context_ptr();
 
         SchedulerGuard {
             allow_task_switching: true,
             restore_interrupts,
             lock: self,
-            task_id,
+            old_context,
         }
     }
 
@@ -90,13 +89,15 @@ impl SchedulerLock {
 
         unsafe { interrupts::disable() };
 
-        let task_id = unsafe { &*self.scheduler.get() }.current.id;
+        let old_context = unsafe { &mut *self.scheduler.get() }
+            .current_task()
+            .context_ptr();
 
         SchedulerGuard {
             restore_interrupts,
             allow_task_switching: false,
             lock: self,
-            task_id,
+            old_context,
         }
     }
 
@@ -105,38 +106,43 @@ impl SchedulerLock {
         unsafe {
             interrupts::enable();
 
-            let context = *self.context.get();
+            let context = unsafe { &mut *self.scheduler.get() }
+                .current_task()
+                .context_ptr();
 
             core::arch::asm! {
                 "mov esp, eax",
                 "iretd",
-                in("eax") (*context).esp + 16,
+                in("eax") (*context).esp + 16, //skip poping data segments
                 options(noreturn)
             }
         }
     }
 
     /// scheduler should be already locked
-    unsafe fn switch(&self, current: &mut RunningTask) {
-        let old_context = *self.context.get();
-        let new_context = current.context;
+    #[no_mangle]
+    unsafe fn switch(
+        &self,
+        old_context: *mut TaskContext,
+        new_task: &mut RunningTask,
+    ) {
+        let new_context = new_task.context_ptr();
 
         if ptr::eq(old_context, new_context) {
             log::warn!("Switching to already running task");
             return;
         }
 
-        *self.context.get() = new_context;
-
-        memory::switch_to_task(&mut *current);
+        memory::switch_to_task(&mut *new_task);
 
         core::arch::asm! {
+            "pushf",
+            "push cs",
+            "call switch_context",
             "",
             in("eax") old_context,
             in("edx") new_context
         }
-
-        switch_context();
 
         memory::switch_to_kernel();
     }

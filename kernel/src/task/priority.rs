@@ -42,6 +42,6 @@ impl PartialOrd for TaskPriority {
 
 impl Ord for TaskPriority {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.into_raw().cmp(&other.into_raw()).reverse()
+        self.into_raw().cmp(&other.into_raw())
     }
 }

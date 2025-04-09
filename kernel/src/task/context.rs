@@ -25,7 +25,9 @@ pub struct TaskContext {
     pub edi: u32,
     pub esi: u32,
     pub ebp: u32,
-    pub esp: u32, //ignored as another esp used
+    //value for esp should be used
+    //to restore esp after popa
+    pub esp: u32,
     pub ebx: u32,
     pub edx: u32,
     pub ecx: u32,
@@ -61,7 +63,7 @@ pub struct TaskContext {
 pub unsafe extern "C" fn prepare_task() {
     log::debug!("Prepare task#{}", current_task!().id);
 
-    let context = &*current_task!().context;
+    let context = &*current_task!().context_ptr();
 
     core::arch::asm! {
         "",
@@ -87,7 +89,7 @@ impl TaskContext {
     }
 
     //size in bytes
-    pub fn size(&self) -> usize {
+    pub const fn size(&self) -> usize {
         if self.is_user_space_context() {
             mem::size_of::<TaskContext>()
         } else {
@@ -96,7 +98,7 @@ impl TaskContext {
         }
     }
 
-    pub fn is_user_space_context(&self) -> bool {
+    pub const fn is_user_space_context(&self) -> bool {
         self.cs & 0x03 == 0x03
     }
 

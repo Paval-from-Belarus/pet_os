@@ -14,7 +14,7 @@ use crate::memory::{
     SystemType, VirtualAddress,
 };
 use crate::task::TaskContext;
-use crate::{get_eax, get_edx, interrupts, syscall};
+use crate::{get_eax, get_edx, interrupts, set_eax, syscall};
 
 mod lock;
 mod object;
@@ -37,8 +37,11 @@ pub type NakedExceptionHandler = extern "x86-interrupt" fn(InterruptStackFrame);
 pub type ErrorExceptionHandler =
     extern "x86-interrupt" fn(InterruptStackFrame, usize);
 ///the interrupt callback that return true if interrupt was handle (and no more handling is required)
-pub type Callback =
-    fn(is_processed: bool, context: *mut (), frame: &mut TaskContext) -> bool;
+pub type Callback = fn(
+    is_processed: bool,
+    context: *mut (),
+    frame: &mut *mut TaskContext,
+) -> bool;
 
 #[derive(Debug, ListNode)]
 #[repr(C)]
@@ -66,7 +69,11 @@ impl CallbackInfo {
     }
 
     #[inline]
-    pub fn invoke(&self, is_dispatched: bool, frame: &mut TaskContext) -> bool {
+    pub fn invoke(
+        &self,
+        is_dispatched: bool,
+        frame: &mut *mut TaskContext,
+    ) -> bool {
         let callback = self.callback;
         callback(is_dispatched, self.context, frame)
     }
@@ -282,10 +289,8 @@ static INTERCEPTORS: spin::Mutex<
 #[no_mangle]
 pub unsafe extern "C" fn interceptor_stub() {
     let index: usize = get_eax!();
-    let frame: &mut TaskContext = {
-        let raw_frame: *mut TaskContext = get_edx!();
-        &mut *raw_frame
-    };
+
+    let mut frame_ptr: *mut TaskContext = get_edx!();
 
     interrupts::disable();
 
@@ -301,7 +306,9 @@ pub unsafe extern "C" fn interceptor_stub() {
         .expect("Busy loop on interrupts")
         .unwrap()[index];
 
-    object.dispatch(frame);
+    object.dispatch(&mut frame_ptr);
+
+    set_eax!(frame_ptr)
 }
 
 fn init_interceptors(table: &mut IDTable) {
@@ -333,7 +340,7 @@ const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::new(suppress_irq);
 const fn suppress_irq(
     _is_processed: bool,
     _context: *mut (),
-    _frame: &mut TaskContext,
+    _frame: &mut *mut TaskContext,
 ) -> bool {
     false
 }

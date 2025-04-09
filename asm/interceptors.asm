@@ -1,6 +1,8 @@
 format Elf
-include 'PetOS/linker.inc'
-include 'PetOS/format.inc'
+include 'linker.inc'
+include 'format.inc'
+include 'include/Types.asm'
+include 'include/Kernel.asm'
 IRQ_LINES_COUNT equ 16
 ;Input:
 ;eax -> the index of Interceptor to service
@@ -8,9 +10,8 @@ IRQ_LINES_COUNT equ 16
 ;Interceptors.service
 section '.text' executable 
 use32
+
 public INTERCEPTOR_STUB_ARRAY
-;Input:
-;eax -> number if service stub
 extrn 'interceptor_stub' as Interceptors.service
 INTERCEPTOR_STUB_ARRAY:
 rept IRQ_LINES_COUNT index: 0 
@@ -20,13 +21,66 @@ rept IRQ_LINES_COUNT index: 0
 rept IRQ_LINES_COUNT index: 0
 {
     stub#index:
-        push es ds fs gs
+        push ds es fs gs ;fast produce valid 32 bit code
+
         pusha
 
         mov eax, index
+        mov edx, esp ;TaskContext
+
         call Interceptors.service
 
+        mov esp, eax
+
         popa
-        pop gs fs ds es
+
+        mov esp, dword [esp - 4 * 5] ; use value in stack frame to restore esp
+
+        pop gs fs es ds
+
         iret
 }
+
+
+
+public switch_context
+
+;Input:
+;eax -> address of TaskContext::data to save
+;edx -> address of the next TaskContext
+;Notes: as this function is invoked in kernel,
+;ds, es, fs, gs, ss are known
+;This function will assume that eflags, cs and eip 
+;are storing on stack frame (to built TaskContext from stack frame) 
+;
+switch_context:
+    ;pushing esp, ss is redundant
+    ;as this method is already called from kernel space
+
+    push ds es fs gs
+
+    pusha
+
+    ;we have built TaskContext on stack
+    ;need a copy this one to real TaskContext
+
+    cld
+    mov edi, eax
+    mov esi, esp
+    mov ecx, sizeof.TaskContext
+    rep movsb
+
+    ;adjust esp to stack after popa
+    mov eax, esp
+    add eax, TaskContext.dataSegments
+    mov dword [ss:esp - 5 * 4], eax 
+
+    mov esp, edx ;switch to another task context
+
+    popa
+
+    mov esp, dword [esp - 4 * 5] ; use value in stack frame to restore esp
+
+    pop gs fs es ds
+
+    iret

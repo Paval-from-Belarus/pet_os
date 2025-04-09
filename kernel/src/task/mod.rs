@@ -1,7 +1,7 @@
 use core::arch::asm;
 use core::mem::MaybeUninit;
+use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::{mem, ptr};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
@@ -11,7 +11,7 @@ use crate::common::atomics::UnsafeLazyCell;
 
 use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
-use crate::interrupts::CallbackInfo;
+use crate::interrupts::{pic, CallbackInfo};
 use crate::memory::{Page, SegmentSelector, ThreadRoutine, VirtualAddress};
 use crate::task::scheduler::SchedulerLock;
 use crate::{get_eax, memory, object};
@@ -171,7 +171,7 @@ pub fn new_task(
 
     let task = task.into_node();
 
-    let mut context = TaskContext::zeroed();
+    let context = task.context_mut();
 
     context.eax = (arg as VirtualAddress) as u32;
 
@@ -184,19 +184,19 @@ pub fn new_task(
     context.fs = *SegmentSelector::USER_CODE;
     context.gs = *SegmentSelector::USER_CODE;
 
-    context.esp = (task.kernel_stack_bottom + TASK_STACK_SIZE - 1) as u32;
+    context.esp = (kernel_stack + TASK_STACK_SIZE - 1) as u32;
     context.eflags = 0x200; //enable interrupts for each task
 
     log::debug!("Kernel Stack={:X}", kernel_stack);
-    let context_offset = task.kernel_stack_bottom;
 
-    context.esp -= 4; //move sp before wrapper eip
-
+    context.esp -= 4;
 
     unsafe {
         let routine_ptr = context.esp as *mut VirtualAddress;
         *routine_ptr = routine as VirtualAddress; //returning from prepare_task routine go to task
     }
+
+    log::debug!("Context size = {}", context.size());
 
     context.esp -= context.size() as u32; //copy task context to the stack top
 
@@ -205,8 +205,6 @@ pub fn new_task(
         context.copy_to(&mut *top_context_ptr);
         context.esp += 32; //popa is performing from stack bottom
     }
-    task.context = context_offset as *mut TaskContext;
-    unsafe { task.context.write(context) };
 
     task
 }
@@ -254,37 +252,35 @@ extern "C" fn idle_task() {
 fn on_timer(
     _is_processed: bool,
     _context: *mut (),
-    frame: &mut TaskContext,
+    frame: &mut *mut TaskContext,
 ) -> bool {
     clocks::update_time();
-
-    let old_context = current_task!().context;
+    let old_context = current_task!().context_ptr();
 
     SCHEDULER.access_lock().on_tick();
 
-    let new_context = current_task!().context;
+    let new_context = current_task!().context_ptr();
 
     if !ptr::eq(old_context, new_context) {
         log::debug!("Interrupt switching");
-        //task has been switched
-
-        let context_size = frame.size();
-        let frame = frame as *mut TaskContext;
 
         unsafe {
-            log::debug!("IRET Frame Before: {:?}", &*frame);
+            log::debug!("IRET Frame Before: {:?}", *frame);
 
             log::debug!("Old context: {:?}", &*old_context);
             log::debug!("New context: {:?}", &*new_context);
 
-            old_context.copy_from(frame, context_size);
-            frame.copy_from(new_context, context_size);
-
-            log::debug!("IRET Frame After: {:?}", &*frame);
+            (**frame).copy_to(&mut *old_context);
 
             memory::switch_to_task(current_task!());
+
+            *frame = new_context;
+
+            log::debug!("IRET Frame After: {:?}", &**frame);
         }
     }
+
+    pic::complete(pic::PicLine::IRQ0);
 
     true
 }

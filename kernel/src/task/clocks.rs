@@ -49,7 +49,7 @@ macro_rules! ticks_size {
 }
 
 pub fn init() {
-    const DEFAULT_FREQUENCY: u32 = 1193180;
+    const DEFAULT_FREQUENCY: u32 = 1_193_180;
     let divisor: u32 = DEFAULT_FREQUENCY / 50;
     let low = (divisor & 0xFF) as u8;
     let high = ((divisor >> 8) & 0xFF) as u8;
@@ -62,7 +62,5 @@ pub fn init() {
 }
 
 pub fn update_time() {
-    pic::complete(pic::PicLine::IRQ0);
-
     let _ = TIME.fetch_add(TIMEOUT, SeqCst);
 }

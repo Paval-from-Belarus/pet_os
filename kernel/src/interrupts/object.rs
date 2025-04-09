@@ -33,7 +33,7 @@ impl InterruptObject {
     }
 
     #[no_mangle]
-    pub fn dispatch(&self, frame: &mut TaskContext) {
+    pub fn dispatch(&self, frame: &mut *mut TaskContext) {
         log::debug!("Dispatching {:?}. Time = {}", self.line, ticks_now!());
 
         let mut is_dispatched = false;

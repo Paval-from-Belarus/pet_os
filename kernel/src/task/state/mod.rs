@@ -1,9 +1,6 @@
 mod running;
 
-use core::{
-    mem,
-    ptr::{self, NonNull},
-};
+use core::{mem, ptr::NonNull};
 
 use kernel_macro::ListNode;
 use kernel_types::collections::{HashData, ListNode};
@@ -40,8 +37,8 @@ pub struct Task {
     pub status: TaskStatus,
     //the bottom of the thread's kernel stack
     //that is, last byt is kernel_stack + TASK_STACK_SIZE
+    //that's also the place where TaskContext is storing
     pub kernel_stack_bottom: VirtualAddress,
-    pub context: *mut TaskContext,
     //the unique identifier of thread
     pub id: usize,
     //the time when task should be started
@@ -54,7 +51,6 @@ pub struct Task {
     pub metrics: TaskMetrics,
 
     pub files: NonNull<FilePool>,
-    //todo: consider to add namespace field
 }
 
 pub type BlockedTask = RunningTask;
@@ -85,12 +81,14 @@ impl Task {
         kernel_stack: VirtualAddress,
         priority: TaskPriority,
     ) -> RunningTaskBox {
+        let context = TaskContext::zeroed();
+        unsafe { (kernel_stack as *mut TaskContext).write(context) };
+
         let task = Task {
             kernel_stack_bottom: kernel_stack,
             id,
             priority,
             status: TaskStatus::Embryo,
-            context: ptr::null_mut(),
             start_time: 0,
             state: None,
             files: NonNull::dangling(),
@@ -112,5 +110,17 @@ impl Task {
             })
             .unwrap(),
         }
+    }
+
+    pub fn context_ptr(&self) -> *mut TaskContext {
+        self.kernel_stack_bottom as *mut TaskContext
+    }
+
+    pub fn context(&self) -> &TaskContext {
+        unsafe { &*(self.kernel_stack_bottom as *const TaskContext) }
+    }
+
+    pub fn context_mut(&mut self) -> &mut TaskContext {
+        unsafe { &mut *(self.kernel_stack_bottom as *mut TaskContext) }
     }
 }

@@ -48,6 +48,7 @@ proc String.hasSubString uses si di
 .finish:
 ret
 endp
+
 ;Input:
 ;al - address of searching char
 ;ah - start pos (if ah = 0 -> from start as ah = 1)
@@ -355,6 +356,8 @@ ZString.length:
  call AString.length
  ret
 
+
+
 ;Notes:
 ;this routine don't check length
 ;Not tested
@@ -426,6 +429,7 @@ push bx si
     mov ax, si
 pop si bx
 ret                       
+
 
 ;Input:
 ;ds:ax - address of ZString

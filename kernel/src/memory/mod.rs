@@ -22,7 +22,7 @@ use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
 use crate::memory::paging::{
     BootAllocator, GDTTable, PageMarker, PageMarkerError,
 };
-use crate::task;
+use crate::task::{self, TASK_STACK_SIZE};
 use crate::task::{Task, TaskState};
 
 mod allocators;
@@ -491,7 +491,7 @@ pub fn physical_dealloc(_offset: *mut u8) {
 /// This stack will be used during
 /// user-space to kernel-space switching
 pub unsafe fn switch_to_task(task: &mut Task) {
-    let kernel_stack = task.kernel_stack_bottom + task::TASK_STACK_SIZE; // - mem::size_of::<TaskContext>();
+    let kernel_stack = task.kernel_stack_bottom + TASK_STACK_SIZE - 1;
 
     unsafe { TASK_STATE.set_kernel_stack(kernel_stack) };
 
@@ -620,7 +620,7 @@ impl Page {
     }
     //utility methods
     pub const fn upper_bound(byte_size: usize) -> usize {
-        (byte_size + Page::SIZE - 1) / Page::SIZE
+        byte_size.div_ceil(Page::SIZE)
     }
 
     pub const fn lower_bound(byte_size: usize) -> usize {
