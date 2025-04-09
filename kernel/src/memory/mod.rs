@@ -22,7 +22,7 @@ use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
 use crate::memory::paging::{
     BootAllocator, GDTTable, PageMarker, PageMarkerError,
 };
-use crate::task::{self, TASK_STACK_SIZE};
+use crate::task::TASK_STACK_SIZE;
 use crate::task::{Task, TaskState};
 
 mod allocators;

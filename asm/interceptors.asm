@@ -46,8 +46,8 @@ rept IRQ_LINES_COUNT index: 0
 public switch_context
 
 ;Input:
-;eax -> address of TaskContext::data to save
-;edx -> address of the next TaskContext
+;ds:eax -> address of TaskContext::data to save
+;ds:edx -> address of the next TaskContext
 ;Notes: as this function is invoked in kernel,
 ;ds, es, fs, gs, ss are known
 ;This function will assume that eflags, cs and eip 
@@ -71,9 +71,8 @@ switch_context:
     rep movsb
 
     ;adjust esp to stack after popa
-    mov eax, esp
-    add eax, TaskContext.dataSegments
-    mov dword [ss:esp - 5 * 4], eax 
+    add esp, TaskContext.dataSegments
+    mov dword [ds:eax + TaskContext.esp], esp
 
     mov esp, edx ;switch to another task context
 

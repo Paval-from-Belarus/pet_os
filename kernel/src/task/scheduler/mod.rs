@@ -61,6 +61,7 @@ impl TaskScheduler {
         task.metrics.base_duration = task.priority.static_duration();
 
         if task.priority == TaskPriority::Idle {
+            log::debug!("Pushing idle task");
             self.idle_tasks.push_back(task);
         } else {
             self.delayed.push(task);
@@ -69,8 +70,10 @@ impl TaskScheduler {
 
     /// block the current task on object handle
     pub fn block_on(&mut self, handle: object::Handle) {
-        let mut next_task =
-            self.running.take_next().unwrap_or(self.reschedule());
+        let mut next_task = self
+            .running
+            .take_next()
+            .unwrap_or_else(|| self.reschedule());
 
         mem::swap(&mut self.current, &mut next_task);
 
@@ -99,8 +102,10 @@ impl TaskScheduler {
 
     ///add current task to sleeping list
     pub fn sleep(&mut self, period: usize) {
-        let mut next_task =
-            self.running.take_next().unwrap_or(self.reschedule());
+        let mut next_task = self
+            .running
+            .take_next()
+            .unwrap_or_else(|| self.reschedule());
 
         mem::swap(&mut next_task, &mut self.current);
 
@@ -120,6 +125,8 @@ impl TaskScheduler {
             //fixme: time overflow?
             if task.start_time < ticks_now!() {
                 let awaked_task = iter.unlink_watched().unwrap();
+
+                awaked_task.metrics.elapsed = 0;
 
                 if awaked_task.priority == TaskPriority::Idle {
                     self.idle_tasks.push_back(awaked_task);
@@ -200,11 +207,14 @@ impl TaskScheduler {
     ///If task is killed then it will be pushed in list of killed tasks
     ///If no task is available in list then idle task will return
     fn next_task(&mut self) -> &'static mut RunningTask {
-        self.running.take_next().unwrap_or(self.reschedule())
+        self.running
+            .take_next()
+            .unwrap_or_else(|| self.reschedule())
     }
 
     /// update the task ordering
     /// and return current next task
+    #[must_use]
     fn reschedule(&mut self) -> &'static mut RunningTask {
         log::debug!("Rescheduling");
 

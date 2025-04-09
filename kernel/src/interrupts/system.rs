@@ -2,8 +2,7 @@ use kernel_types::{bitflags, declare_constants};
 
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::{
-    pic, CallbackInfo, IDTable, InterruptStackFrame, IrqLine,
-    MAX_INTERRUPTS_COUNT,
+    IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
 };
 use crate::{error_trap, get_eax, log, memory, naked_trap, set_eax, task};
 
@@ -92,8 +91,8 @@ pub extern "x86-interrupt" fn division_by_zero(_from: InterruptStackFrame) {
     log!("division by zero");
 }
 
-pub extern "x86-interrupt" fn debug(_frame: InterruptStackFrame) {
-    log!("debug int");
+pub extern "x86-interrupt" fn debug(frame: InterruptStackFrame) {
+    log::debug!("debug int: {frame:?}");
 }
 
 pub extern "x86-interrupt" fn nonmaskable(_frame: InterruptStackFrame) {

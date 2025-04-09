@@ -6,7 +6,9 @@ use core::{
 };
 
 use crate::{
-    current_task, interrupts, memory, set_eax, set_edx,
+    current_task, interrupts,
+    memory::{self, SegmentSelector},
+    set_eax, set_edx,
     task::{switch_context, RunningTask, TaskContext},
 };
 
@@ -136,13 +138,16 @@ impl SchedulerLock {
         memory::switch_to_task(&mut *new_task);
 
         core::arch::asm! {
-            "pushf",
-            "push cs",
+            "pushfd",
+            "push ecx",
             "call switch_context",
             "",
             in("eax") old_context,
-            in("edx") new_context
+            in("edx") new_context,
+            in("ecx") *SegmentSelector::KERNEL_CODE
         }
+
+        log::debug!("Returning from switch");
 
         memory::switch_to_kernel();
     }

@@ -15,6 +15,16 @@ macro_rules! log {
 	})
 }
 
+#[macro_export]
+macro_rules! log_unchecked {
+    ( $($arg:tt)* ) => ({
+	use core::fmt::Write;
+
+        let mut logger = $crate::common::logging::Logger;
+        let _ = write!(&mut logger, $($arg)*);
+    })
+}
+
 declare_constants!(
     pub u16,
     BOCHS_HACK_PORT = 0xe9, "Reserved on real hardware, but used in bochs";

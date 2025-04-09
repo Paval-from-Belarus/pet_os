@@ -20,9 +20,6 @@ extern crate static_assertions;
 
 extern crate multiboot2;
 
-use core::arch::asm;
-use core::ptr;
-
 use common::logging;
 use memory::PagingProperties;
 
@@ -48,18 +45,13 @@ mod task;
 #[cfg(not(test))]
 #[panic_handler]
 pub fn panic(info: &core::panic::PanicInfo) -> ! {
-    log!("kernel panics={}", info);
-    unsafe { asm!("hlt", options(noreturn)) }
+    log_unchecked!("kernel panics={}", info);
+    unsafe { core::arch::asm!("hlt", options(noreturn)) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn main() {
-    let properties: *mut PagingProperties;
-    asm!(
-        "",
-        out("eax") properties,
-        options(nostack)
-    );
+pub extern "C" fn main() {
+    let properties: *mut PagingProperties = unsafe { get_eax!() };
 
     unsafe { rust_main(&mut *properties) };
 }
@@ -105,7 +97,7 @@ extern "C" fn task1() {
 
     loop {
         task::sleep(300);
-        log!("task 1 awaken");
+        log::info!("task 1 awaken");
     }
 }
 
@@ -116,7 +108,7 @@ extern "C" fn task2() {
 
     loop {
         task::sleep(400);
-        log!("task 2 awaken");
+        log::info!("task 2 awaken");
     }
 }
 
