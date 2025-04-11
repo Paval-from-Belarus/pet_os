@@ -7,7 +7,7 @@ use kernel_types::collections::{BoxedNode, ListNode};
 use crate::{common::time::Timestamp, memory::SlabBox};
 
 use super::{
-    Device, FileOperations, FilePermissions, FileRenameFlag, NodeType,
+    Device, FileOperations, FilePermissions, FileRenameFlag, NodeKind,
     SuperBlock,
 };
 
@@ -48,9 +48,9 @@ pub struct IndexNode {
     node_operations: NonNull<IndexNodeOperations>,
     file_operations: Option<NonNull<FileOperations>>,
     //for block/chart file devices only
-    device_ty: NodeType,
+    kind: NodeKind,
+    //where file is storing
     device: Device,
-    // real_device: Option<RealDevice>,
 }
 
 impl IndexNodeBox {

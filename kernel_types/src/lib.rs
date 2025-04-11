@@ -10,6 +10,7 @@ use thiserror_no_std::Error;
 
 pub mod collections;
 pub mod drivers;
+pub mod fs;
 pub mod string;
 
 extern crate alloc;
@@ -64,22 +65,34 @@ macro_rules! bitflags {
          $(
             $vis const $name: $t = $value;
         )*
-            const BITS_COUNT: usize = core::mem::size_of::<$t>() * 8;
             pub const unsafe fn wrap(value: $t) -> Self {
                 Self(value)
          }
             pub const fn bits(&self) -> $t {
               self.0
             }
+
             pub const fn contains_with_mask(&self, mask: $t, flag: $t) -> bool {
              self.0 & mask == flag
             }
+
             pub const fn test_with(&self, bit: $t) -> bool {
              self.0 & bit == bit
             }
+
         }
+
+            impl core::ops::BitOr for $s {
+                type Output = $s;
+
+            fn bitor(self, rhs: Self) -> Self::Output {
+               Self(self.0 | rhs.0)
+            }
+        }
+
     };
 }
+
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(transparent)]
 pub struct Zeroed<T: Sized> {

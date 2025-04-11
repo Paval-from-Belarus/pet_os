@@ -11,11 +11,15 @@ use kernel_types::drivers::{Device, DeviceId, DriverId, KernelSymbol};
 
 use crate::common::atomics::SpinLockLazyCell;
 use crate::fs::{
-    FileOperations, IndexNode, IndexNodeItem, SuperBlock, SuperBlockOperations,
+    FileOperations, FileSystem, FileSystemKind, IndexNode, IndexNodeItem,
+    SuperBlock, SuperBlockOperations,
 };
 use crate::memory::VirtualAddress;
+use crate::{get_eax, set_eax, set_edx};
 
+mod disk;
 mod keyboard;
+mod loader;
 mod management;
 mod memory;
 mod network;
@@ -64,6 +68,18 @@ pub fn io_remap() {}
 #[export_symbolic]
 pub fn io_unmap() {}
 
+#[repr(C)]
+pub struct StaticDriver {
+    pub start: u32,
+    pub size: u32,
+}
+
+pub const MAX_STATIC_DRIVERS_COUNT: usize = 12;
+
+extern "C" {
+    static STATIC_DRIVERS: [StaticDriver; MAX_STATIC_DRIVERS_COUNT];
+}
+
 extern "Rust" {
     #[link_name = "symbol_table_start"]
     static SYMBOL_TABLE_START: *const KernelSymbol;
@@ -73,6 +89,7 @@ extern "Rust" {
 
 pub struct CharDeviceBox {}
 
+//that's a
 pub struct CharDevice {
     ///the id of driver + id of this device
     device: Device,
@@ -80,11 +97,16 @@ pub struct CharDevice {
     //to easily create IndexNode
     fs_ops: NonNull<FileOperations>,
     count: usize,
+    //the list of files opened on device
     inodes: LinkedList<'static, IndexNodeItem>,
     //the count of minor devices uses the device
     // count: usize,
     // currently, there is no need in several minor devices for device;
     // therefore, for the CharDevice only on IndexNode exists
+}
+
+pub struct Object {
+    name: &'static str,
 }
 
 impl CharDevice {}
@@ -102,7 +124,7 @@ pub struct BlockDevice {
     partitions: LinkedList<'static, Partition>,
     //remove field because linux uses it to represent in file system
     driver_name: [u8; 32],
-    ops: NonNull<BlockDeviceOperations>,
+    ops: NonNull<FileOperations>,
     requests: Queue<()>,
 }
 
@@ -117,18 +139,8 @@ pub struct Partition {
     size: Sector,
 }
 
-pub struct BlockDeviceOperations {}
-
 pub fn init() {
-    unsafe {
-        let bytes_size = (SYMBOL_TABLE_END as *const u8)
-            .offset_from_unsigned(SYMBOL_TABLE_START as *const u8);
-        assert!(
-            bytes_size % mem::size_of::<KernelSymbol>() == 0
-                && bytes_size > mem::size_of::<KernelSymbol>(),
-            "Invalid Symbol table sizes"
-        );
-    }
+    disk::init();
 }
 
 fn find_symbol(name: &str) -> Option<VirtualAddress> {

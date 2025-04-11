@@ -22,5 +22,5 @@ pub struct SystemCall<'a> {
 }
 
 impl<'a> SystemCall<'a> {
-    pub fn call(self) -> () {}
+    pub fn call(self) {}
 }

@@ -10,10 +10,7 @@ use kernel_types::{
     drivers::{DeviceId, DriverId},
 };
 
-use crate::{
-    drivers::BlockDevice,
-    memory::{slab_alloc, Kernel, SlabBox},
-};
+use crate::memory::{slab_alloc, Kernel, SlabBox};
 
 use super::{File, IndexNode, MountPoint};
 
@@ -40,11 +37,10 @@ pub struct SuperBlockOperations {
 pub struct FileSystem {
     pub name: heapless::String<MAX_FILE_SYSTEM_NAME>,
     pub kind: FileSystemKind,
-    pub read_super: fn(device: &mut BlockDevice) -> SuperBlock,
     pub operations: SuperBlockOperations,
     //the limitation of file system about max file size
-    pub max_file_size: usize,
-    pub private: Option<*mut ()>,
+    pub max_file_size: Option<usize>,
+    pub private: *mut (),
 }
 
 pub struct SuperBlockBox {

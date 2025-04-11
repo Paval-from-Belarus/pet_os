@@ -42,11 +42,12 @@ pub enum DeviceKind {
 }
 
 bitflags! {
-    pub NodeType(usize),
+    pub NodeKind(usize),
     FILE = 0x1,
     BLOCK = 0x2,
     CHAR = 0x4
 }
+
 pub fn file_read(_handle: usize) -> Result<(), ()> {
     todo!()
 }
@@ -156,9 +157,7 @@ impl FilePathHashTable {
 
 static PATH_TABLE: UnsafeLazyCell<FilePathHashTable> = UnsafeLazyCell::empty();
 
-pub fn init() {
-    todo!()
-}
+pub fn init() {}
 
 #[derive(ListNode)]
 #[repr(C)]
@@ -193,14 +192,14 @@ impl MountPoint {
 
 #[repr(C)]
 pub struct FileOperations {
-    open: fn(&mut IndexNode, &mut File),
-    flush: fn(&mut File),
-    close: fn(&mut IndexNode, &mut File),
-    read: fn(&mut File, *mut u8, usize),
-    write: fn(&mut File, *const u8, usize),
-    seek: fn(&mut File, mode: FileSeekMode, offset: usize),
+    pub open: fn(&mut IndexNode, &mut File),
+    pub flush: fn(&mut File),
+    pub close: fn(&mut IndexNode, &mut File),
+    pub read: fn(&mut File, *mut u8, usize),
+    pub write: fn(&mut File, *const u8, usize),
+    pub seek: fn(&mut File, mode: FileSeekMode, offset: usize),
     #[doc = "for devices only"]
-    ioctl: fn(&mut IndexNode, &mut File, usize),
+    pub ioctl: fn(&mut IndexNode, &mut File, usize),
     //consider additionally implement file_lock and mmap handler
 }
 

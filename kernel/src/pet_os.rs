@@ -74,6 +74,10 @@ pub fn rust_main(properties: &mut PagingProperties) {
     interrupts::init();
     log::info!("interrupts are initialized");
 
+    fs::init();
+
+    drivers::init();
+
     let gdt = unsafe { properties.gdt().as_mut() };
     memory::enable_task_switching(gdt);
 
