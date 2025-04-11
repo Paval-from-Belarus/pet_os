@@ -1,7 +1,8 @@
 [workspace]
-members = [
-    "kernel_macro", "kernel_types", "kernel"
-]
+members = ["kernel_macro", "kernel_types", "kernel"]
+
+
+exclude = ["drivers/fat"]
 
 resolver = "2"
 

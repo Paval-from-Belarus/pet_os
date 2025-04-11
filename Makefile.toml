@@ -43,6 +43,7 @@ script = '''
     mkdir -p ${OBJECTS_PATH}
     ${ASM_COMPILER} ${ASM_SOURCE_PATH}/interceptors.asm ${OBJECTS_PATH}/interceptors.o
     ${ASM_COMPILER} ${ASM_SOURCE_PATH}/entry_grub.asm ${OBJECTS_PATH}/entry.o
+    ${ASM_COMPILER} ${ASM_SOURCE_PATH}/ata_disk.asm ${OBJECTS_PATH}/ata_disk.o
 '''
 
 [tasks.kernel_lib]
@@ -57,6 +58,22 @@ args = [
     "--release",
     # "--target-dir", "${OBJECTS_PATH}"
 ]
+
+[tasks.drivers]
+command = "cargo"
+args = [
+    "build",
+    "-Z",
+    "build-std=core,alloc,compiler_builtins",
+    "-Z",
+    "build-std-features=compiler-builtins-mem",
+    # "--target=${TARGET_SPEC}",
+    "--target=i686-unknown-linux-gnu",
+    "--release",
+    "--bin",
+    "${CARGO_MAKE_PROJECT_NAME}",
+]
+
 [tasks.fix]
 command = "cargo"
 args = [
@@ -85,6 +102,7 @@ script = '''
     -o ${KERNEL_BIN} \
     ${OBJECTS_PATH}/interceptors.o \
     ${OBJECTS_PATH}/entry.o \
+    ${OBJECTS_PATH}/ata_disk.o \
     ${KERNEL_LIB} ;
 
     strip -s ${KERNEL_BIN} ;
