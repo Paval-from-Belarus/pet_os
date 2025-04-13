@@ -6,7 +6,7 @@ use core::{
 };
 
 use crate::{
-    current_task, interrupts,
+    current_task, interrupts, log_unchecked,
     memory::{self, SegmentSelector},
     set_eax, set_edx,
     task::{switch_context, RunningTask, TaskContext},
@@ -106,11 +106,13 @@ impl SchedulerLock {
     #[inline(never)]
     pub fn run(&self) -> ! {
         unsafe {
-            interrupts::enable();
+            let task = { &mut *self.scheduler.get() }.current_task();
 
-            let context = unsafe { &mut *self.scheduler.get() }
-                .current_task()
-                .context_ptr();
+            memory::switch_to_task(task);
+
+            let context = task.context_ptr();
+
+            let _ = task;
 
             core::arch::asm! {
                 "mov esp, eax",

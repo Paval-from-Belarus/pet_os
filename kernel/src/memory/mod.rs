@@ -22,7 +22,6 @@ use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
 use crate::memory::paging::{
     BootAllocator, GDTTable, PageMarker, PageMarkerError,
 };
-use crate::task::TASK_STACK_SIZE;
 use crate::task::{Task, TaskState};
 
 mod allocators;
@@ -491,9 +490,9 @@ pub fn physical_dealloc(_offset: *mut u8) {
 /// This stack will be used during
 /// user-space to kernel-space switching
 pub unsafe fn switch_to_task(task: &mut Task) {
-    let kernel_stack = task.kernel_stack_bottom + TASK_STACK_SIZE - 1;
+    let stack = task.context().esp;
 
-    unsafe { TASK_STATE.set_kernel_stack(kernel_stack) };
+    unsafe { TASK_STATE.set_kernel_stack(stack as usize) };
 
     let marker = if task.state.is_some() {
         unreachable!("Process functionality is not implemented")

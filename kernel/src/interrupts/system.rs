@@ -4,7 +4,9 @@ use crate::interrupts::object::InterruptObject;
 use crate::interrupts::{
     IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
 };
-use crate::{error_trap, get_eax, log, memory, naked_trap, set_eax, task};
+use crate::{
+    error_trap, get_eax, log_unchecked, memory, naked_trap, set_eax, task,
+};
 
 //the common handlers
 bitflags!(
@@ -88,37 +90,37 @@ pub extern "x86-interrupt" fn syscall(frame: InterruptStackFrame) {
 }
 
 pub extern "x86-interrupt" fn division_by_zero(_from: InterruptStackFrame) {
-    log!("division by zero");
+    log_unchecked!("division by zero");
 }
 
 pub extern "x86-interrupt" fn debug(frame: InterruptStackFrame) {
-    log::debug!("debug int: {frame:?}");
+    log_unchecked!("debug int: {frame:?}");
 }
 
 pub extern "x86-interrupt" fn nonmaskable(_frame: InterruptStackFrame) {
-    log!("nmi int");
+    log_unchecked!("nmi int");
 }
 
 pub extern "x86-interrupt" fn breakpoint(_frame: InterruptStackFrame) {
-    log!("breakpoint");
+    log_unchecked!("breakpoint");
 }
 
 pub extern "x86-interrupt" fn overflow(_frame: InterruptStackFrame) {
-    log!("overflow");
+    log_unchecked!("overflow");
 }
 
 pub extern "x86-interrupt" fn bound_check(_frame: InterruptStackFrame) {
-    log!("bound check failed");
+    log_unchecked!("bound check failed");
 }
 
 pub extern "x86-interrupt" fn invalid_opcode(frame: InterruptStackFrame) {
-    log::warn!("Invalid Opcode. EIP = {:X}, CS = {:X}", frame.ip, frame.cs);
+    log_unchecked!("Invalid Opcode. EIP = {:X}, CS = {:X}", frame.ip, frame.cs);
 }
 
 pub extern "x86-interrupt" fn device_not_available(
     _frame: InterruptStackFrame,
 ) {
-    log!("device not available");
+    log_unchecked!("device not available");
 }
 
 //we can do nothing
@@ -133,28 +135,28 @@ pub extern "x86-interrupt" fn invalid_tss(
     _frame: InterruptStackFrame,
     code: usize,
 ) {
-    log!("Invalid tss code={}", code);
+    log_unchecked!("Invalid tss code={}", code);
 }
 
 pub extern "x86-interrupt" fn invalid_segment(
     _frame: InterruptStackFrame,
     _code: usize,
 ) {
-    log!("invalid segment");
+    log_unchecked!("invalid segment");
 }
 
 pub extern "x86-interrupt" fn stack_fault(
     _frame: InterruptStackFrame,
     _code: usize,
 ) {
-    log!("stack fault");
+    log_unchecked!("stack fault");
 }
 
 pub extern "x86-interrupt" fn general_protection(
     _frame: InterruptStackFrame,
     _code: usize,
 ) {
-    log!("general protection fault");
+    log_unchecked!("general protection fault");
 }
 
 pub extern "x86-interrupt" fn page_fault(
@@ -163,7 +165,7 @@ pub extern "x86-interrupt" fn page_fault(
 ) {
     let fault_code = unsafe { PageFaultError::wrap(error_code) };
 
-    log::debug!(
+    log_unchecked!(
         "Page Fault: {error_code} at IP={:X} CS={:X}",
         frame.ip,
         frame.cs
@@ -179,10 +181,10 @@ pub extern "x86-interrupt" fn alignment_check(
     _frame: InterruptStackFrame,
     _code: usize,
 ) {
-    log!("alignment check failed");
+    log_unchecked!("alignment check failed");
 }
 
 ///By default, unknown trap is handled by this function. Even if real error code present on stack
 pub extern "x86-interrupt" fn unknown_trap(_frame: InterruptStackFrame) {
-    log::warn!("Unknown trap is caught!")
+    log_unchecked!("Unknown trap is caught!")
 }
