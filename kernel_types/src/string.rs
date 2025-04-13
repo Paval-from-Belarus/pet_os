@@ -114,6 +114,7 @@ impl<'a> MutString<'a> {
         );
         self.len = length;
     }
+
     pub fn as_str(&self) -> &str {
         unsafe { from_utf8_unchecked(self.as_bytes()) }
     }
@@ -128,6 +129,7 @@ impl<'a> MutString<'a> {
         unsafe { self.push_unchecked(letter) }
         Ok(())
     }
+
     pub unsafe fn push_unchecked(&mut self, letter: char) {
         match letter.len_utf8() {
             1 => self.push_byte_unchecked(letter as u8),
@@ -138,6 +140,7 @@ impl<'a> MutString<'a> {
                 .for_each(|byte| self.push_byte_unchecked(*byte)),
         }
     }
+
     pub unsafe fn push_byte_unchecked(&mut self, byte: u8) {
         assert!(self.len < self.capacity);
         let next_byte = self.data.add(self.len());
@@ -146,15 +149,23 @@ impl<'a> MutString<'a> {
     }
 }
 
-impl<'a> From<&'a mut str> for MutString<'a> {
-    fn from(value: &mut str) -> Self {
-        unsafe { Self::new(value.len(), value.len(), value.as_mut_ptr()) }
+impl<'a> From<&'a str> for MutString<'a> {
+    fn from(value: &str) -> Self {
+        let ptr = value.as_ptr() as *mut u8;
+
+        unsafe { Self::new(value.len(), value.len(), ptr) }
     }
 }
 
 impl<'a> From<&'a mut [u8]> for MutString<'a> {
     fn from(value: &mut [u8]) -> Self {
         unsafe { Self::new(value.len(), value.len(), value.as_mut_ptr()) }
+    }
+}
+
+impl<'a> core::fmt::Display for MutString<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 

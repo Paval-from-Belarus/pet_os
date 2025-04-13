@@ -4,6 +4,7 @@
 use core::ptr::NonNull;
 use core::{mem, slice};
 
+use alloc::sync::Arc;
 use kernel_macro::{export_symbolic, ListNode};
 use kernel_types::collections::{LinkedList, ListNode, Queue};
 use kernel_types::declare_constants;
@@ -14,7 +15,7 @@ use crate::fs::{
     FileOperations, FileSystem, FileSystemKind, IndexNode, IndexNodeItem,
     SuperBlock, SuperBlockOperations,
 };
-use crate::memory::VirtualAddress;
+use crate::memory::{slab_alloc, SlabBox, VirtualAddress};
 use crate::{get_eax, set_eax, set_edx};
 
 mod disk;
@@ -24,6 +25,22 @@ mod management;
 mod memory;
 mod network;
 mod vga;
+
+pub fn fs() -> Arc<FileSystem> {
+    let fs = FileSystem {
+        name: "dev-fs".into(),
+        kind: FileSystemKind::READ_ONLY,
+        max_file_size: None,
+        private: core::ptr::null_mut(),
+        operations: SuperBlockOperations {
+            create_node: todo!(),
+            dirty_node: todo!(),
+            destroy_node: todo!(),
+        },
+    };
+
+    Arc::new(fs)
+}
 
 ///The only one DriverId for each driver
 ///Each device can be handler as devices as can

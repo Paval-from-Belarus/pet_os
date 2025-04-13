@@ -3,18 +3,6 @@
 use core::arch::asm;
 
 #[macro_export]
-macro_rules! syscall {
-    ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?) => ({
-        core::arch::asm!(
-          "int 80h",
-           in("eax") $id
-           $(,in("ecx", $ecx))?
-           $(,in("edx", $edx))?
-        );
-    });
-}
-
-#[macro_export]
 macro_rules! get_eax {
     () => ({
         let value;

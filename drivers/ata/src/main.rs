@@ -1,18 +1,6 @@
 #![no_std]
 #![no_main]
 
-// mod boot_sector;
-// mod fs;
-// mod time;
-// mod dir_entry;
-// mod file;
-// mod byteorder_core_io;
-// mod dir;
-// mod table;
-
-// extern crate alloc;
-extern crate core;
-
 #[cfg(not(test))]
 #[panic_handler]
 pub fn panic(_info: &core::panic::PanicInfo) -> ! {
@@ -23,8 +11,10 @@ pub fn panic(_info: &core::panic::PanicInfo) -> ! {
 unsafe extern "C" fn init() {
     kernel_lib::log::init().unwrap();
 
-    log::info!("log from fat driver");
+    log::info!("Log from ata driver");
 }
 
 #[no_mangle]
-unsafe extern "C" fn terminate() {}
+unsafe extern "C" fn terminate() {
+    log::info!("Ata driver is terminated");
+}

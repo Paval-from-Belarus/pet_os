@@ -1,0 +1,16 @@
+[package]
+name = "kernel-lib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+heapless = { workspace = true }
+kernel-types = { workspace = true }
+log = { version = "0.4", optional = true }
+
+
+[features]
+default = ["log", "driver", "alloc"]
+driver = []
+alloc = []
+log = ["dep:log"]

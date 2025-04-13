@@ -1,3 +1,0 @@
-[target.i686-unknown-linux-gnu]
-linker = "gcc"
-rustflags = ["-C", "link-arg=-nostartfiles"]

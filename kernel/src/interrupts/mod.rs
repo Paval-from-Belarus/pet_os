@@ -4,7 +4,7 @@ use core::{mem, ptr};
 
 use kernel_macro::ListNode;
 use kernel_types::collections::ListNode;
-use kernel_types::{declare_constants, declare_types};
+use kernel_types::{declare_constants, declare_types, syscall};
 
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
@@ -14,7 +14,7 @@ use crate::memory::{
     SystemType, VirtualAddress,
 };
 use crate::task::TaskContext;
-use crate::{get_eax, get_edx, interrupts, set_eax, syscall};
+use crate::{get_eax, get_edx, interrupts, set_eax};
 
 mod lock;
 mod object;
@@ -264,7 +264,7 @@ pub fn init() {
     }
 
     unsafe {
-        syscall!(system::RESERVED_SYSCALL);
+        syscall!(syscall::RESERVED);
 
         let code: usize = get_eax!();
         if code == system::INVALID {

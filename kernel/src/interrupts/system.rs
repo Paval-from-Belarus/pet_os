@@ -1,11 +1,13 @@
-use kernel_types::{bitflags, declare_constants};
+use kernel_types::string::MutString;
+use kernel_types::{bitflags, declare_constants, syscall};
 
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::{
     IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
 };
 use crate::{
-    error_trap, get_eax, log_unchecked, memory, naked_trap, set_eax, task,
+    error_trap, get_eax, get_edx, log_unchecked, memory, naked_trap, set_eax,
+    task,
 };
 
 //the common handlers
@@ -71,19 +73,26 @@ pub fn init_timer_isr() -> &'static InterruptObject {
 
 declare_constants!(
     pub usize,
-    RESERVED_SYSCALL = 0xFFFF_FFFF, "No function to zero can be used; this function used to test system initialization";
     INVALID = 0;
+    OK_CODE = 0;
     CHECK_CODE = 42;
 );
 
 #[no_mangle]
 pub extern "x86-interrupt" fn syscall(frame: InterruptStackFrame) {
-    let id: usize = unsafe { get_eax!() };
-    if id == RESERVED_SYSCALL {
+    let id: u32 = unsafe { get_eax!() };
+    if id == syscall::RESERVED {
         log::debug!("{frame:?}");
 
         unsafe { set_eax!(CHECK_CODE) };
         return;
+    }
+
+    if id == syscall::PRINTK {
+        let raw_string: *const MutString = unsafe { get_edx!() };
+        let string = unsafe { &*raw_string };
+
+        log_unchecked!("printks says: {string}");
     }
 
     unsafe { set_eax!(INVALID) };

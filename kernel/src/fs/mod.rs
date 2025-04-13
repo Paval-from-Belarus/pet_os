@@ -17,7 +17,7 @@ use kernel_types::{bitflags, declare_constants};
 
 use crate::common::atomics::{SpinLock, UnsafeLazyCell};
 use crate::common::SpinBox;
-use crate::drivers::{BlockDeviceBox, CharDeviceBox};
+use crate::drivers::{self, BlockDeviceBox, CharDeviceBox};
 
 mod fat;
 mod file;
@@ -31,6 +31,12 @@ declare_constants!(
     MAX_FILE_NAME_LEN = 255, "The maximal length for file name";
     MAX_FILES_COUNT = 15, "The count of files for process";
 );
+
+bitflags::bitflags! {
+    pub struct FileSystemKind: usize {
+        const READ_ONLY = 0b01;
+    }
+}
 
 pub enum NodeState {
     Locked,
@@ -157,7 +163,9 @@ impl FilePathHashTable {
 
 static PATH_TABLE: UnsafeLazyCell<FilePathHashTable> = UnsafeLazyCell::empty();
 
-pub fn init() {}
+pub fn init() {
+    let _ = drivers::fs();
+}
 
 #[derive(ListNode)]
 #[repr(C)]

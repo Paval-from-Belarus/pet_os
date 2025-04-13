@@ -12,6 +12,7 @@ pub mod collections;
 pub mod drivers;
 pub mod fs;
 pub mod string;
+pub mod syscall;
 
 extern crate alloc;
 

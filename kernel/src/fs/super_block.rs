@@ -1,7 +1,6 @@
 use alloc::sync::Arc;
 use kernel_macro::ListNode;
 use kernel_types::{
-    bitflags,
     collections::{
         BorrowingLinkedList, BoxedNode, LinkedList, TinyLinkedList,
         TinyListNode,
@@ -12,16 +11,11 @@ use kernel_types::{
 
 use crate::memory::{slab_alloc, Kernel, SlabBox};
 
-use super::{File, IndexNode, MountPoint};
+use super::{File, FileSystemKind, IndexNode, MountPoint};
 
 declare_constants! {
     pub usize,
     MAX_FILE_SYSTEM_NAME = 32;
-}
-
-bitflags! {
-    pub FileSystemKind(usize),
-    READ_ONLY = 0b01,
 }
 
 #[repr(C)]
@@ -47,6 +41,8 @@ pub struct SuperBlockBox {
     pub super_block: SlabBox<SuperBlock>,
 }
 
+//The implementation of the file system
+
 #[derive(ListNode)]
 #[repr(C)]
 pub struct SuperBlock {
@@ -57,6 +53,7 @@ pub struct SuperBlock {
     pub device_id: DeviceId,
 
     pub files: LinkedList<'static, File>,
+    //mount points where fs for super block is placed
     pub mounts: LinkedList<'static, MountPoint>,
     //the size of elementary block in file system (for hard drive communication)
     //consider to add block_size_bits

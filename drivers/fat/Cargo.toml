@@ -3,15 +3,9 @@ name = "fat"
 version = "0.1.0"
 edition = "2021"
 
-[profile.release]
-panic = "abort"
-debug = false
-
-[profile.dev]
-panic = "abort"
-debug = false
-
 [dependencies]
-bitflags = "2.9.0"
+bitflags = { version = "2.9.0", default-features = false }
 byteorder = { version = "1.5.0", default-features = false }
-log = "0.4.27"
+
+kernel-lib = { workspace = true }
+log = { workspace = true }

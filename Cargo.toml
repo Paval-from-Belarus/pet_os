@@ -1,10 +1,18 @@
 [workspace]
-members = ["kernel_macro", "kernel_types", "kernel"]
+members = ["kernel_macro", "kernel_types", "kernel", "kernel-lib"]
 
-
-exclude = ["drivers/fat"]
+exclude = ["drivers"]
 
 resolver = "2"
+
+[profile.release]
+lto = true
+panic = "abort"
+strip = "debuginfo"
+incremental = true
+codegen-units = 1
+opt-level = 3
+debug = false
 
 [workspace.dependencies]
 kernel-types = { path = "kernel_types" }
@@ -25,6 +33,7 @@ elf_rs = { version = "0.3.1" }
 multiboot2 = { version = "0.23" }
 multiboot = { version = "0.8" }
 log = { version = "0.4.20" }
+heapless = { version = "0.7", default-features = false }
 #generic-array = { version = "1.0.0", features = ["const-default"]}
 #bitflags = "2.3.3"
 ##alloca = "0.3.4"

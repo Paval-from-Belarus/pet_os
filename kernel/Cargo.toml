@@ -7,15 +7,6 @@ edition = "2021"
 crate-type = ["staticlib"]
 path = "src/pet_os.rs"
 
-[profile.release]
-lto = true
-panic = "abort"
-strip = "debuginfo"
-incremental = true
-codegen-units = 1
-opt-level = 's'
-debug = false
-
 [dependencies]
 thiserror-no-std = { workspace = true }
 spin = { workspace = true }
@@ -36,9 +27,10 @@ kernel-types = { workspace = true }
 
 multiboot2 = { workspace = true }
 multiboot = { workspace = true }
+heapless = { workspace = true }
 log = { workspace = true }
-heapless = { version = "0.7.17", default-features = false }
 elf = { version = "0.7.4", default-features = false, features = [] }
+bitflags = "2.9.0"
 ##generic-array = { version = "1.0.0", features = ["const-default"]}
 
 #failure = { version = "0.1", features = ["failure_derive"], default-features = false }

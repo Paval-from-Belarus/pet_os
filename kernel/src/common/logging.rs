@@ -64,6 +64,7 @@ impl log::Log for Logger {
             return;
         }
 
+
         log!(
             "[{}][{}] {}\n",
             record.level(),

@@ -2,13 +2,11 @@ use alloc::vec::Vec;
 use kernel_types::drivers::DriverId;
 
 use crate::{
-    memory::{PhysicalAddress, VirtualAddress},
-    syscall,
     common::SystemCall,
+    memory::{PhysicalAddress, VirtualAddress},
 };
 
 /// This module contains basic functionality for driver subssystem
-
 pub enum Operation<'a> {
     Read {
         target: Target<'a>,

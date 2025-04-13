@@ -4,6 +4,7 @@ ASM_SOURCE_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/asm"
 SCRIPTS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/scripts"
 OUTPUT_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target"
 LOGS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/logs"
+DRIVERS_WORKSPACE = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/drivers"
 
 
 IMAGES_PATH = "${OUTPUT_PATH}/images"
@@ -33,10 +34,13 @@ default_to_workspace = false
 command = "mkdir"
 args = ["-p", "${IMAGES_PATH}", "${LOGS_PATH}", "${OBJECTS_PATH}"]
 
-[tasks.clean]
-condition = { files_exist = ["${OUTPUT_PATH}"] }
-command = "rm"
-args = ["-r", "${OUTPUT_PATH}"]
+[tasks.prune]
+script = '''
+    cargo clean
+    cd ${DRIVERS_WORKSPACE}
+    cargo clean
+
+'''
 
 [tasks.asm]
 script = '''
@@ -46,7 +50,12 @@ script = '''
     ${ASM_COMPILER} ${ASM_SOURCE_PATH}/ata_disk.asm ${OBJECTS_PATH}/ata_disk.o
 '''
 
-[tasks.kernel_lib]
+[tasks.kernel_bin.env]
+STATIC_DRIVERS = "ata fat"
+DRIVERS_OUT = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/drivers"
+
+[tasks.kernel_bin]
+dependencies = ["drivers"]
 command = "cargo"
 args = [
     "build",
@@ -59,20 +68,14 @@ args = [
     # "--target-dir", "${OBJECTS_PATH}"
 ]
 
+[tasks.drivers.env]
+DRIVERS = "ata fat"
+DRIVERS_OUT = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/drivers"
+DRIVERS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/drivers"
+
 [tasks.drivers]
-command = "cargo"
-args = [
-    "build",
-    "-Z",
-    "build-std=core,alloc,compiler_builtins",
-    "-Z",
-    "build-std-features=compiler-builtins-mem",
-    # "--target=${TARGET_SPEC}",
-    "--target=i686-unknown-linux-gnu",
-    "--release",
-    "--bin",
-    "${CARGO_MAKE_PROJECT_NAME}",
-]
+script = { file = "scripts/build_drivers.sh" }
+# script = { file = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/scripts/build_drivers.sh"}
 
 [tasks.fix]
 command = "cargo"
@@ -90,7 +93,7 @@ args = [
 ]
 
 [tasks.kernel]
-dependencies = ["layout", "asm", "kernel_lib"]
+dependencies = ["layout", "asm", "kernel_bin"]
 script = '''
     ld -n \
     --as-needed \
