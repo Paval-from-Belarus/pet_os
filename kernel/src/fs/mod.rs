@@ -163,9 +163,7 @@ impl FilePathHashTable {
 
 static PATH_TABLE: UnsafeLazyCell<FilePathHashTable> = UnsafeLazyCell::empty();
 
-pub fn init() {
-    let _ = drivers::fs();
-}
+pub fn init() {}
 
 #[derive(ListNode)]
 #[repr(C)]

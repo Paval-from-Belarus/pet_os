@@ -11,9 +11,7 @@ use static_assertions::assert_eq_size;
 pub use allocators::PhysicalAllocator;
 pub use arch::*;
 use kernel_macro::ListNode;
-use kernel_types::collections::{
-    LinkedList, ListNode, TinyLinkedList, TinyListNode,
-};
+use kernel_types::collections::{LinkedList, ListNode, TinyLinkedList};
 use kernel_types::{bitflags, declare_constants};
 pub use paging::PagingProperties;
 
@@ -27,6 +25,10 @@ use crate::task::{Task, TaskState};
 mod allocators;
 mod arch;
 mod paging;
+mod process;
+mod region;
+
+pub use region::*;
 
 pub use paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
 pub use paging::{
@@ -176,16 +178,18 @@ bitflags!(
     UNUSED = 0x10
 );
 
-bitflags!(
-    pub MemoryRegionFlag(usize),
-    READ = 0x01,
-    WRITE = 0x02,
-    EXEC = 0x04,
-    //todo flags
-    SHARING = 0x08,
-    SEQ_READ = 0x10,
-    RAND_READ = 0x20,
-);
+bitflags::bitflags! {
+    #[derive(Clone, Copy)]
+    pub struct MemoryRegionFlag: u8 {
+        const READ = 0x01;
+        const WRITE = 0x02;
+        const EXEC = 0x04;
+
+        const SHAREING = 0x08;
+        const SEQ_READ = 0x10;
+        const RAND_READ = 0x20;
+    }
+}
 
 pub fn kernel_binary_size() -> usize {
     unsafe { &KERNEL_SIZE as *const usize as VirtualAddress }
@@ -288,36 +292,6 @@ impl ProcessState {
             return Some(region);
         }
         None
-    }
-}
-
-#[derive(ListNode)]
-#[repr(C)]
-pub struct MemoryRegion {
-    #[list_pivot]
-    node: TinyListNode<MemoryRegion>,
-    parent: NonNull<ProcessState>,
-    range: Range<VirtualAddress>,
-    permissions: MemoryRegionFlag,
-    //mapped_file: MemoryMappedFile,
-    //file_offset: usize
-}
-
-impl MemoryRegion {
-    pub const fn new() -> Self {
-        todo!()
-    }
-    ///invoked when MemoryRegion is removed from address space
-    pub fn close() {}
-    //it's simple callback to find page during page_fault_exception
-    pub fn no_page(&mut self) -> NonNull<Page> {
-        todo!()
-    }
-    pub fn populate(&mut self) -> usize {
-        0
-    }
-    pub fn expand(&mut self) {
-        todo!()
     }
 }
 
@@ -465,7 +439,7 @@ pub fn slab_dealloc<T>(pointer: &mut T) {
 ///The each virtual page, probably, will be separate
 ///The current implementation is simple slab allocation (it will fail with too huge memory size)
 #[must_use]
-pub fn virtual_alloc(size: usize) -> VirtualAddress {
+pub fn virtual_alloc(size: usize, _flags: MemoryRegionFlag) -> VirtualAddress {
     SLAB_ALLOCATOR
         .get()
         .virtual_alloc(size)
@@ -476,6 +450,7 @@ pub fn virtual_dealloc(_offset: VirtualAddress) {
     todo!()
 }
 
+#[must_use]
 pub fn physical_alloc(_bytes: usize) -> Result<*mut u8, OsAllocationError> {
     todo!()
 }

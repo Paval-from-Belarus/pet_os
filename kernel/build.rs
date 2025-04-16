@@ -11,22 +11,37 @@ fn main() {
         let drivers_dir = std::env::var("DRIVERS_OUT")
             .expect("$DRIVERS_OUT path for drivers directory is not provided");
 
+        let mut entries = vec![];
         for driver in drivers.split_whitespace() {
             let mut path = PathBuf::new();
             path.push(&drivers_dir);
             path.push(driver);
 
-            let _raw_driver =
-                std::fs::read(path).expect("Failed to access static driver");
+            let file_name =
+                path.to_str().expect("Failed to use driver path as string");
+
+            let entry = format!(
+                r#"
+                StaticDriver {{
+                    offset: include_bytes!("{file_name}").as_ptr(),
+                    len: include_bytes!("{file_name}").len(),
+                }},
+                "#,
+            );
+            entries.push(entry);
         }
 
-        r#"
+        format!(
+            r#"
             use super::StaticDriver;
 
-            pub const STATIC_DRIVERS: [StaticDriver; 0] = [];
-
-        "#
-        .to_string()
+            pub const STATIC_DRIVERS: [StaticDriver; {}] = [
+            {}
+            ];
+            "#,
+            entries.len(),
+            entries.concat()
+        )
     } else {
         println!("cargo::warning=Static Drivers are not provided");
         r#"

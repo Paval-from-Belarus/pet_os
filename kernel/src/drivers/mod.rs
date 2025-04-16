@@ -19,12 +19,15 @@ use crate::memory::{slab_alloc, SlabBox, VirtualAddress};
 use crate::{get_eax, set_eax, set_edx};
 
 mod disk;
+mod generated;
 mod keyboard;
 mod loader;
 mod management;
 mod memory;
 mod network;
 mod vga;
+
+use generated::STATIC_DRIVERS;
 
 pub fn fs() -> Arc<FileSystem> {
     let fs = FileSystem {
@@ -87,14 +90,8 @@ pub fn io_unmap() {}
 
 #[repr(C)]
 pub struct StaticDriver {
-    pub start: u32,
-    pub size: u32,
-}
-
-pub const MAX_STATIC_DRIVERS_COUNT: usize = 12;
-
-extern "C" {
-    static STATIC_DRIVERS: [StaticDriver; MAX_STATIC_DRIVERS_COUNT];
+    pub offset: *const u8,
+    pub len: usize,
 }
 
 extern "Rust" {
@@ -157,6 +154,17 @@ pub struct Partition {
 }
 
 pub fn init() {
+    log::info!("Detected {} static drivers", STATIC_DRIVERS.len());
+
+    for driver in STATIC_DRIVERS.iter() {
+        let elf_data =
+            unsafe { core::slice::from_raw_parts(driver.offset, driver.len) };
+
+        let _ = loader::load_in_memory(elf_data).inspect_err(|cause| {
+            log::warn!("Failed to load driver: {cause}");
+        });
+    }
+
     disk::init();
 }
 

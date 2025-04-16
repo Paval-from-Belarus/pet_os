@@ -12,7 +12,9 @@ use crate::common::atomics::UnsafeLazyCell;
 use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
 use crate::interrupts::{pic, CallbackInfo};
-use crate::memory::{Page, SegmentSelector, ThreadRoutine, VirtualAddress};
+use crate::memory::{
+    MemoryRegionFlag, Page, SegmentSelector, ThreadRoutine, VirtualAddress,
+};
 use crate::task::scheduler::SchedulerLock;
 use crate::{get_eax, memory, object};
 
@@ -164,7 +166,10 @@ pub fn new_task(
     arg: *mut (),
     priority: TaskPriority,
 ) -> &'static mut RunningTask {
-    let kernel_stack = memory::virtual_alloc(TASK_STACK_SIZE);
+    let kernel_stack = memory::virtual_alloc(
+        TASK_STACK_SIZE,
+        MemoryRegionFlag::WRITE | MemoryRegionFlag::READ,
+    );
 
     let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
     let task = Task::new_boxed(task_id, kernel_stack, priority);
