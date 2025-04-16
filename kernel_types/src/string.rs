@@ -88,7 +88,7 @@ impl<'a> MutString<'a> {
             self
         );
         let copy_len = usize::min(self.len(), capacity);
-        ptr::copy(self.data, dest, copy_len);
+        ptr::copy_nonoverlapping(self.data, dest, copy_len);
         Self::new(copy_len, capacity, dest)
     }
     pub fn unwrap(self) -> *mut u8 {
@@ -101,6 +101,11 @@ impl<'a> MutString<'a> {
     pub fn len(&self) -> usize {
         self.len
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     ///return the common capacity of PString in bytes
     pub fn capacity(&self) -> usize {
         self.capacity
@@ -157,9 +162,25 @@ impl<'a> From<&'a str> for MutString<'a> {
     }
 }
 
+impl<'a> From<&'a mut str> for MutString<'a> {
+    fn from(value: &mut str) -> Self {
+        let ptr = value.as_ptr() as *mut u8;
+
+        unsafe { Self::new(value.len(), value.len(), ptr) }
+    }
+}
+
+impl<'a> From<&'a [u8]> for MutString<'a> {
+    fn from(value: &[u8]) -> Self {
+        let ptr = value.as_ptr() as *mut u8;
+        unsafe { Self::new(value.len(), value.len(), ptr) }
+    }
+}
+
 impl<'a> From<&'a mut [u8]> for MutString<'a> {
     fn from(value: &mut [u8]) -> Self {
-        unsafe { Self::new(value.len(), value.len(), value.as_mut_ptr()) }
+        let ptr = value.as_ptr() as *mut u8;
+        unsafe { Self::new(value.len(), value.len(), ptr) }
     }
 }
 

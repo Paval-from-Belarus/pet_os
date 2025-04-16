@@ -28,7 +28,7 @@ for DRIVER in ${DRIVERS}; do
 	--bin ${DRIVER}
 
 
-	cp target/i686-unknown-linux-gnu/release/${DRIVER} ${DRIVERS_OUT}/
+	objcopy -x --strip-unneeded target/i686-unknown-linux-gnu/release/${DRIVER} ${DRIVERS_OUT}/${DRIVER}
 done
 
 touch ${DRIVERS_OUT}
