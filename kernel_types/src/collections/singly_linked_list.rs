@@ -350,6 +350,7 @@ impl<'a, 'b, T: TinyListNodeData> MutListIterator<'a, 'b, T> {
         }
     }
 
+    #[must_use]
     pub fn unlink_watched(&mut self) -> Option<&'a mut TinyListNode<T>> {
         let unlinked = match self.watched {
             None => None,

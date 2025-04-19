@@ -3,15 +3,15 @@ use core::sync::atomic::AtomicUsize;
 use core::{mem, ptr};
 
 use kernel_macro::ListNode;
-use kernel_types::collections::ListNode;
+use kernel_types::collections::{BoxedNode, ListNode};
 use kernel_types::{declare_constants, declare_types, syscall};
 
 use crate::drivers::Handle;
 use crate::interrupts::object::InterruptObject;
 use crate::interrupts::pic::PicLine;
 use crate::memory::{
-    slab_alloc, InterruptGate, PrivilegeLevel, SegmentSelector, Slab, SlabBox,
-    SystemType, VirtualAddress,
+    self, slab_alloc, InterruptGate, PrivilegeLevel, SegmentSelector, Slab,
+    SlabBox, SystemType, VirtualAddress,
 };
 use crate::task::TaskContext;
 use crate::{get_eax, get_edx, interrupts, set_eax};
@@ -55,6 +55,14 @@ pub struct CallbackInfo {
 
 impl Slab for CallbackInfo {
     const NAME: &str = "int_callback";
+}
+
+impl BoxedNode for CallbackInfo {
+    type Target = SlabBox<CallbackInfo>;
+
+    fn into_boxed(node: &mut Self::Item) -> Self::Target {
+        memory::into_boxed(node.into())
+    }
 }
 
 impl CallbackInfo {

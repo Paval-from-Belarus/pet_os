@@ -17,7 +17,7 @@ use kernel_types::{bitflags, declare_constants};
 
 use crate::common::atomics::{SpinLock, UnsafeLazyCell};
 use crate::common::SpinBox;
-use crate::drivers::{self, BlockDeviceBox, CharDeviceBox};
+use crate::drivers::{BlockDeviceBox, CharDeviceBox};
 
 mod fat;
 mod file;

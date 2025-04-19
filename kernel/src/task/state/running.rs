@@ -2,7 +2,7 @@ use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
 
 use crate::{
-    memory::{Kernel, SlabBox},
+    memory::{self, SlabBox},
     object,
     task::TaskStatus,
 };
@@ -53,7 +53,7 @@ impl BoxedNode for RunningTask {
     fn into_boxed(
         node: &mut <RunningTask as kernel_types::collections::TinyListNodeData>::Item,
     ) -> Self::Target {
-        let node = unsafe { SlabBox::from_raw_in(node, Kernel) };
+        let node = memory::into_boxed(node.into());
 
         Self::Target { node }
     }

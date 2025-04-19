@@ -25,10 +25,12 @@ impl<'a> QuickString<'a> {
         self.data.hash(state);
         self.hash_code = state.fast_hash();
     }
+
     pub fn as_str(&self) -> &str {
         self.data
         // unsafe { self.data.as_ref() }
     }
+
     pub fn len(&self) -> usize {
         self.as_str().len()
     }

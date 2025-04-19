@@ -4,7 +4,10 @@ use alloc::sync::Arc;
 use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
 
-use crate::{common::time::Timestamp, memory::SlabBox};
+use crate::{
+    common::time::Timestamp,
+    memory::{self, Slab, SlabBox},
+};
 
 use super::{
     Device, FileOperations, FilePermissions, FileRenameFlag, NodeKind,
@@ -30,6 +33,10 @@ pub struct IndexNodeItem {
     #[list_pivots]
     node: ListNode<IndexNodeItem>,
     pub lock: Arc<spin::RwLock<IndexNode>>,
+}
+
+impl Slab for IndexNodeItem {
+    const NAME: &str = "index_node";
 }
 
 ///the i-node implementation
@@ -63,10 +70,8 @@ impl BoxedNode for IndexNodeItem {
     type Target = IndexNodeBox;
 
     fn into_boxed(node: &mut Self::Item) -> Self::Target {
-        let item = unsafe { SlabBox::from_raw_in(node, crate::memory::Kernel) };
+        let item = memory::into_boxed(node.into());
 
         Self::Target { item }
     }
 }
-
-impl IndexNode {}

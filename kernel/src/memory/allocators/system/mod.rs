@@ -1,9 +1,11 @@
 mod allocator;
-mod slab;
+mod slab_entry;
+mod slab_head;
 
 use core::{mem, ptr};
 
-use slab::SlabEntry;
+use slab_entry::{SlabEntry, MAX_SLAB_CAPACITY};
+use slab_head::SlabHead;
 use static_assertions::const_assert;
 
 use kernel_types::collections::{
@@ -14,12 +16,15 @@ use kernel_types::declare_constants;
 
 use crate::memory;
 use crate::memory::{
-    MemoryMappingRegion, OsAllocationError, Page, PhysicalAddress,
-    PhysicalAllocator, ToPhysicalAddress, VirtualAddress,
+    AllocError, MemoryMappingRegion, Page, PhysicalAddress, PhysicalAllocator,
+    ToPhysicalAddress, VirtualAddress,
 };
 
 use super::physical::BuddyBatch;
 
+pub type SlabName = &'static str;
+
+#[derive(Debug, Clone, Copy)]
 pub enum Alignment {
     Word,
     CacheLine,
@@ -34,7 +39,14 @@ struct MemBounds {
 
 #[repr(transparent)]
 #[derive(Copy, Clone)]
-pub struct SlabPiece(u16);
+pub struct SlabSize(u16);
+
+#[derive(Debug, Clone)]
+pub struct SlabAlloc<'a> {
+    pub name: &'a str,
+    pub size: u16,
+    pub alignment: Alignment,
+}
 
 pub struct SystemAllocator {
     inner: spin::Mutex<SlabAllocatorInner>,
@@ -45,11 +57,12 @@ unsafe impl Send for SystemAllocator {}
 unsafe impl Sync for SystemAllocator {}
 
 struct SlabAllocatorInner {
-    cached_entries: TinyLinkedList<'static, SlabEntry>,
+    heads: LinkedList<'static, SlabHead>,
+
+    // cached_entries: TinyLinkedList<'static, SlabEntry>,
 
     //any pool should never be empty
-    used_entries: TinyLinkedList<'static, SlabEntry>,
-    // free_pool: UnsafeCell<SimpleList<'static, SlabEntry>>,
+    // used_entries: TinyLinkedList<'static, SlabEntry>,
     allocator: &'static PhysicalAllocator,
     //holds GlobalPageDirectory
     heap_offset: VirtualAddress, //the next free virtual address
@@ -65,63 +78,75 @@ impl SystemAllocator {
     pub fn new(
         physical: &'static PhysicalAllocator,
         heap_offset: VirtualAddress,
-    ) -> Result<SystemAllocator, OsAllocationError> {
-        let mut inner = SlabAllocatorInner::new(physical, heap_offset);
-
-        inner.enlarge_pool(Self::POOL_SIZE)?;
+    ) -> Result<SystemAllocator, AllocError> {
+        let inner = SlabAllocatorInner::new(physical, heap_offset);
 
         Ok(Self {
             inner: spin::Mutex::new(inner),
         })
     }
 
-    pub fn alloc(
+    pub fn alloc_slab(
         &'static self,
-        piece: SlabPiece,
-        _alignment: Alignment,
-    ) -> Result<*mut u8, OsAllocationError> {
-        let required_pages_count = Page::upper_bound(usize::from(piece));
+        allocation: SlabAlloc,
+    ) -> Result<*mut u8, AllocError> {
+        let mut inner = self.inner.try_lock().unwrap();
+
+        let head = inner.find_head(&allocation)?;
+
+        if let Some(offset) = head.try_alloc() {
+            return Ok(offset as *mut u8);
+        }
+
+        match head.try_alloc() {
+            Some(offset) => Ok(offset as *mut u8),
+            None => {
+                let entries = inner.alloc_entries(1, allocation.size)?;
+
+                head.extend_with_free_entries(entries);
+
+                let offset =
+                    head.try_alloc().expect("New entries are submitted");
+
+                Ok(offset as *mut u8)
+            }
+        }
+    }
+
+    pub fn dealloc_slab(&'static self, name: SlabName, ptr: *mut u8) {
+        let offset = ptr as VirtualAddress;
 
         let mut inner = self.inner.try_lock().unwrap();
 
-        let maybe_entry = inner.find_suitable_entry(required_pages_count)?;
-
-        let entry = if let Some(entry) = maybe_entry {
-            entry
-        } else {
-            log::debug!("Enlarging pool");
-
-            inner.enlarge_pool(1)?;
-
-            let Some(entry) =
-                inner.find_suitable_entry(required_pages_count)?
-            else {
-                return Err(OsAllocationError::NoMemory);
-            };
-
-            entry
+        let Some(head) = inner.heads.iter_mut().find(|head| head.name.eq(name))
+        else {
+            panic!("Unknown slab with name = {name}");
         };
 
-        log::debug!("Entry {entry:?} is found");
-
-        Ok(entry.take(required_pages_count))
+        head.dealloc(offset);
     }
 
     pub fn virtual_alloc(
         &'static self,
         bytes: usize,
-    ) -> Result<*mut u8, OsAllocationError> {
-        let mut inner = self.inner.lock();
-
+    ) -> Result<*mut u8, AllocError> {
         let pages_count = Page::upper_bound(bytes);
+
+        let mut inner = self.inner.try_lock().unwrap();
 
         inner.virtual_alloc(pages_count)
     }
 
-    pub fn dealloc(&'static self, offset: VirtualAddress) {
+    pub fn virtual_dealloc(
+        &'static self,
+        offset: VirtualAddress,
+        size_in_bytes: usize,
+    ) {
+        let pages_count = Page::upper_bound(size_in_bytes);
+
         let mut inner = self.inner.try_lock().unwrap();
 
-        inner.dealloc(offset);
+        inner.virtual_dealloc(offset, pages_count);
     }
 }
 
@@ -131,33 +156,37 @@ impl SlabAllocatorInner {
         heap_offset: VirtualAddress,
     ) -> Self {
         Self {
-            cached_entries: TinyLinkedList::empty(),
-            used_entries: TinyLinkedList::empty(),
+            heads: LinkedList::empty(),
 
             allocator,
             heap_offset,
         }
     }
 
-    fn dealloc(&mut self, offset: VirtualAddress) {
-        let entry = self
-            .used_entries
+    pub fn find_head(
+        &mut self,
+        allocation: &SlabAlloc,
+    ) -> Result<&'static mut SlabHead, AllocError> {
+        let existing_head = self
+            .heads
             .iter_mut()
-            .find(|entry| entry.holds(offset))
-            .expect("Failed to find not existing slab entry");
+            .find(|head| head.name.eq(allocation.name));
 
-        entry.release(offset);
+        let head = if let Some(head) = existing_head {
+            head
+        } else {
+            todo!()
+            // self.alloc_head(name, size)?
+        };
 
-        if entry.is_bloated() {
-            //todo: release some pages
-        }
+        Ok(head)
     }
 
     #[must_use]
     fn virtual_alloc(
         &mut self,
         pages_count: usize,
-    ) -> Result<*mut u8, OsAllocationError> {
+    ) -> Result<*mut u8, AllocError> {
         assert!(pages_count > 0);
 
         let pages = self.allocator.alloc_zeroed_pages(pages_count)?;
@@ -172,105 +201,56 @@ impl SlabAllocatorInner {
         Ok(current_offset as *mut u8)
     }
 
-    fn find_suitable_entry(
+    fn virtual_dealloc(
         &mut self,
-        required_pages_count: usize,
-    ) -> Result<Option<&'static mut SlabEntry>, OsAllocationError> {
-        let maybe_entry = self
-            .used_entries
-            .iter_mut()
-            .find(|entry| entry.available() >= required_pages_count);
-
-        let Some(entry) = maybe_entry else {
-            return Ok(None);
-        };
-
-        Ok(Some(entry))
+        _offset: VirtualAddress,
+        _pages_count: usize,
+    ) {
     }
-
-    #[inline(never)]
-    fn enlarge_pool(
+    //alloc at least desireable count of pages
+    fn alloc_entries(
         &mut self,
-        entries_count: usize,
-    ) -> Result<(), OsAllocationError> {
-        let free_entries_count = self.cached_entries.iter().count();
+        count: usize,
+        object_size: u16,
+    ) -> Result<TinyLinkedList<'static, SlabEntry>, AllocError> {
+        assert!(object_size > 0);
 
-        log::debug!(
-            "Count = {entries_count}. Available = {free_entries_count}"
-        );
+        let slab_size_in_pages =
+            Page::upper_bound(object_size as usize * MAX_SLAB_CAPACITY);
 
-        if free_entries_count < entries_count {
-            let additional_pages = Page::upper_bound(
-                (entries_count - free_entries_count)
-                    * mem::size_of::<SlabEntry>(),
-            );
+        let pages_to_alloc =
+            Page::upper_bound(count * mem::size_of::<SlabEntry>());
 
-            let pages_batch =
-                self.allocator.alloc_continuous_pages(additional_pages)?;
+        let allocated_pages =
+            self.allocator.alloc_continuous_pages(pages_to_alloc)?;
 
-            let new_entries = self.commit_new_entries(pages_batch);
-            self.cached_entries.splice(new_entries);
+        let mut allocated_entries =
+            self.commit_new_entries(allocated_pages, object_size);
+
+        for entry in allocated_entries.iter_mut() {
+            let entry_pages = self
+                .allocator
+                .alloc_continuous_pages(slab_size_in_pages)
+                .expect("Failed to allocate heap for slab entry")
+                .into_pages();
+
+            let physical_offset = entry_pages[0].as_physical();
+
+            let slab_heap_offset =
+                commit(physical_offset, self.heap_offset, slab_size_in_pages);
+
+            self.heap_offset += Page::SIZE * slab_size_in_pages;
+
+            unsafe { entry.set(slab_heap_offset, entry_pages) }
         }
 
-        let heap_batch = self.allocator.alloc_continuous_pages(
-            entries_count * SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES,
-        )?;
-
-        assert_eq!(
-            heap_batch.len(),
-            entries_count * SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES
-        );
-
-        let mut entry_iter = self.cached_entries.iter_mut();
-
-        let mut page_iter = heap_batch.into_pages().iter_mut();
-
-        for _ in 0..entries_count {
-            let _ = entry_iter
-                .next()
-                .expect("Page pool should be enough for heap");
-
-            let entry =
-                entry_iter.unlink_watched().expect("Is watched already");
-
-            let mut cached_pages = LinkedList::<Page>::empty();
-
-            for _ in 0..SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES {
-                let page = page_iter.next().unwrap();
-
-                cached_pages.push_front(page.as_node());
-            }
-
-            let physical_offset = cached_pages
-                .iter()
-                .nth(0)
-                .expect("We simply push in list")
-                .as_physical();
-
-            let slab_offset = commit(
-                physical_offset,
-                self.heap_offset,
-                SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES,
-            );
-
-            self.heap_offset +=
-                Page::SIZE * SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES;
-
-            entry.set(
-                slab_offset,
-                cached_pages,
-                SlabEntry::DEFAULT_SLAB_SIZE_IN_PAGES,
-            );
-
-            self.used_entries.push_front(entry);
-        }
-
-        Ok(())
+        Ok(allocated_entries)
     }
 
     fn commit_new_entries(
         &mut self,
         batch: BuddyBatch,
+        object_size: u16,
     ) -> TinyLinkedList<'static, SlabEntry> {
         const ENTRIES_PER_PAGE: usize =
             Page::SIZE / mem::size_of::<SlabEntry>();
@@ -302,7 +282,7 @@ impl SlabAllocatorInner {
 
                     let node = TinyListNode::new(next_node);
 
-                    current_node.write(SlabEntry::new(node));
+                    current_node.write(SlabEntry::new(node, object_size));
 
                     &mut *current_node
                 };

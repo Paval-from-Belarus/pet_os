@@ -5,6 +5,7 @@ use crate::interrupts::object::InterruptObject;
 use crate::interrupts::{
     IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
 };
+use crate::memory::SlabBox;
 use crate::{
     error_trap, get_eax, get_edx, log_unchecked, memory, naked_trap, set_eax,
     task,
@@ -56,15 +57,13 @@ pub fn init_traps(table: &mut IDTable) {
 }
 
 pub fn init_timer_isr() -> &'static InterruptObject {
-    let raw_object = memory::slab_alloc_old::<InterruptObject>(
-        memory::AllocationStrategy::Kernel,
-    );
+    let object =
+        memory::slab_alloc(InterruptObject::new(IrqLine::SYS_TIMER.line))
+            .unwrap();
+
+    let timer_object = SlabBox::leak(object);
 
     let info = task::init();
-
-    let timer_object = raw_object
-        .expect("No memory for timer object")
-        .write(InterruptObject::new(IrqLine::SYS_TIMER.line));
 
     timer_object.append(info);
 

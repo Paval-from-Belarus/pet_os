@@ -1,7 +1,7 @@
 use kernel_types::collections::{BorrowingLinkedList, HashTable, LinkedList};
 
 use crate::{
-    memory::{slab_alloc, SlabBox},
+    memory::{slab_alloc, Slab, SlabBox},
     task::{RunningTask, TaskPriority},
 };
 
@@ -9,6 +9,10 @@ const SCHEDULING_CONTEXT_SIZE: usize = 32;
 
 pub struct TaskQueue {
     tasks: [LinkedList<'static, RunningTask>; SCHEDULING_CONTEXT_SIZE],
+}
+
+impl Slab for TaskQueue {
+    const NAME: &str = "task_queue";
 }
 
 impl TaskQueue {

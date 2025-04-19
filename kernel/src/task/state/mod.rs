@@ -69,7 +69,7 @@ impl HashData for BlockedTask {
     }
 }
 
-impl Slab for Task {
+impl Slab for RunningTask {
     const NAME: &str = "task";
 }
 

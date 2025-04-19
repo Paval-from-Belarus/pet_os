@@ -3,8 +3,7 @@ use kernel_types::collections::{BorrowingLinkedList, LinkedList};
 use crate::drivers::Handle;
 use crate::interrupts::pic::PicLine;
 use crate::interrupts::{pic, CallbackInfo};
-use crate::memory::AllocationStrategy::Kernel;
-use crate::memory::{self, Slab};
+use crate::memory::{self, Slab, SlabBox};
 use crate::ticks_now;
 
 use super::TaskContext;
@@ -56,14 +55,14 @@ impl InterruptObject {
     //the registration is appending callback to the end of sequence
     //to remove consider to add DriverHandle
     pub fn append(&self, stack_info: CallbackInfo) {
-        let raw_node = memory::slab_alloc_old::<CallbackInfo>(Kernel)
+        let boxed_info = memory::slab_alloc(stack_info)
             .expect("Failed to alloc interrupt object info");
 
-        let node = raw_node.write(stack_info);
+        let leaked_info = SlabBox::leak(boxed_info);
 
         let mut list = self.callbacks.try_lock().unwrap();
 
-        list.push_back(node.as_next());
+        list.push_back(leaked_info.as_next());
     }
 
     pub fn remove(&self, removable: Handle) {
@@ -76,7 +75,8 @@ impl InterruptObject {
                 let node = iterator
                     .unlink_watched()
                     .expect("The node is only visited");
-                memory::slab_dealloc(node);
+
+                let _ = node.into_boxed();
             }
         }
     }

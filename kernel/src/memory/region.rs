@@ -4,7 +4,7 @@ use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
 
 use super::{
-    slab_alloc, virtual_alloc, virtual_dealloc, MemoryRegionFlag, Page,
+    slab_alloc, virtual_alloc, virtual_dealloc, MemoryRegionFlag, Page, Slab,
     SlabBox, VirtualAddress,
 };
 
@@ -117,15 +117,19 @@ impl core::ops::DerefMut for MemoryRegionBox {
 
 impl Drop for MemoryRegion {
     fn drop(&mut self) {
-        virtual_dealloc(self.as_range_ptr() as VirtualAddress);
+        virtual_dealloc(self.as_range_ptr() as VirtualAddress, self.size());
     }
+}
+
+impl Slab for MemoryRegion {
+    const NAME: &str = "mem_region";
 }
 
 impl BoxedNode for MemoryRegion {
     type Target = MemoryRegionBox;
 
     fn into_boxed(node: &mut Self::Item) -> Self::Target {
-        let region = unsafe { SlabBox::from_raw_in(node, super::Kernel) };
+        let region = super::into_boxed(node.into());
 
         MemoryRegionBox { region }
     }

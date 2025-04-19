@@ -1,11 +1,11 @@
 use core::alloc::{Allocator, GlobalAlloc};
-use core::mem::MaybeUninit;
 use core::ops::Range;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{mem, ptr};
 
 use alloc::boxed::Box;
+use allocators::SlabAlloc;
 use static_assertions::assert_eq_size;
 
 pub use allocators::PhysicalAllocator;
@@ -16,7 +16,7 @@ use kernel_types::{bitflags, declare_constants};
 pub use paging::PagingProperties;
 
 use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
-use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
+use crate::memory::allocators::{Alignment, SystemAllocator};
 use crate::memory::paging::{
     BootAllocator, GDTTable, PageMarker, PageMarkerError,
 };
@@ -44,7 +44,7 @@ pub enum ZoneType {
 }
 
 #[derive(Debug, thiserror_no_std::Error)]
-pub enum OsAllocationError {
+pub enum AllocError {
     #[error("NoMemory")]
     NoMemory, //no memory to accomplish request
 }
@@ -341,98 +341,76 @@ pub enum AllocationStrategy {
     Device,
 }
 
-pub struct Kernel;
+pub struct Kernel {
+    size: usize,
+    slab_name: &'static str,
+    ptr: *mut u8,
+}
 
 unsafe impl Allocator for Kernel {
     fn allocate(
         &self,
         layout: core::alloc::Layout,
     ) -> Result<NonNull<[u8]>, core::alloc::AllocError> {
-        let size = layout.size();
-
-        let piece = if layout.size() <= u16::MAX as usize {
-            SlabPiece::with_capacity(layout.size() as u16)
-        } else {
-            unreachable!("Slab piece too huge");
-        };
-
-        let offset = SLAB_ALLOCATOR
-            .alloc(piece, Alignment::Page)
-            .unwrap_or_else(|cause| {
-                panic!("Failed to alloc slab with size={size}: {cause}")
-            });
-
-        log::info!("Allocated for {offset:?}");
+        if layout.size() != self.size {
+            return Err(core::alloc::AllocError);
+        }
 
         let bytes =
-            unsafe { core::slice::from_raw_parts_mut(offset, layout.size()) };
+            unsafe { core::slice::from_raw_parts_mut(self.ptr, self.size) };
 
         Ok(NonNull::from(bytes))
     }
 
     unsafe fn deallocate(
         &self,
-        ptr: NonNull<u8>,
+        _ptr: NonNull<u8>,
         _layout: core::alloc::Layout,
     ) {
-        let offset = ptr.as_ptr() as VirtualAddress;
-        SLAB_ALLOCATOR.dealloc(offset);
+        SLAB_ALLOCATOR.dealloc_slab(self.slab_name, self.ptr);
     }
 }
 
-unsafe impl GlobalAlloc for Kernel {
-    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
-        let mut ptr = Kernel
-            .allocate(layout)
-            .expect("Failed to allocate: {layout:?}");
-
-        ptr.as_mut().as_mut_ptr()
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        let ptr = NonNull::new(ptr).expect("Only not null ptr");
-
-        Kernel.deallocate(ptr, layout);
-    }
-}
-
-pub trait Slab {
+pub trait Slab: Sized {
     const NAME: &str;
     const ALIGNMENT: Alignment = Alignment::CacheLine;
 }
 
 pub type SlabBox<T> = Box<T, Kernel>;
 
-pub fn slab_alloc<T>(value: T) -> Option<SlabBox<T>> {
-    Box::try_new_in(value, Kernel).ok()
-}
-
-/// the kernel method to allocate structure in kernel slab pool
-#[must_use]
-pub fn slab_alloc_old<T: Slab>(
-    _strategy: AllocationStrategy,
-) -> Option<&'static mut MaybeUninit<T>> {
+pub fn slab_alloc<T: Slab>(value: T) -> Option<SlabBox<T>> {
     let size = mem::size_of::<T>();
 
-    let piece = if size <= u16::MAX as usize {
-        SlabPiece::with_capacity(size as u16)
-    } else {
-        unreachable!("Slab piece too huge");
+    assert!(size < u16::MAX as usize);
+
+    let layout = SLAB_ALLOCATOR
+        .get()
+        .alloc_slab(SlabAlloc {
+            name: T::NAME,
+            size: size as u16,
+            alignment: T::ALIGNMENT,
+        })
+        .ok()?;
+
+    let allocator = Kernel {
+        size,
+        ptr: layout,
+        slab_name: T::NAME,
     };
 
-    let offset =
-        SLAB_ALLOCATOR
-            .alloc(piece, Alignment::Page)
-            .unwrap_or_else(|cause| {
-                panic!("Failed to alloc slab with size={size}: {cause}")
-            });
-
-    Some(unsafe { &mut *(offset as *mut MaybeUninit<T>) })
+    Box::try_new_in(value, allocator).ok()
 }
 
-pub fn slab_dealloc<T>(pointer: &mut T) {
-    let offset = pointer as *mut T as VirtualAddress;
-    SLAB_ALLOCATOR.dealloc(offset);
+pub fn into_boxed<T: Slab>(data: NonNull<T>) -> SlabBox<T> {
+    let ptr = data.as_ptr().cast::<u8>();
+
+    let allocator = Kernel {
+        ptr,
+        slab_name: T::NAME,
+        size: mem::size_of::<T>(),
+    };
+
+    unsafe { SlabBox::from_raw_in(data.as_ptr(), allocator) }
 }
 
 ///Allocate virtual memory regardless of physical layout
@@ -446,12 +424,12 @@ pub fn virtual_alloc(size: usize, _flags: MemoryRegionFlag) -> VirtualAddress {
         .expect("Failed to allocate virtual memory") as VirtualAddress
 }
 
-pub fn virtual_dealloc(_offset: VirtualAddress) {
-    todo!()
+pub fn virtual_dealloc(offset: VirtualAddress, size: usize) {
+    SLAB_ALLOCATOR.get().virtual_dealloc(offset, size);
 }
 
 #[must_use]
-pub fn physical_alloc(_bytes: usize) -> Result<*mut u8, OsAllocationError> {
+pub fn physical_alloc(_bytes: usize) -> Result<*mut u8, AllocError> {
     todo!()
 }
 
@@ -483,7 +461,7 @@ pub unsafe fn switch_to_kernel() {
     marker.load();
 }
 
-pub fn alloc_proc() -> Result<ProcessState, OsAllocationError> {
+pub fn alloc_proc() -> Result<ProcessState, AllocError> {
     let _entries =
         physical_alloc(TABLE_ENTRIES_COUNT * mem::size_of::<DirEntry>())?;
     // let table = RefTable::with_default_values(entries.as_mut(), TABLE_ENTRIES_COUNT);
@@ -659,8 +637,26 @@ static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> =
 static SLAB_ALLOCATOR: UnsafeLazyCell<SystemAllocator> =
     UnsafeLazyCell::empty();
 
+pub struct VirtualAllocator;
 #[global_allocator]
-static KERNEL_ALLOCATOR: Kernel = Kernel;
+static KERNEL_ALLOCATOR: VirtualAllocator = VirtualAllocator;
+
+unsafe impl GlobalAlloc for VirtualAllocator {
+    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+        let offset = virtual_alloc(
+            layout.size(),
+            MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
+        );
+
+        offset as *mut u8
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
+        let pages_count = Page::upper_bound(layout.size());
+
+        virtual_dealloc(ptr as VirtualAddress, pages_count);
+    }
+}
 
 static KERNEL_MARKER: SpinLockLazyCell<PageMarker<'static>> =
     SpinLockLazyCell::empty();

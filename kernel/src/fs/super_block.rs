@@ -9,7 +9,7 @@ use kernel_types::{
     drivers::{DeviceId, DriverId},
 };
 
-use crate::memory::{slab_alloc, Kernel, SlabBox};
+use crate::memory::{self, slab_alloc, SlabBox};
 
 use super::{File, FileSystemKind, IndexNode, MountPoint};
 
@@ -61,6 +61,11 @@ pub struct SuperBlock {
     pub file_system: Arc<FileSystem>,
 }
 
+impl crate::memory::Slab for SuperBlock {
+    const NAME: &str = "super_ops";
+}
+
+
 impl SuperBlock {
     pub fn new_boxed(
         file_system: Arc<FileSystem>,
@@ -95,7 +100,7 @@ impl BoxedNode for SuperBlock {
     fn into_boxed(
         node: &mut <SuperBlock as kernel_types::collections::TinyListNodeData>::Item,
     ) -> Self::Target {
-        let super_block = unsafe { SlabBox::from_raw_in(node, Kernel) };
+        let super_block = memory::into_boxed(node.into());
 
         Self::Target { super_block }
     }

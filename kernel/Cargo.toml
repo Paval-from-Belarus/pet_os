@@ -31,6 +31,7 @@ heapless = { workspace = true }
 log = { workspace = true }
 elf = { version = "0.7.4", default-features = false, features = [] }
 bitflags = "2.9.0"
+bitvec = { git = "https://github.com/ferrilab/ferrilab", default-features = false, features = ["atomic"] }
 ##generic-array = { version = "1.0.0", features = ["const-default"]}
 
 #failure = { version = "0.1", features = ["failure_derive"], default-features = false }

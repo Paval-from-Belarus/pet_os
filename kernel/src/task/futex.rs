@@ -9,7 +9,7 @@ use core::{
 use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
 
 use crate::{
-    memory::{self, Slab},
+    memory::{self, Slab, SlabBox},
     object,
 };
 
@@ -25,16 +25,14 @@ impl Slab for FutexInner {
 
 impl Futex {
     pub fn new(capacity: usize) -> Self {
-        let raw_futex = memory::slab_alloc_old::<FutexInner>(
-            memory::AllocationStrategy::Kernel,
-        )
-        .expect("Failed to alloc futex");
-        let futex = raw_futex.write(FutexInner {
+        let futex = memory::slab_alloc(FutexInner {
             count: AtomicUsize::new(0),
             max_count: capacity,
             waiting: LinkedList::empty(),
-        });
-        let inner = UnsafeCell::new(NonNull::from(futex));
+        })
+        .unwrap();
+
+        let inner = UnsafeCell::new(NonNull::from(SlabBox::leak(futex)));
         Self { inner }
     }
 

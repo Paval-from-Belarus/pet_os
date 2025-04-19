@@ -271,7 +271,6 @@ impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
         (*other_last).next = NonNull::new(self.first).unwrap();
 
         self.first = other_first;
-        // self.last = 123;
     }
 
     pub fn remove_first(&mut self) -> Option<&'a mut ListNode<T>> {

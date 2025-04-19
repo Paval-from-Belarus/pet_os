@@ -10,9 +10,9 @@ use kernel_types::declare_constants;
 use crate::log;
 use crate::memory::allocators::physical::page::BuddyPage;
 use crate::memory::paging::{BootAllocator, MemoryKind, PageMarkerError};
-use crate::memory::OsAllocationError::NoMemory;
+use crate::memory::AllocError::NoMemory;
 use crate::memory::{
-    OsAllocationError, Page, PhysicalAddress, ToPhysicalAddress,
+    AllocError, Page, PhysicalAddress, ToPhysicalAddress,
     VirtualAddress, MEMORY_MAP_SIZE,
 };
 
@@ -234,7 +234,7 @@ impl PhysicalAllocator {
     pub fn alloc_zeroed_pages(
         &'static self,
         pages_count: usize,
-    ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+    ) -> Result<LinkedList<'static, Page>, AllocError> {
         let batch = self.alloc_continuous_pages(pages_count)?;
 
         let mut list = LinkedList::empty();
@@ -250,7 +250,7 @@ impl PhysicalAllocator {
     pub fn alloc_continuous_pages(
         &self,
         count: usize,
-    ) -> Result<BuddyBatch, OsAllocationError> {
+    ) -> Result<BuddyBatch, AllocError> {
         log::debug!("Allocating {count} pages");
 
         let mut index = buddy_index(count);
@@ -268,7 +268,7 @@ impl PhysicalAllocator {
         }
 
         let Some(head) = maybe_head else {
-            return Err(OsAllocationError::NoMemory);
+            return Err(AllocError::NoMemory);
         };
 
         let mut batch = unsafe { BuddyBatch::new(count, head) };
@@ -303,7 +303,7 @@ impl PhysicalAllocator {
     fn alloc_densely(
         &self,
         count: usize,
-    ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+    ) -> Result<LinkedList<'static, Page>, AllocError> {
         assert!(count > 0);
 
         let mut lock = self.buddies.lock();
@@ -337,7 +337,7 @@ impl PhysicalAllocator {
         }
 
         if longest != count {
-            return Err(OsAllocationError::NoMemory);
+            return Err(AllocError::NoMemory);
         }
 
         let head_offset = start_offset.expect("Longest == count");
@@ -384,7 +384,7 @@ impl PhysicalAllocator {
     fn alloc_split(
         &self,
         count: usize,
-    ) -> Result<LinkedList<'static, Page>, OsAllocationError> {
+    ) -> Result<LinkedList<'static, Page>, AllocError> {
         let mut lock = self.buddies.lock();
         let pages = lock.last_mut().unwrap();
         // let mut page_iter = unsafe { pages.leak().iter_mut() };
