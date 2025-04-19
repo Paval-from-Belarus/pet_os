@@ -46,13 +46,6 @@ fn check_elf_format(
         return Err(LoadError::NotSupportedElfFormat);
     }
 
-    if driver_file.ehdr.e_type != elf::abi::ET_REL
-        && driver_file.ehdr.e_type != elf::abi::ET_EXEC
-    {
-        log::debug!("Driver should be relocatable and executable");
-        return Err(LoadError::NotSupportedElfFormat);
-    }
-
     Ok(())
 }
 
@@ -124,6 +117,8 @@ fn elf_realloc(
     let symbol =
         get_symbol(elf_file, symbol_table, entry.r_sym as usize).unwrap();
 
+    log::debug!("Relocating: {symbol} at {}", entry.r_sym);
+
     const R_386_NONE: u32 = 0;
     const R_386_32: u32 = 1;
     const R_386_PC32: u32 = 2;
@@ -151,9 +146,10 @@ fn elf_realloc(
 }
 
 pub fn load_in_memory(elf_data: &[u8]) -> Result<(), LoadError> {
-    let loader = Loader::new(elf_data)?;
-
-    loader.load()?;
+    Ok(())
+    // let loader = Loader::new(elf_data)?;
+    //
+    // loader.load()?;
 
     //
     //     // Find the init function (via entry point or symbol table)
@@ -176,7 +172,6 @@ pub fn load_in_memory(elf_data: &[u8]) -> Result<(), LoadError> {
     //     }
     //
     //     Ok(driver)
-    Ok(())
 }
 
 pub struct Loader<'a> {
@@ -208,7 +203,7 @@ impl<'a> Loader<'a> {
         let mut buffer: Vec<_> =
             FallibleVec::try_with_capacity(elf_bytes.len())?;
 
-        buffer.copy_from_slice(elf_bytes);
+        buffer.extend_from_slice(elf_bytes);
 
         Ok(Self {
             elf_file,

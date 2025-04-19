@@ -11,4 +11,6 @@ rustflags = [
 	"link-arg=-e",
 	"-C",
 	"link-arg=init",
+	"-C",
+	"link-arg=-pie",
 ]
