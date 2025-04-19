@@ -1,7 +1,5 @@
 use kernel_macro::ListNode;
-use kernel_types::collections::{
-    BorrowingLinkedList, ListNode, TinyLinkedList,
-};
+use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
 
 use crate::memory::VirtualAddress;
 
@@ -10,17 +8,31 @@ use super::{slab_entry::SlabEntry, SlabName};
 // use slab entries as child for slab head
 #[derive(ListNode)]
 pub struct SlabHead {
-    pub name: SlabName,
+    pub name: SlabName, //4
     //the list of slab which are full
-    pub full: TinyLinkedList<'static, SlabEntry>,
+    pub full: LinkedList<'static, SlabEntry>, //8
     //the list of slabs which are partially filled (even if all entries are free)
-    pub partial: TinyLinkedList<'static, SlabEntry>,
+    pub partial: LinkedList<'static, SlabEntry>, //8
 
     #[list_pivots]
-    node: ListNode<SlabHead>,
+    node: ListNode<SlabHead>, //8
 }
 
+static_assertions::const_assert!(
+    core::mem::size_of::<SlabHead>().is_power_of_two()
+);
+
 impl SlabHead {
+    pub fn new(name: SlabName) -> Self {
+        Self {
+            name,
+            full: LinkedList::empty(),
+            partial: LinkedList::empty(),
+
+            node: unsafe { ListNode::empty() },
+        }
+    }
+
     pub fn dealloc(&mut self, offset: VirtualAddress) {
         log::debug!("Dealloc {} entry at {offset:X}", self.name);
 
@@ -66,7 +78,7 @@ impl SlabHead {
 
     pub fn extend_with_free_entries(
         &mut self,
-        entries: TinyLinkedList<'static, SlabEntry>,
+        entries: LinkedList<'static, SlabEntry>,
     ) {
         self.partial.splice(entries);
     }

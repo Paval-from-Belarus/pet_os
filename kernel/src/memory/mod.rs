@@ -16,10 +16,11 @@ use kernel_types::{bitflags, declare_constants};
 pub use paging::PagingProperties;
 
 use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
-use crate::memory::allocators::{Alignment, SystemAllocator};
+use crate::memory::allocators::SystemAllocator;
 use crate::memory::paging::{
     BootAllocator, GDTTable, PageMarker, PageMarkerError,
 };
+
 use crate::task::{Task, TaskState};
 
 mod allocators;
@@ -35,6 +36,8 @@ pub use paging::{
     CaptureMemRec, DIRECTORY_ENTRIES_COUNT, DIRECTORY_PAGES_COUNT,
     TABLE_ENTRIES_COUNT,
 };
+
+pub use allocators::Slab;
 
 pub use self::paging::PageDirectory;
 
@@ -117,7 +120,7 @@ pub fn init_kernel_space(
     let slab_allocator = SystemAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
         .expect("Failed to initialize slab allocator");
 
-    SLAB_ALLOCATOR.set(slab_allocator);
+    SYSTEM_ALLOCATOR.set(slab_allocator);
 }
 
 pub fn enable_task_switching(table: &mut GDTTable) {
@@ -367,13 +370,8 @@ unsafe impl Allocator for Kernel {
         _ptr: NonNull<u8>,
         _layout: core::alloc::Layout,
     ) {
-        SLAB_ALLOCATOR.dealloc_slab(self.slab_name, self.ptr);
+        SYSTEM_ALLOCATOR.dealloc_slab(self.slab_name, self.ptr);
     }
-}
-
-pub trait Slab: Sized {
-    const NAME: &str;
-    const ALIGNMENT: Alignment = Alignment::CacheLine;
 }
 
 pub type SlabBox<T> = Box<T, Kernel>;
@@ -383,7 +381,7 @@ pub fn slab_alloc<T: Slab>(value: T) -> Option<SlabBox<T>> {
 
     assert!(size < u16::MAX as usize);
 
-    let layout = SLAB_ALLOCATOR
+    let layout = SYSTEM_ALLOCATOR
         .get()
         .alloc_slab(SlabAlloc {
             name: T::NAME,
@@ -418,14 +416,14 @@ pub fn into_boxed<T: Slab>(data: NonNull<T>) -> SlabBox<T> {
 ///The current implementation is simple slab allocation (it will fail with too huge memory size)
 #[must_use]
 pub fn virtual_alloc(size: usize, _flags: MemoryRegionFlag) -> VirtualAddress {
-    SLAB_ALLOCATOR
+    SYSTEM_ALLOCATOR
         .get()
         .virtual_alloc(size)
         .expect("Failed to allocate virtual memory") as VirtualAddress
 }
 
 pub fn virtual_dealloc(offset: VirtualAddress, size: usize) {
-    SLAB_ALLOCATOR.get().virtual_dealloc(offset, size);
+    SYSTEM_ALLOCATOR.get().virtual_dealloc(offset, size);
 }
 
 #[must_use]
@@ -634,7 +632,7 @@ static mut TASK_STATE: TaskState = TaskState::null();
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> =
     UnsafeLazyCell::empty();
 
-static SLAB_ALLOCATOR: UnsafeLazyCell<SystemAllocator> =
+static SYSTEM_ALLOCATOR: UnsafeLazyCell<SystemAllocator> =
     UnsafeLazyCell::empty();
 
 pub struct VirtualAllocator;
@@ -643,6 +641,16 @@ static KERNEL_ALLOCATOR: VirtualAllocator = VirtualAllocator;
 
 unsafe impl GlobalAlloc for VirtualAllocator {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+        if let Some(slab) = allocators::classify_slab_by_size(layout.size()) {
+            let ptr = SYSTEM_ALLOCATOR
+                .get()
+                .alloc_slab(slab)
+                .expect("Failed to alloc virtual memory as slab");
+
+            return ptr;
+        }
+
+        //huge allocation performed via virtual_alloc
         let offset = virtual_alloc(
             layout.size(),
             MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
@@ -652,9 +660,13 @@ unsafe impl GlobalAlloc for VirtualAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        let pages_count = Page::upper_bound(layout.size());
+        if let Some(slab) = allocators::classify_slab_by_size(layout.size()) {
+            SYSTEM_ALLOCATOR.get().dealloc_slab(slab.name, ptr);
 
-        virtual_dealloc(ptr as VirtualAddress, pages_count);
+            return;
+        }
+
+        virtual_dealloc(ptr as VirtualAddress, layout.size());
     }
 }
 

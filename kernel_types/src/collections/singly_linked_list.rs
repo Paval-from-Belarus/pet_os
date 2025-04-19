@@ -249,6 +249,14 @@ impl<'a, T: TinyListNodeData> TinyLinkedList<'a, T> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.iter().count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.first.is_none()
+    }
+
     pub fn iter(&self) -> ListIterator<'a, T> {
         ListIterator::new(self)
     }

@@ -3,7 +3,7 @@ use core::ptr;
 use bitvec::{order::Lsb0, view::BitView};
 use kernel_macro::ListNode;
 use kernel_types::{
-    collections::{BorrowingLinkedList, LinkedList, TinyListNode},
+    collections::{BorrowingLinkedList, LinkedList, ListNode},
     declare_constants, Zeroed,
 };
 use static_assertions::const_assert;
@@ -14,15 +14,15 @@ use super::SlabSize;
 
 #[derive(Debug, ListNode)]
 pub struct SlabEntry {
-    #[list_pivot]
-    next: TinyListNode<SlabEntry>, //4
+    #[list_pivots]
+    next: ListNode<SlabEntry>, //4
     base_offset: *mut u8, //4
     capacity: usize,      //4
     //the count of memory unit in next pool
     pages: LinkedList<'static, Page>, //8
     object_size: u16,
     heap_mask: u32, //maximal
-    reserved: Zeroed<[u8; 6]>,
+    reserved: Zeroed<[u8; 2]>,
 }
 
 const_assert!(Page::SIZE % core::mem::size_of::<SlabEntry>() == 0);
@@ -47,9 +47,9 @@ declare_constants! {
 
 impl SlabEntry {
     //the size in bytes
-    pub fn new(next: TinyListNode<SlabEntry>, object_size: u16) -> Self {
+    pub fn new(object_size: u16) -> Self {
         Self {
-            next,
+            next: unsafe { ListNode::empty() },
             base_offset: ptr::null_mut(),
             object_size,
             capacity: 0,
@@ -88,7 +88,7 @@ impl SlabEntry {
     }
 
     pub fn take_object(&mut self) -> VirtualAddress {
-        assert!(!self.is_empty());
+        assert!(self.capacity != 0);
 
         let bits = self.heap_mask.view_bits_mut::<Lsb0>();
 
@@ -120,13 +120,15 @@ impl SlabEntry {
     }
 
     pub unsafe fn set(&mut self, offset: *mut u8, pages: &'static mut [Page]) {
-        let capacity = pages.len() * Page::SIZE / self.object_size as usize;
+        //todo: wasting memory for small objects
+        let capacity = (pages.len() * Page::SIZE / self.object_size as usize)
+            .min(MAX_SLAB_CAPACITY);
 
         assert!(capacity <= MAX_SLAB_CAPACITY);
 
         let mut pages_list = LinkedList::empty();
 
-        for page in pages.into_iter() {
+        for page in pages.iter_mut() {
             pages_list.push_front(page.as_node());
         }
 
@@ -139,7 +141,7 @@ impl SlabEntry {
         (self.heap_mask as usize).count_ones() as usize
     }
 
-    pub const fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.heap_mask == 0
     }
 
