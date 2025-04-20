@@ -146,32 +146,11 @@ fn elf_realloc(
 }
 
 pub fn load_in_memory(elf_data: &[u8]) -> Result<(), LoadError> {
-    Ok(())
-    // let loader = Loader::new(elf_data)?;
-    //
-    // loader.load()?;
+    let loader = Loader::new(elf_data)?;
 
-    //
-    //     // Find the init function (via entry point or symbol table)
-    //     let entry_point = header.e_entry as usize;
-    //     if entry_point == 0 {
-    //         return Err(LoaderError::InvalidEntryPoint);
-    //     }
-    //
-    //     // Create driver struct
-    //     let driver = Driver {
-    //         init: unsafe { core::mem::transmute(entry_point) },
-    //     };
-    //
-    //     // Call init
-    //     let result = unsafe { (driver.init)() };
-    //     if result != 0 {
-    //         return Err(LoaderError::DriverError(
-    //             DriverError::InitializationFailed,
-    //         ));
-    //     }
-    //
-    //     Ok(driver)
+    loader.load()?;
+
+    Ok(())
 }
 
 pub struct Loader<'a> {

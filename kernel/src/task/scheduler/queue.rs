@@ -26,14 +26,25 @@ impl TaskQueue {
 
     pub fn push(&mut self, task: &'static mut RunningTask) {
         let priority = task.priority;
-
         let index = priority.into_raw() as usize;
 
         self.tasks[index].push_back(task.as_node());
+
+        log::debug!(
+            "After push new task. Head: {:?}. Priority = {index}",
+            self.tasks[index].first().unwrap()
+        );
     }
 
     pub fn take_next(&mut self) -> Option<&'static mut RunningTask> {
         for tasks in self.tasks.iter_mut().rev() {
+            if !tasks.is_empty() {
+                log::debug!(
+                    "Taking next task from queue. Head: {:?}",
+                    tasks.first().unwrap()
+                );
+            }
+
             let mut iter = tasks.iter_mut();
             if iter.next().is_some() {
                 let task = iter.unlink_watched().unwrap();
@@ -49,6 +60,7 @@ impl TaskQueue {
             let mut iter = tasks.iter();
 
             if let Some(task) = iter.next() {
+                log::debug!("Probing exit. Task: {task:?}");
                 return Some(task);
             }
         }

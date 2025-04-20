@@ -5,7 +5,7 @@ use crate::interrupts::object::InterruptObject;
 use crate::interrupts::{
     IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
 };
-use crate::memory::SlabBox;
+use crate::memory::{SlabBox, VirtualAddress};
 use crate::{
     error_trap, get_eax, get_edx, log_unchecked, memory, naked_trap, set_eax,
     task,
@@ -78,12 +78,11 @@ declare_constants!(
 );
 
 #[no_mangle]
-pub extern "x86-interrupt" fn syscall(frame: InterruptStackFrame) {
+pub extern "x86-interrupt" fn syscall(_frame: InterruptStackFrame) {
     let id: u32 = unsafe { get_eax!() };
     if id == syscall::RESERVED {
-        log::debug!("{frame:?}");
-
         unsafe { set_eax!(CHECK_CODE) };
+
         return;
     }
 
@@ -172,9 +171,18 @@ pub extern "x86-interrupt" fn page_fault(
     error_code: usize,
 ) {
     let fault_code = unsafe { PageFaultError::wrap(error_code) };
+    let access_address: VirtualAddress;
+
+    unsafe {
+        core::arch::asm! {
+            "mov eax, cr2",
+            out("eax") access_address,
+            options(nomem, nostack, preserves_flags)
+        }
+    }
 
     log_unchecked!(
-        "Page Fault: {error_code} at IP={:X} CS={:X}",
+        "Page Fault ({access_address:X}): {error_code} at IP={:X} CS={:X}\n",
         frame.ip,
         frame.cs
     );

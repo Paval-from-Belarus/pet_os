@@ -64,6 +64,7 @@ impl TaskScheduler {
             log::debug!("Pushing idle task");
             self.idle_tasks.push_back(task);
         } else {
+            log::debug!("Pushing task#{}", task.id);
             self.delayed.push(task);
         }
     }
@@ -186,6 +187,8 @@ impl TaskScheduler {
                 log::debug!("No more tasks");
             }
         }
+
+        log::debug!("On tick end");
     }
 
     /// terminate the current task by

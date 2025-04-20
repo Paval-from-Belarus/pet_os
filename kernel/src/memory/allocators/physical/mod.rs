@@ -12,8 +12,8 @@ use crate::memory::allocators::physical::page::BuddyPage;
 use crate::memory::paging::{BootAllocator, MemoryKind, PageMarkerError};
 use crate::memory::AllocError::NoMemory;
 use crate::memory::{
-    AllocError, Page, PhysicalAddress, ToPhysicalAddress,
-    VirtualAddress, MEMORY_MAP_SIZE,
+    AllocError, Page, PhysicalAddress, ToPhysicalAddress, VirtualAddress,
+    MEMORY_MAP_SIZE,
 };
 
 pub use buddy::*;
@@ -236,6 +236,8 @@ impl PhysicalAllocator {
         pages_count: usize,
     ) -> Result<LinkedList<'static, Page>, AllocError> {
         let batch = self.alloc_continuous_pages(pages_count)?;
+
+        assert_eq!(batch.len(), pages_count);
 
         let mut list = LinkedList::empty();
 

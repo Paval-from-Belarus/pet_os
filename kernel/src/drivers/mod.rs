@@ -160,9 +160,9 @@ pub fn init() {
         let elf_data =
             unsafe { core::slice::from_raw_parts(driver.offset, driver.len) };
 
-        let _ = loader::load_in_memory(elf_data).inspect_err(|cause| {
-            log::warn!("Failed to load driver: {cause}");
-        });
+        // let _ = loader::load_in_memory(elf_data).inspect_err(|cause| {
+        //     log::warn!("Failed to load driver: {cause}");
+        // });
     }
 
     disk::init();

@@ -6,7 +6,7 @@ use crate::memory::VirtualAddress;
 use super::{slab_entry::SlabEntry, SlabName};
 
 // use slab entries as child for slab head
-#[derive(ListNode)]
+#[derive(Debug, ListNode)]
 pub struct SlabHead {
     pub name: SlabName, //4
     //the list of slab which are full
@@ -80,6 +80,8 @@ impl SlabHead {
         &mut self,
         entries: LinkedList<'static, SlabEntry>,
     ) {
+        assert!(entries.iter().all(|entry| entry.is_empty()));
+
         self.partial.splice(entries);
     }
 }

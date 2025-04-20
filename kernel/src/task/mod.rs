@@ -215,6 +215,8 @@ pub fn new_task(
 }
 
 pub fn submit_task(task: &'static mut RunningTask) {
+    log::debug!("Submitting task#{}", task.id);
+
     SCHEDULER.access_lock().push_task(task);
 }
 

@@ -454,7 +454,6 @@ mod tests {
         let _ = number_iter.by_ref().take(2).count();
         assert_eq!(number_iter.next(), Some(&mut 3));
         // assert_eq!(iter.next(), Some(&mut 6));
-        std::println!("Hello");
         // assert_eq!(skipped, 1);
         assert_eq!(number_iter.next(), Some(&mut 4));
     }

@@ -390,6 +390,8 @@ pub fn slab_alloc<T: Slab>(value: T) -> Option<SlabBox<T>> {
         })
         .ok()?;
 
+    log::debug!("Slab is allocated at {:?} with size = {size}", layout);
+
     let allocator = Kernel {
         size,
         ptr: layout,

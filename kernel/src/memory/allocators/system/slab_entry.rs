@@ -15,7 +15,7 @@ use super::SlabSize;
 #[derive(Debug, ListNode)]
 pub struct SlabEntry {
     #[list_pivots]
-    next: ListNode<SlabEntry>, //4
+    next: ListNode<SlabEntry>, //8
     base_offset: *mut u8, //4
     capacity: usize,      //4
     //the count of memory unit in next pool
@@ -46,12 +46,11 @@ declare_constants! {
 }
 
 impl SlabEntry {
-    //the size in bytes
-    pub fn new(object_size: u16) -> Self {
+    pub fn new_uninit() -> Self {
         Self {
             next: unsafe { ListNode::empty() },
             base_offset: ptr::null_mut(),
-            object_size,
+            object_size: 0,
             capacity: 0,
             heap_mask: 0,
             pages: LinkedList::empty(),
@@ -101,6 +100,8 @@ impl SlabEntry {
 
         bits.set(object_index, true);
 
+        log::debug!("Object size = {}", self.object_size);
+
         let take_offset = unsafe {
             self.base_offset
                 .add(object_index * self.object_size as usize)
@@ -119,7 +120,15 @@ impl SlabEntry {
         bits.set(index, false);
     }
 
-    pub unsafe fn set(&mut self, offset: *mut u8, pages: &'static mut [Page]) {
+    pub unsafe fn set(
+        &mut self,
+        object_size: u16,
+        offset: *mut u8,
+        pages: &'static mut [Page],
+    ) {
+        self.base_offset = offset;
+        self.object_size = object_size;
+
         //todo: wasting memory for small objects
         let capacity = (pages.len() * Page::SIZE / self.object_size as usize)
             .min(MAX_SLAB_CAPACITY);
@@ -132,13 +141,12 @@ impl SlabEntry {
             pages_list.push_front(page.as_node());
         }
 
-        self.base_offset = offset;
         self.capacity = capacity;
         self.pages = pages_list;
     }
 
     pub fn available(&self) -> usize {
-        (self.heap_mask as usize).count_ones() as usize
+        (self.heap_mask as usize).count_zeros() as usize
     }
 
     pub fn is_empty(&self) -> bool {
