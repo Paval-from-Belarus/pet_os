@@ -4,8 +4,8 @@ use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
 
 use super::{
-    slab_alloc, virtual_alloc, virtual_dealloc, MemoryRegionFlag, Page, Slab,
-    SlabBox, VirtualAddress,
+    slab_alloc, virtual_alloc, virtual_dealloc, Page, Slab, SlabBox,
+    VirtualAddress,
 };
 
 pub struct MemoryRegionBox {
@@ -22,6 +22,19 @@ pub struct MemoryRegion {
     pub flag: MemoryRegionFlag,
     //mapped_file: MemoryMappedFile,
     //file_offset: usize
+}
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy)]
+    pub struct MemoryRegionFlag: u8 {
+        const READ = 0x01;
+        const WRITE = 0x02;
+        const EXEC = 0x04;
+
+        const SHAREING = 0x08;
+        const SEQ_READ = 0x10;
+        const RAND_READ = 0x20;
+    }
 }
 
 impl MemoryRegion {

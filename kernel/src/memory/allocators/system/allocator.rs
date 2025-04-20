@@ -156,8 +156,6 @@ impl SlabAllocator {
         };
 
         for entry in entries.iter_mut() {
-            log::debug!("Configuring entry. Object_size = {object_size}");
-
             let entry_pages = self
                 .allocator
                 .alloc_continuous_pages(slab_size_in_pages)

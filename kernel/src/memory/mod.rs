@@ -1,17 +1,14 @@
 use core::alloc::{Allocator, GlobalAlloc};
-use core::ops::Range;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{mem, ptr};
 
 use alloc::boxed::Box;
 use allocators::SlabAlloc;
-use static_assertions::assert_eq_size;
 
 pub use allocators::PhysicalAllocator;
 pub use arch::*;
 use kernel_macro::ListNode;
-use kernel_types::collections::{LinkedList, ListNode, TinyLinkedList};
+use kernel_types::collections::ListNode;
 use kernel_types::{bitflags, declare_constants};
 pub use paging::PagingProperties;
 
@@ -25,10 +22,13 @@ use crate::task::{Task, TaskState};
 
 mod allocators;
 mod arch;
+mod page;
 mod paging;
 mod process;
 mod region;
 
+pub use page::*;
+pub use process::*;
 pub use region::*;
 
 pub use paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
@@ -172,28 +172,6 @@ bitflags!(
     EMPTY = 0b0
 );
 
-bitflags!(
-    pub PageFlag(usize),
-    ACTIVE = 0x01,
-    DIRTY = 0x02,
-    ERROR = 0x04,
-    LOCKED = 0x08,
-    UNUSED = 0x10
-);
-
-bitflags::bitflags! {
-    #[derive(Clone, Copy)]
-    pub struct MemoryRegionFlag: u8 {
-        const READ = 0x01;
-        const WRITE = 0x02;
-        const EXEC = 0x04;
-
-        const SHAREING = 0x08;
-        const SEQ_READ = 0x10;
-        const RAND_READ = 0x20;
-    }
-}
-
 pub fn kernel_binary_size() -> usize {
     unsafe { &KERNEL_SIZE as *const usize as VirtualAddress }
 }
@@ -224,88 +202,6 @@ pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
 pub type DeallocHandler = fn(PhysicalAddress);
 pub type ThreadRoutine = extern "C" fn();
 
-///Alternative to linux mm_struct
-pub struct ProcessState {
-    ///offset of data segment
-    ///It's redundant to store any information about last page ― it's can be easily calculated from heap_offset as:<br>
-    ///<code> heap_offset % Page::SIZE </code> <br>
-    ///index of last touched page in PageLayout Table
-    //I believe that heap_offset should be aligned to Page::SIZE. Practically, space will be access
-    //offset of stack memory -> used for erasing stack memory
-    stack_offset: VirtualAddress,
-    code_range: Range<VirtualAddress>,
-    data_range: Range<VirtualAddress>,
-    heap_range: Range<VirtualAddress>,
-    last_page_index: usize,
-    //Write | NoPrivilege
-    marker: PageMarker<'static>,
-    regions: TinyLinkedList<'static, MemoryRegion>,
-    last_touched_region: Option<&'static MemoryRegion>,
-}
-
-impl ProcessState {
-    pub fn find_region(
-        &mut self,
-        address: VirtualAddress,
-    ) -> Option<&'static MemoryRegion> {
-        if let Some(last_region) = self.last_touched_region {
-            if last_region.range.contains(&address) {
-                return Some(last_region);
-            }
-        }
-
-        self.regions
-            .iter()
-            .find(|region| region.range.contains(&address))
-            .map(|region| region as &MemoryRegion)
-    }
-    pub fn find_unmapped_region(
-        &mut self,
-        _offset: VirtualAddress,
-        _length: usize,
-        _flags: MemoryRegionFlag,
-    ) -> Option<VirtualAddress> {
-        None
-    }
-    pub fn add_region(&mut self, _region: NonNull<MemoryRegion>) {}
-    pub fn find_prev_region(
-        &mut self,
-        address: VirtualAddress,
-    ) -> Option<&'static MemoryRegion> {
-        let mut prev_region = None;
-        for region in self.regions.iter() {
-            if region.range.contains(&address) {
-                break;
-            }
-            //update prev region each time while region is not found
-            if region.range.end < address {
-                prev_region = Some(region);
-            }
-        }
-        prev_region.map(|node| node as &MemoryRegion)
-    }
-    pub fn find_intersect_region(
-        &mut self,
-        range: Range<VirtualAddress>,
-    ) -> Option<&'static MemoryRegion> {
-        let option_region = self.find_region(range.start);
-        if let Some(region) = option_region
-            && region.range.end < range.end
-        {
-            return Some(region);
-        }
-        None
-    }
-}
-
-pub struct AddressSpace {
-    clean_pages: LinkedList<'static, Page>,
-    dirty_pages: LinkedList<'static, Page>,
-    locked_pages: LinkedList<'static, Page>,
-    total_pages_count: usize,
-    marker: PageMarker<'static>,
-}
-
 #[derive(ListNode)]
 #[repr(C)]
 ///the one represent meor
@@ -319,21 +215,6 @@ pub struct MemoryMappingRegion {
     page_count: usize,
 }
 
-#[derive(Debug, ListNode)]
-#[repr(C)]
-pub struct Page {
-    #[list_pivots]
-    node: ListNode<Page>,
-    pub flags: PageFlag,
-    //it's easy to use in calculation, in future should be replace by macro
-    //when zero page should be free
-    ref_count: AtomicUsize,
-}
-
-//wrapper for page to control uses
-pub struct PageOwner {}
-
-assert_eq_size!(Page, [u8; 16]);
 pub enum AllocationStrategy {
     #[doc = "Allocation for Kernel space when page cannot be swapped"]
     NoSwap,
@@ -389,8 +270,6 @@ pub fn slab_alloc<T: Slab>(value: T) -> Option<SlabBox<T>> {
             alignment: T::ALIGNMENT,
         })
         .ok()?;
-
-    log::debug!("Slab is allocated at {:?} with size = {size}", layout);
 
     let allocator = Kernel {
         size,
@@ -461,23 +340,16 @@ pub unsafe fn switch_to_kernel() {
     marker.load();
 }
 
-pub fn alloc_proc() -> Result<ProcessState, AllocError> {
-    let _entries =
-        physical_alloc(TABLE_ENTRIES_COUNT * mem::size_of::<DirEntry>())?;
-    // let table = RefTable::with_default_values(entries.as_mut(), TABLE_ENTRIES_COUNT);
-    // let marker = KERNEL_MARKER.get();
-    // let kernel_region = get_kernel_mapping_region();
-    todo!()
-}
-
-const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
+pub const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
     MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::PRESENT);
+
 //duplicates in kernel.ld script
 declare_constants!(
     pub usize,
     MAX_PHYSICAL_MEMORY_SIZE = 32 * 1024 * 1024;//bytes
     MEMORY_MAP_SIZE = MAX_PHYSICAL_MEMORY_SIZE / Page::SIZE, "the count of pages in memory map array";
 );
+
 #[repr(transparent)]
 pub struct MemoryMap {
     pages: [Page; MEMORY_MAP_SIZE],
@@ -519,96 +391,6 @@ pub fn user_commit(
     _region: MemoryMappingRegion,
 ) -> Result<(), PageMarkerError> {
     todo!()
-}
-
-impl Page {
-    declare_constants! {
-        pub usize,
-        SHIFT = 12, "the offset of page";
-        SIZE = 1 << Page::SHIFT, "the size in bytes of page";
-    }
-
-    pub const fn new() -> Self {
-        Self {
-            flags: unsafe { PageFlag::wrap(PageFlag::UNUSED) },
-            ref_count: AtomicUsize::new(0),
-            node: unsafe { ListNode::empty() },
-        }
-    }
-
-    pub fn take(offset: PhysicalAddress) -> &'static Page {
-        let page = unsafe { Self::take_unchecked(offset) };
-
-        page.acquire();
-
-        page
-    }
-
-    pub unsafe fn take_unchecked(offset: PhysicalAddress) -> &'static mut Page {
-        let page_index: usize = offset >> Page::SHIFT;
-        let page_offset = unsafe { mem_map_offset().add(page_index) };
-        unsafe { &mut *page_offset }
-    }
-
-    ///increment reference counter in page
-    pub fn acquire(&self) {
-        let _old_value = self.ref_count.fetch_add(1, Ordering::SeqCst);
-    }
-
-    pub fn release(&self) {
-        let old_value = self.ref_count.fetch_sub(1, Ordering::SeqCst);
-        if old_value == 0 {
-            panic!("The free page releases again");
-        }
-    }
-
-    /// the count of references to this page
-    pub fn use_count(&self) -> usize {
-        self.ref_count.load(Ordering::Acquire)
-    }
-
-    pub fn is_used(&self) -> bool {
-        self.ref_count.load(Ordering::SeqCst) > 0
-    }
-    //utility methods
-    pub const fn upper_bound(byte_size: usize) -> usize {
-        byte_size.div_ceil(Page::SIZE)
-    }
-
-    pub const fn lower_bound(byte_size: usize) -> usize {
-        byte_size / Page::SIZE
-    }
-
-    pub unsafe fn as_slice(&mut self, count: usize) -> &'static [Page] {
-        core::slice::from_raw_parts(self, count)
-    }
-
-    pub unsafe fn as_slice_mut(&mut self, count: usize) -> &'static mut [Page] {
-        core::slice::from_raw_parts_mut(self, count)
-    }
-
-    /// Page index in global MEMORY_MAP
-    pub unsafe fn index(&self) -> usize {
-        let offset = (self as *const Page as VirtualAddress)
-            - (mem_map_offset() as VirtualAddress);
-
-        offset / mem::size_of::<Page>()
-    }
-}
-
-impl Default for Page {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
-impl MemoryMap {
-    pub const fn empty() -> Self {
-        const NODE: Page = Page::new();
-        let pages = [NODE; MEMORY_MAP_SIZE];
-        Self { pages }
-    }
 }
 
 // pub fn get_kernel_mapping_region() -> &'static MemoryMappingRegion {
@@ -676,7 +458,9 @@ static KERNEL_MARKER: SpinLockLazyCell<PageMarker<'static>> =
     SpinLockLazyCell::empty();
 
 #[cfg(test)]
-static mut MEMORY_MAP: MemoryMap = MemoryMap::empty();
+static mut MEMORY_MAP: MemoryMap = MemoryMap {
+    pages: [const { Page::new() }; MEMORY_MAP_SIZE],
+};
 
 #[cfg(test)]
 mod tests {

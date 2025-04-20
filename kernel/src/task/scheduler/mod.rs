@@ -11,7 +11,7 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::{mem, ptr};
 
 use kernel_types::collections::{
-    BorrowingLinkedList, HashTable, LinkedList, ListNode, TinyLinkedList,
+    BorrowingLinkedList, HashTable, LinkedList, ListNode,
 };
 use queue::TaskQueue;
 
