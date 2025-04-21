@@ -72,7 +72,7 @@ impl CallbackInfo {
             callback,
             driver: Handle::KERNEL,
             context: ptr::null_mut(),
-            next: unsafe { ListNode::empty() },
+            next: ListNode::empty(),
         }
     }
 
@@ -356,7 +356,9 @@ const fn suppress_irq(
 
 /// set custom interrupt handler
 pub fn set(index: usize, descriptor: InterruptGate) -> InterruptGate {
-    unsafe { INTERRUPT_TABLE.set(index, descriptor) }
+    let table = &raw mut INTERRUPT_TABLE;
+
+    unsafe { (*table).set(index, descriptor) }
 }
 
 #[derive(Debug)]

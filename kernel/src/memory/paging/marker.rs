@@ -26,17 +26,18 @@ pub struct PageMarker<'a> {
 
 impl PageMarker<'static> {
     ///load underlying directory table to cpu
+    #[inline(always)]
     pub fn load(&self) {
-        // let directory: PhysicalAddress =
-        //     (&raw const self.directory as VirtualAddress).as_physical();
-        //
-        // unsafe {
-        //     asm! {
-        //         "mov cr3, eax",
-        //         in("eax") directory,
-        //         options(nostack, preserves_flags, nomem)
-        //     }
-        // }
+        let directory: PhysicalAddress =
+            (self.directory.as_ptr() as VirtualAddress).as_physical();
+
+        unsafe {
+            asm! {
+                "mov cr3, eax",
+                in("eax") directory,
+                options(nostack, preserves_flags, nomem)
+            }
+        }
     }
 }
 

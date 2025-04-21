@@ -48,7 +48,7 @@ declare_constants! {
 impl SlabEntry {
     pub fn new_uninit() -> Self {
         Self {
-            next: unsafe { ListNode::empty() },
+            next: ListNode::empty(),
             base_offset: ptr::null_mut(),
             object_size: 0,
             capacity: 0,

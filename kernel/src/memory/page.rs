@@ -45,7 +45,7 @@ impl Page {
         Self {
             flags: PageFlag::UNUSED,
             ref_count: AtomicUsize::new(0),
-            node: unsafe { ListNode::empty() },
+            node: ListNode::empty(),
         }
     }
 

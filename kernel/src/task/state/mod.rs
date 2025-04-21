@@ -7,7 +7,7 @@ use kernel_types::collections::{HashData, ListNode};
 use static_assertions::const_assert;
 
 use crate::{
-    memory::{slab_alloc, Page, ProcessState, Slab, VirtualAddress},
+    memory::{slab_alloc, Page, ProcessStateLock, Slab, VirtualAddress},
     object,
 };
 
@@ -45,7 +45,7 @@ pub struct Task {
     //the value should be greater then 0
     pub start_time: usize,
     //the process context for thread
-    pub state: Option<&'static mut ProcessState>,
+    pub state: Option<&'static ProcessStateLock>,
     pub file_system: NonNull<TaskFileSystem>,
 
     pub metrics: TaskMetrics,
@@ -105,7 +105,7 @@ impl Task {
 
         RunningTaskBox {
             node: slab_alloc(RunningTask {
-                node: unsafe { ListNode::empty() },
+                node: ListNode::empty(),
                 task,
             })
             .unwrap(),

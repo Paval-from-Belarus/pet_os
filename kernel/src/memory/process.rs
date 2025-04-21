@@ -26,6 +26,8 @@ pub fn new_proccess_id() -> Option<ProcessId> {
     next_id.into()
 }
 
+pub type ProcessStateLock = spin::Mutex<ProcessState>;
+
 ///Alternative to linux mm_struct
 pub struct ProcessState {
     pub id: ProcessId,

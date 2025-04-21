@@ -384,13 +384,16 @@ pub fn physical_dealloc(_offset: *mut u8) {
 /// Set ss:esp in TSS
 /// This stack will be used during
 /// user-space to kernel-space switching
+#[no_mangle]
 pub unsafe fn switch_to_task(task: &mut Task) {
-    let stack = task.context().esp;
+    let stack = task.context().esp as VirtualAddress;
 
-    unsafe { TASK_STATE.set_kernel_stack(stack as usize) };
+    let task_state = &raw mut TASK_STATE;
+    unsafe { (*task_state).set_kernel_stack(stack) };
 
-    if task.state.is_some() {
-        unreachable!("Process functionality is not implemented")
+    if let Some(state_lock) = task.state.as_ref() {
+        let state = state_lock.try_lock().unwrap();
+        state.marker.load();
     } else {
         KERNEL_MARKER.get().load();
     };

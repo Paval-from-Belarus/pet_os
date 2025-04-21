@@ -29,7 +29,7 @@ impl SlabHead {
             full: LinkedList::empty(),
             partial: LinkedList::empty(),
 
-            node: unsafe { ListNode::empty() },
+            node: ListNode::empty(),
         }
     }
 
