@@ -72,6 +72,9 @@ impl<'a> PageMarker<'a> {
         Ok(marker)
     }
 
+    pub fn directory(&self) -> &PageDirectory<'a> {
+        self.directory
+    }
     pub fn new(
         directory: &'a mut PageDirectory<'a>,
         alloc_handler: AllocHandler,

@@ -217,10 +217,14 @@ pub fn kernel_regions() -> LinkedList<'static, MemoryRegion> {
     todo!()
 }
 
-///performs mapping of physical memory of IO device to virtual space
-pub fn io_remap(_offset: PhysicalAddress, _size: usize) -> VirtualAddress {
-    //create new MemoryRegion and add to corresponding ProcessHandle
-    todo!()
+///performs mapping of physical memory to virtual space (in kernel space only)
+pub fn kernel_map(pages: &[Page]) -> Result<*mut u8, AllocError> {
+    SYSTEM_ALLOCATOR.get().map_pages(pages)
+}
+
+//unmap previously mapped physical pages
+pub fn kernel_unmap(_pages: &[Page], ptr: *mut u8) {
+    SYSTEM_ALLOCATOR.get().unmap_pages(ptr, Page::SIZE);
 }
 
 pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
@@ -356,6 +360,11 @@ pub fn new_page_marker() -> Result<PageMarker<'static>, AllocError> {
 
     let directory = unsafe { &mut *raw_directory };
 
+    //essential data structures will be copied
+    //but we must ensure integrity kernel space
+    //in all processes
+    directory.copy_from_slice(KERNEL_MARKER.get().directory());
+
     Ok(PageMarker::new(
         directory,
         alloc_physical_pages,
@@ -450,25 +459,6 @@ pub fn kernel_commit(
     marker.map_kernel_range(&region)
 }
 
-pub fn user_commit(
-    _region: MemoryMappingRegion,
-) -> Result<(), PageMarkerError> {
-    todo!()
-}
-
-// pub fn get_kernel_mapping_region() -> &'static MemoryMappingRegion {
-//     // let node = unsafe { ListNode::wrap_data(KERNEL_MAPPING) };
-//     // unsafe { node.as_head() }
-//     &KERNEL_MAPPING
-// }
-//
-// static KERNEL_MAPPING: MemoryMappingRegion = MemoryMappingRegion {
-//     flags: MemoryMappingFlag::wrap(MemoryMappingFlag::PRESENT | MemoryMappingFlag::WRITABLE),
-//     virtual_offset: 0, //unsafe { KERNEL_VIRTUAL_OFFSET },
-//     physical_offset: 0, //unsafe { KERNEL_PHYSICAL_OFFSET },
-//     page_count: 0, //unsafe { VirtualAddress::MAX - KERNEL_VIRTUAL_OFFSET },
-// };
-
 #[cfg(not(test))]
 extern "C" {
     static mut MEMORY_MAP: MemoryMap;
@@ -498,12 +488,10 @@ unsafe impl GlobalAlloc for VirtualAllocator {
         }
 
         //huge allocation performed via virtual_alloc
-        let offset = virtual_alloc(
+        virtual_alloc(
             layout.size(),
             MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
-        );
-
-        offset as *mut u8
+        ) as *mut u8
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {

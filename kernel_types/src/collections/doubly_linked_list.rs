@@ -5,6 +5,30 @@ use core::ptr::NonNull;
 
 use crate::collections::{BorrowingLinkedList, ListNodeData};
 
+#[macro_export]
+macro_rules! collect_list {
+    ($($source: expr $(,)?)+) => {{
+        let mut list = $crate::collections::LinkedList::empty();
+
+        $(
+            let mut source = $source;
+            let mut iter = source.iter_mut();
+
+            loop {
+                if iter.next().is_none() {
+                    break;
+                }
+
+                let node = iter.unlink_watched().unwrap();
+                list.push_back(node);
+            }
+
+        )+
+
+        list
+    }};
+}
+
 #[repr(C)]
 pub struct ListNode<T: Sized + ListNodeData> {
     next: NonNull<ListNode<T>>,

@@ -33,7 +33,6 @@ rept IRQ_LINES_COUNT index: 0
         mov esp, eax
 
         popa
-
         mov esp, dword [esp - 4 * 5] ; use value in stack frame to restore esp
 
         pop gs fs es ds
@@ -83,3 +82,28 @@ switch_context:
     pop gs fs es ds
 
     iret
+
+public start_process
+;Input:
+;eax -> entry point
+;low 16 bits of edx (dx) -> data segment (as ss)
+;high 16 bits of edx -> code segment
+;ecx -> esp to switch
+;
+start_process:
+    mov es, dx
+    mov ds, dx
+    mov fs, dx
+    mov gs, dx
+
+    push dx ;ss
+    shr edx, 16 ;dx holds cs
+
+    push ecx
+    push 200h; eflags with enabled interrupts
+    
+    push dx
+    push eax
+
+    iret
+

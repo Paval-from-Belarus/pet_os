@@ -49,6 +49,19 @@ impl SlabAllocator {
         }
     }
 
+    pub fn map_page(&mut self, pages: &[Page]) -> Result<*mut u8, AllocError> {
+        assert!(pages.len() > 0);
+
+        let heap_offset = self.move_heap_offset(pages.len());
+        let memory_offset = pages.first().unwrap().as_physical();
+
+        Ok(commit(memory_offset, heap_offset, pages.len()))
+    }
+
+    pub fn unmap_page(&mut self, ptr: *mut u8, pages_count: usize) {
+        self.restore_heap(ptr as VirtualAddress, pages_count);
+    }
+
     pub fn virtual_alloc(
         &mut self,
         pages_count: usize,
@@ -216,6 +229,13 @@ impl SlabAllocator {
         self.heap_offset += Page::SIZE * pages_count;
 
         old_heap_offset
+    }
+
+    fn restore_heap(
+        &mut self,
+        _heap_offset: VirtualAddress,
+        _pages_count: usize,
+    ) {
     }
 }
 

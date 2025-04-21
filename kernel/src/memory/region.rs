@@ -13,6 +13,7 @@ pub struct MemoryRegionBox {
     region: SlabBox<MemoryRegion>,
 }
 
+/// The region of continous virtual memory
 #[derive(ListNode)]
 #[repr(C)]
 pub struct MemoryRegion {
@@ -41,6 +42,7 @@ bitflags::bitflags! {
 }
 
 impl MemoryRegion {
+    /// Create new region with no underlying physical memory
     pub fn new_boxed(
         range: Range<VirtualAddress>,
         flag: MemoryRegionFlag,

@@ -49,10 +49,10 @@ impl Page {
         }
     }
 
-    pub fn take(offset: PhysicalAddress) -> &'static Page {
+    pub unsafe fn take(offset: PhysicalAddress) -> &'static Page {
         let page = unsafe { Self::take_unchecked(offset) };
 
-        page.acquire();
+        // page.acquire();
 
         page
     }
@@ -92,7 +92,7 @@ impl Page {
         byte_size / Page::SIZE
     }
 
-    pub unsafe fn as_slice(&mut self, count: usize) -> &'static [Page] {
+    pub unsafe fn as_slice(&self, count: usize) -> &'static [Page] {
         core::slice::from_raw_parts(self, count)
     }
 
