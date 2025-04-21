@@ -264,7 +264,7 @@ impl<'a> Loader<'a> {
                         MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
                     );
 
-                    header.sh_offset = (region.as_range_ptr() as usize
+                    header.sh_offset = (region.mem_ptr() as usize
                         - self.buffer.as_ptr() as usize)
                         as _;
 

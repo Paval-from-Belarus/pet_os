@@ -222,6 +222,7 @@ impl PhysicalAllocator {
     /// Be careful with such method: it should, theoretically, batch page in solid memory region, but, truly, doesn't
     pub fn dealloc_page(&self, page: &'static mut Page) {
         page.release();
+
         if !page.is_used() {
             let mut lock = self.buddies.lock();
             let last_list = lock.last_mut().unwrap();
@@ -241,7 +242,7 @@ impl PhysicalAllocator {
 
         let mut list = LinkedList::empty();
 
-        for page in batch.into_pages() {
+        for page in batch.into_slice() {
             list.push_back(page.as_node());
         }
 
@@ -285,7 +286,7 @@ impl PhysicalAllocator {
 
         assert!(buddy_index <= MAX_UNIT_POWER, "Buddy with too huge power");
 
-        let pages = piece.into_pages();
+        let pages = piece.into_slice();
         pages.iter_mut().for_each(|page| page.release());
 
         let used_pages_count =

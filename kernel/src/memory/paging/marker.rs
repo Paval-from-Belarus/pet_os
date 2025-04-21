@@ -24,6 +24,22 @@ pub struct PageMarker<'a> {
     dealloc_handler: DeallocHandler,
 }
 
+impl PageMarker<'static> {
+    ///load underlying directory table to cpu
+    pub fn load(&self) {
+        // let directory: PhysicalAddress =
+        //     (&raw const self.directory as VirtualAddress).as_physical();
+        //
+        // unsafe {
+        //     asm! {
+        //         "mov cr3, eax",
+        //         in("eax") directory,
+        //         options(nostack, preserves_flags, nomem)
+        //     }
+        // }
+    }
+}
+
 impl<'a> PageMarker<'a> {
     /// build new page marker for memory regions
     pub fn from_regions(
@@ -77,13 +93,6 @@ impl<'a> PageMarker<'a> {
 
     fn dealloc_page(&self, offset: PhysicalAddress) {
         (self.dealloc_handler)(offset)
-    }
-
-    ///load underlying directory table to cpu
-    pub fn load(&self) {
-        unsafe {
-            asm!("", options(nostack));
-        }
     }
 
     fn mark_pages(

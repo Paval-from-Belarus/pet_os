@@ -51,7 +51,7 @@ script = '''
 '''
 
 [tasks.kernel_bin.env]
-STATIC_DRIVERS = "ata fat"
+STATIC_DRIVERS = "ata"
 DRIVERS_OUT = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/drivers"
 
 [tasks.kernel_bin]

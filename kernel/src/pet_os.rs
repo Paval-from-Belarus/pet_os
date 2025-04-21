@@ -41,6 +41,7 @@ mod memory;
 mod common;
 mod object;
 mod task;
+mod user;
 
 #[cfg(not(test))]
 #[panic_handler]

@@ -13,7 +13,7 @@ use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
 use crate::interrupts::{pic, CallbackInfo};
 use crate::memory::{
-    MemoryRegionFlag, Page, SegmentSelector, ThreadRoutine, VirtualAddress,
+    MemoryRegionFlag, Page, SegmentSelector, TaskRoutine, VirtualAddress,
 };
 use crate::task::scheduler::SchedulerLock;
 use crate::{get_eax, memory, object};
@@ -162,7 +162,7 @@ pub struct TaskFileSystem {
 //todo: each task should have stub before running to enable interrupts
 #[inline(never)]
 pub fn new_task(
-    routine: ThreadRoutine,
+    routine: TaskRoutine,
     arg: *mut (),
     priority: TaskPriority,
 ) -> &'static mut RunningTask {

@@ -18,6 +18,7 @@ pub struct Page {
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy)]
+    #[repr(transparent)]
     pub struct PageFlag: usize {
         const ACTIVE = 0x01;
         const DIRTY = 0x02;

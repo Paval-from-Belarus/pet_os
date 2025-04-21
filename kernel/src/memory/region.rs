@@ -1,11 +1,12 @@
 use core::{ops::Range, ptr::NonNull};
 
 use kernel_macro::ListNode;
-use kernel_types::collections::{BoxedNode, ListNode};
+use kernel_types::collections::{
+    BorrowingLinkedList, BoxedNode, LinkedList, ListNode,
+};
 
 use super::{
-    slab_alloc, virtual_alloc, virtual_dealloc, Page, Slab, SlabBox,
-    VirtualAddress,
+    slab_alloc, virtual_alloc, AllocError, Page, Slab, SlabBox, VirtualAddress,
 };
 
 pub struct MemoryRegionBox {
@@ -22,6 +23,7 @@ pub struct MemoryRegion {
     pub flag: MemoryRegionFlag,
     //mapped_file: MemoryMappedFile,
     //file_offset: usize
+    pub pages: LinkedList<'static, Page>,
 }
 
 bitflags::bitflags! {
@@ -31,20 +33,36 @@ bitflags::bitflags! {
         const WRITE = 0x02;
         const EXEC = 0x04;
 
-        const SHAREING = 0x08;
+        const SHARED = 0x08;
+
         const SEQ_READ = 0x10;
         const RAND_READ = 0x20;
     }
 }
 
 impl MemoryRegion {
+    pub fn new_boxed(
+        range: Range<VirtualAddress>,
+        flag: MemoryRegionFlag,
+    ) -> Result<MemoryRegionBox, AllocError> {
+        let region = slab_alloc(Self {
+            node: ListNode::empty(),
+            pages: LinkedList::empty(),
+            flag,
+            range,
+        })?;
+
+        Ok(MemoryRegionBox { region })
+    }
+
     pub fn new_uninit(size: usize, flag: MemoryRegionFlag) -> MemoryRegionBox {
         let offset = virtual_alloc(size, flag);
 
         let region = slab_alloc(Self {
-            node: unsafe { ListNode::empty() },
+            node: ListNode::empty(),
             range: offset..(offset + size as VirtualAddress),
             flag,
+            pages: LinkedList::empty(),
         })
         .unwrap();
 
@@ -55,10 +73,7 @@ impl MemoryRegion {
         let mut region = Self::new_uninit(size, flag);
 
         let bytes = unsafe {
-            core::slice::from_raw_parts_mut(
-                region.as_range_mut_ptr(),
-                region.size(),
-            )
+            core::slice::from_raw_parts_mut(region.mem_mut_ptr(), region.size())
         };
 
         for byte in bytes {
@@ -100,11 +115,11 @@ impl MemoryRegion {
     }
 
     //return the ptr to the memory range
-    pub fn as_range_ptr(&self) -> *const u8 {
+    pub fn mem_ptr(&self) -> *const u8 {
         self.range.start as *const u8
     }
 
-    pub unsafe fn as_range_mut_ptr(&mut self) -> *mut u8 {
+    pub unsafe fn mem_mut_ptr(&mut self) -> *mut u8 {
         self.range.start as *mut u8
     }
 }
@@ -128,11 +143,11 @@ impl core::ops::DerefMut for MemoryRegionBox {
     }
 }
 
-impl Drop for MemoryRegion {
-    fn drop(&mut self) {
-        virtual_dealloc(self.as_range_ptr() as VirtualAddress, self.size());
-    }
-}
+// impl Drop for MemoryRegion {
+//     fn drop(&mut self) {
+//         virtual_dealloc(self.mem_ptr() as VirtualAddress, self.size());
+//     }
+// }
 
 impl Slab for MemoryRegion {
     const NAME: &str = "mem_region";

@@ -8,15 +8,13 @@ use allocators::SlabAlloc;
 pub use allocators::PhysicalAllocator;
 pub use arch::*;
 use kernel_macro::ListNode;
-use kernel_types::collections::ListNode;
-use kernel_types::{bitflags, declare_constants};
+use kernel_types::collections::{LinkedList, ListNode};
+use kernel_types::declare_constants;
 pub use paging::PagingProperties;
 
 use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
 use crate::memory::allocators::SystemAllocator;
-use crate::memory::paging::{
-    BootAllocator, GDTTable, PageMarker, PageMarkerError,
-};
+use crate::memory::paging::{BootAllocator, GDTTable};
 
 use crate::task::{Task, TaskState};
 
@@ -33,8 +31,8 @@ pub use region::*;
 
 pub use paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
 pub use paging::{
-    CaptureMemRec, DIRECTORY_ENTRIES_COUNT, DIRECTORY_PAGES_COUNT,
-    TABLE_ENTRIES_COUNT,
+    CaptureMemRec, PageMarker, PageMarkerError, DIRECTORY_ENTRIES_COUNT,
+    DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT,
 };
 
 pub use allocators::Slab;
@@ -150,8 +148,14 @@ fn first_dealloc_handler(offset: PhysicalAddress) {
 }
 
 fn alloc_physical_pages(_page_count: usize) -> Option<PhysicalAddress> {
+    // PHYSICAL_ALLOCATOR
+    //     .get()
+    //     .alloc_continuous_pages(page_count)
+    //     .inspect_err(|cause| {
+    //         log::error!("Failed to alloc physical pages: {cause}");
+    //     })
+    //     .ok()
     todo!()
-    // PHYSICAL_ALLOCATOR.get().alloc_pages(page_count)
 }
 
 fn dealloc_physical_page(offset: PhysicalAddress) {
@@ -160,17 +164,34 @@ fn dealloc_physical_page(offset: PhysicalAddress) {
     allocator.dealloc_page(page);
 }
 
-bitflags!(
+bitflags::bitflags! {
     //something info about range???
-    pub MemoryMappingFlag(usize),
-    // ACCESSED = 0b100_000,
-    CACHE_DISABLED = 0b10_000,
-    WRITE_THROUGH = 0b1000,
-    NO_PRIVILEGE = 0b100,
-    WRITABLE = 0b10,
-    PRESENT = 0b1,
-    EMPTY = 0b0
-);
+    #[derive(Debug, Clone, Copy)]
+    pub struct MemoryMappingFlag: usize {
+        const KERNEL_LAYOUT = Self::WRITABLE.bits() | Self::PRESENT.bits();
+        const USER_CODE = Self::NO_PRIVILEGE.bits() | Self::PRESENT.bits();
+
+        const USER_DATA = Self::WRITABLE.bits() | Self::PRESENT.bits() | Self::NO_PRIVILEGE.bits();
+
+        const CACHE_DISABLED = 0b10_000;
+        const WRITE_THROUGH = 0b1000;
+        const NO_PRIVILEGE = 0b100;
+        const WRITABLE = 0b10;
+        const PRESENT = 0b1;
+        const EMPTY = 0b0;
+    }
+}
+
+//always present
+impl MemoryMappingFlag {
+    pub fn as_table_flag(&self) -> TableEntryFlag {
+        unsafe { TableEntryFlag::wrap(self.bits() | TableEntryFlag::PRESENT) }
+    }
+
+    pub fn as_directory_flag(&self) -> DirEntryFlag {
+        unsafe { DirEntryFlag::wrap(self.bits() | DirEntryFlag::PRESENT) }
+    }
+}
 
 pub fn kernel_binary_size() -> usize {
     unsafe { &KERNEL_SIZE as *const usize as VirtualAddress }
@@ -192,6 +213,10 @@ pub fn stack_size() -> usize {
     unsafe { &KERNEL_STACK_SIZE as *const usize as VirtualAddress }
 }
 
+pub fn kernel_regions() -> LinkedList<'static, MemoryRegion> {
+    todo!()
+}
+
 ///performs mapping of physical memory of IO device to virtual space
 pub fn io_remap(_offset: PhysicalAddress, _size: usize) -> VirtualAddress {
     //create new MemoryRegion and add to corresponding ProcessHandle
@@ -199,20 +224,34 @@ pub fn io_remap(_offset: PhysicalAddress, _size: usize) -> VirtualAddress {
 }
 
 pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
+
 pub type DeallocHandler = fn(PhysicalAddress);
-pub type ThreadRoutine = extern "C" fn();
+
+pub type TaskRoutine = extern "C" fn();
 
 #[derive(ListNode)]
 #[repr(C)]
 ///the one represent meor
 pub struct MemoryMappingRegion {
     #[list_pivots]
-    node: ListNode<MemoryMappingRegion>,
-    flags: MemoryMappingFlag,
+    pub node: ListNode<MemoryMappingRegion>,
+    pub flags: MemoryMappingFlag,
     //used to copy
-    virtual_offset: VirtualAddress,
-    physical_offset: PhysicalAddress,
-    page_count: usize,
+    pub virtual_offset: VirtualAddress,
+    pub physical_offset: PhysicalAddress,
+    pub page_count: usize,
+}
+
+impl Default for MemoryMappingRegion {
+    fn default() -> Self {
+        Self {
+            node: ListNode::empty(),
+            flags: MemoryMappingFlag::empty(),
+            page_count: 0,
+            virtual_offset: 0,
+            physical_offset: 0,
+        }
+    }
 }
 
 pub enum AllocationStrategy {
@@ -257,19 +296,16 @@ unsafe impl Allocator for Kernel {
 
 pub type SlabBox<T> = Box<T, Kernel>;
 
-pub fn slab_alloc<T: Slab>(value: T) -> Option<SlabBox<T>> {
+pub fn slab_alloc<T: Slab>(value: T) -> Result<SlabBox<T>, AllocError> {
     let size = mem::size_of::<T>();
 
     assert!(size < u16::MAX as usize);
 
-    let layout = SYSTEM_ALLOCATOR
-        .get()
-        .alloc_slab(SlabAlloc {
-            name: T::NAME,
-            size: size as u16,
-            alignment: T::ALIGNMENT,
-        })
-        .ok()?;
+    let layout = SYSTEM_ALLOCATOR.get().alloc_slab(SlabAlloc {
+        name: T::NAME,
+        size: size as u16,
+        alignment: T::ALIGNMENT,
+    })?;
 
     let allocator = Kernel {
         size,
@@ -277,7 +313,7 @@ pub fn slab_alloc<T: Slab>(value: T) -> Option<SlabBox<T>> {
         slab_name: T::NAME,
     };
 
-    Box::try_new_in(value, allocator).ok()
+    Box::try_new_in(value, allocator).map_err(|_| AllocError::NoMemory)
 }
 
 pub fn into_boxed<T: Slab>(data: NonNull<T>) -> SlabBox<T> {
@@ -307,9 +343,36 @@ pub fn virtual_dealloc(offset: VirtualAddress, size: usize) {
     SYSTEM_ALLOCATOR.get().virtual_dealloc(offset, size);
 }
 
-#[must_use]
-pub fn physical_alloc(_bytes: usize) -> Result<*mut u8, AllocError> {
-    todo!()
+pub fn new_page_marker() -> Result<PageMarker<'static>, AllocError> {
+    static_assertions::const_assert_eq!(
+        Page::SIZE,
+        mem::size_of::<PageDirectory>()
+    );
+
+    let raw_directory = SYSTEM_ALLOCATOR
+        .get()
+        .virtual_alloc(Page::SIZE)?
+        .cast::<PageDirectory<'static>>();
+
+    let directory = unsafe { &mut *raw_directory };
+
+    Ok(PageMarker::new(
+        directory,
+        alloc_physical_pages,
+        dealloc_physical_page,
+    ))
+}
+
+/// allocate physical memory
+/// not continuous
+pub fn physical_alloc(
+    bytes: usize,
+) -> Result<LinkedList<'static, Page>, AllocError> {
+    let pages_count = Page::upper_bound(bytes);
+
+    let list = PHYSICAL_ALLOCATOR.get().alloc_zeroed_pages(pages_count)?;
+
+    Ok(list)
 }
 
 pub fn physical_dealloc(_offset: *mut u8) {
@@ -326,22 +389,17 @@ pub unsafe fn switch_to_task(task: &mut Task) {
 
     unsafe { TASK_STATE.set_kernel_stack(stack as usize) };
 
-    let marker = if task.state.is_some() {
+    if task.state.is_some() {
         unreachable!("Process functionality is not implemented")
     } else {
-        KERNEL_MARKER.get()
+        KERNEL_MARKER.get().load();
     };
-
-    marker.load();
 }
 
 pub unsafe fn switch_to_kernel() {
     let marker = KERNEL_MARKER.get();
     marker.load();
 }
-
-pub const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
-    MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::PRESENT);
 
 //duplicates in kernel.ld script
 declare_constants!(
@@ -373,8 +431,10 @@ impl ToPhysicalAddress for Page {
     //return which physical address is used for such
     fn as_physical(&self) -> PhysicalAddress {
         let page_offset = ptr::from_ref(self);
+
         let page_index =
             unsafe { page_offset.offset_from_unsigned(mem_map_offset()) };
+
         page_index << Page::SHIFT
     }
 }
@@ -482,6 +542,6 @@ mod tests {
         let page = unsafe { Page::take(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
                                                                      //
         assert_eq!(page as *const Page as VirtualAddress, page_virtual_offset);
-        assert_eq!(page_index << Page::SHIFT, unsafe { page }.as_physical());
+        assert_eq!(page_index << Page::SHIFT, page.as_physical());
     }
 }

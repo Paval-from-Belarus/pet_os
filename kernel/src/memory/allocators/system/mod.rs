@@ -6,7 +6,7 @@ mod tree;
 
 use allocator::SlabAllocator;
 
-use kernel_types::declare_constants;
+use kernel_types::{declare_constants};
 use tree::SlabTree;
 
 use crate::memory::{AllocError, Page, PhysicalAllocator, VirtualAddress};

@@ -91,7 +91,7 @@ impl SlabAllocator {
             return Ok(&mut *head);
         }
 
-        let pages = self.allocator.alloc_continuous_pages(1)?.into_pages();
+        let pages = self.allocator.alloc_continuous_pages(1)?.into_slice();
         assert!(pages.len() == 1);
 
         let page = &mut pages[0];
@@ -160,7 +160,7 @@ impl SlabAllocator {
                 .allocator
                 .alloc_continuous_pages(slab_size_in_pages)
                 .expect("Failed to allocate heap for slab entry")
-                .into_pages();
+                .into_slice();
 
             let physical_offset = entry_pages[0].as_physical();
 
@@ -186,7 +186,7 @@ impl SlabAllocator {
 
         let mut list = LinkedList::<SlabEntry>::empty();
 
-        for page in batch.into_pages() {
+        for page in batch.into_slice() {
             let committed_offset =
                 commit(page.as_physical(), self.move_heap_offset(1), 1)
                     .cast::<MaybeUninit<SlabEntry>>();
@@ -229,8 +229,8 @@ fn commit(
     count: usize,
 ) -> *mut u8 {
     let region = MemoryMappingRegion {
-        node: unsafe { ListNode::empty() },
-        flags: memory::KERNEL_LAYOUT_FLAGS,
+        node: ListNode::empty(),
+        flags: memory::MemoryMappingFlag::KERNEL_LAYOUT,
         virtual_offset: heap_offset,
         physical_offset: memory_offset,
         page_count: count,

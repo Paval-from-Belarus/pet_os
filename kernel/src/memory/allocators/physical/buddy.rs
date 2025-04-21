@@ -1,6 +1,6 @@
 use core::cell::UnsafeCell;
 
-use kernel_types::collections::ListNode;
+use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
 
 use crate::memory::{allocators::physical::MAX_BUDDY_BATCH_SIZE, Page};
 
@@ -45,10 +45,20 @@ impl BuddyBatch {
     }
 
     //if this struct was constructed then all requirements are already passed. It's save to create slice of Page struct
-    pub fn into_pages(self) -> &'static mut [Page] {
+    pub fn into_slice(self) -> &'static mut [Page] {
         unsafe {
             let first_page = &mut (*self.first_page_cell.get());
             first_page.as_slice_mut(self.size)
         }
+    }
+
+    pub fn into_list(self) -> LinkedList<'static, Page> {
+        let mut pages = LinkedList::empty();
+
+        for page in self.into_slice() {
+            pages.push_back(page.as_node());
+        }
+
+        pages
     }
 }

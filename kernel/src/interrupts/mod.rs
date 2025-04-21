@@ -263,7 +263,7 @@ pub fn init() {
 
     unsafe {
         INTERRUPT_TABLE = table;
-        INTERRUPT_TABLE_HANDLE = IDTHandle::new(&INTERRUPT_TABLE);
+        INTERRUPT_TABLE_HANDLE = IDTHandle::new(&raw const INTERRUPT_TABLE);
 
         asm!(
         "lidt [eax]",
@@ -295,6 +295,7 @@ static INTERCEPTORS: spin::Mutex<
 /// - All registers can be modified (pusha saves all)
 /// - Interrupts are disabled (to prevent nested interrupts)
 #[no_mangle]
+#[allow(clippy::pointers_in_nomem_asm_block)]
 pub unsafe extern "C" fn interceptor_stub() {
     let index: usize = get_eax!();
 
@@ -386,7 +387,9 @@ impl IDTHandle {
         }
     }
 
-    pub const fn new(table: &IDTable) -> Self {
+    pub const fn new(raw_table: *const IDTable) -> Self {
+        let table = unsafe { &*raw_table };
+
         IDTHandle {
             table_size: table.byte_size().saturating_sub(1) as u16,
             table_offset: table.entries.as_ptr(),
@@ -495,7 +498,7 @@ mod tests {
         );
 
         let table = IDTable::empty();
-        assert_eq!(table.byte_size() <= u16::MAX as usize, true);
+        assert!(table.byte_size() <= u16::MAX as usize);
         assert_eq!(mem::size_of::<IDTHandle>(), 6);
     }
 }

@@ -6,10 +6,10 @@ use static_assertions::assert_eq_size;
 
 use kernel_types::{bitflags, declare_constants, Zeroed};
 
-use crate::memory::paging::table::{DirEntry, DirEntryFlag, TableEntryFlag};
+use crate::memory::paging::table::DirEntry;
 use crate::memory::{
-    MemoryDescriptor, MemoryMappingFlag, Page, PhysicalAddress,
-    SegmentSelector, TaskStateDescriptor, ToVirtualAddress, VirtualAddress,
+    MemoryDescriptor, Page, PhysicalAddress, SegmentSelector,
+    TaskStateDescriptor, ToVirtualAddress, VirtualAddress,
 };
 
 mod marker;
@@ -21,6 +21,7 @@ declare_constants!(
     pub usize,
     DIRECTORY_ENTRIES_COUNT = 1024;
     TABLE_ENTRIES_COUNT = 1024;
+
     DIRECTORY_PAGES_COUNT = 1;
     TABLE_PAGES_COUNT = 1;
 );
@@ -251,17 +252,6 @@ macro_rules! entry_index {
     ($argument:expr) => {
         ($argument >> 12) & 0x3FF
     };
-}
-
-//always present
-impl MemoryMappingFlag {
-    pub fn as_table_flag(&self) -> TableEntryFlag {
-        unsafe { TableEntryFlag::wrap(self.0 | TableEntryFlag::PRESENT) }
-    }
-
-    pub fn as_directory_flag(&self) -> DirEntryFlag {
-        unsafe { DirEntryFlag::wrap(self.0 | DirEntryFlag::PRESENT) }
-    }
 }
 
 bitflags!(

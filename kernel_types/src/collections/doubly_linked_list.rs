@@ -24,9 +24,8 @@ impl<T: Sized + ListNodeData> core::fmt::Debug for ListNode<T> {
 }
 
 impl<T: ListNodeData + Sized> ListNode<T> {
-    /// # Safety
     /// Each list node should be linked to
-    pub const unsafe fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             next: NonNull::dangling(),
             prev: NonNull::dangling(),
