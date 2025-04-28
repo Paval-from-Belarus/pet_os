@@ -20,9 +20,13 @@ bitflags::bitflags! {
     #[derive(Debug, Clone, Copy)]
     #[repr(transparent)]
     pub struct PageFlag: usize {
+        /// The page is in use
         const ACTIVE = 0x01;
+        /// The page has written bytes
         const DIRTY = 0x02;
+        /// Hardware memory bug
         const ERROR = 0x04;
+        /// Cannot be swapped
         const LOCKED = 0x08;
         const UNUSED = 0x10;
     }
@@ -50,9 +54,9 @@ impl Page {
     }
 
     pub unsafe fn take(offset: PhysicalAddress) -> &'static Page {
-        let page = unsafe { Self::take_unchecked(offset) };
+        let page = Self::take_unchecked(offset);
 
-        // page.acquire();
+        page.acquire();
 
         page
     }

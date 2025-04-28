@@ -48,22 +48,13 @@ impl<T: Sized + ListNodeData> core::fmt::Debug for ListNode<T> {
 }
 
 impl<T: ListNodeData + Sized> ListNode<T> {
-    /// Each list node should be linked to
+    /// Createing new ListNode is absolutely safe
+    /// as pivots cannot be accessed outside
+    /// the LinkedList
     pub const fn empty() -> Self {
         Self {
             next: NonNull::dangling(),
             prev: NonNull::dangling(),
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn new(next: &mut ListNode<T>, prev: &mut ListNode<T>) -> Self {
-        let next = NonNull::from(next);
-        let prev = NonNull::from(prev);
-
-        Self {
-            next,
-            prev,
             _marker: PhantomData,
         }
     }
@@ -320,6 +311,14 @@ impl<'data, T: Sized + ListNodeData> LinkedList<'data, T> {
         }
 
         unsafe { &*self.first }.into()
+    }
+
+    pub fn first_mut(&mut self) -> Option<&mut ListNode<T>> {
+        if self.first.is_null() {
+            return None;
+        }
+
+        unsafe { &mut *self.first }.into()
     }
 
     pub fn remove_first(&mut self) -> Option<&'data mut ListNode<T>> {
@@ -695,13 +694,12 @@ mod tests {
     extern crate alloc;
     extern crate std;
 
-    use alloc::vec;
     use core::ptr::NonNull;
     use std::println;
 
     use static_assertions::const_assert_eq;
 
-    use crate::collections::{BorrowingLinkedList, ListNodeData};
+    use crate::collections::BorrowingLinkedList;
     use crate::collections::{LinkedList, ListNode};
 
     fn has_data(node: Option<&ListNode<TestStruct>>, value: usize) -> bool {
@@ -748,7 +746,7 @@ mod tests {
     fn push_back_test() {
         let mut list = LinkedList::<TestStruct>::empty();
         unsafe {
-            let mut nodes = vec![
+            let mut nodes = [
                 TestStruct::new(12),
                 TestStruct::new(13),
                 TestStruct::new(14),
@@ -777,7 +775,7 @@ mod tests {
     fn push_front_test() {
         let mut list = LinkedList::<TestStruct>::empty();
         unsafe {
-            let nodes = vec![
+            let nodes = [
                 TestStruct::new(12),
                 TestStruct::new(13),
                 TestStruct::new(14),
@@ -806,7 +804,7 @@ mod tests {
     fn push_back_front_test() {
         let mut list = LinkedList::<TestStruct>::empty();
         unsafe {
-            let nodes = vec![
+            let nodes = [
                 TestStruct::new(12),
                 TestStruct::new(13),
                 TestStruct::new(14),
@@ -896,7 +894,7 @@ mod tests {
     fn mutability_iter_test() {
         let mut list = LinkedList::<TestStruct>::empty();
         unsafe {
-            let nodes = vec![
+            let nodes = [
                 TestStruct::new(12),
                 TestStruct::new(13),
                 TestStruct::new(14),
@@ -922,7 +920,7 @@ mod tests {
     fn removing_test() {
         let mut list = LinkedList::<TestStruct>::empty();
         unsafe {
-            let nodes = vec![TestStruct::new(12), TestStruct::new(13)];
+            let nodes = [TestStruct::new(12), TestStruct::new(13)];
 
             for node in nodes.iter() {
                 list.push_back(node.as_node().as_mut());
@@ -938,7 +936,7 @@ mod tests {
 
     #[test]
     fn limit_test() {
-        let nodes = vec![
+        let nodes = [
             TestStruct::new(12),
             TestStruct::new(13),
             TestStruct::new(14),

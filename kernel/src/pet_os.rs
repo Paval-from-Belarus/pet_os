@@ -51,13 +51,12 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 #[no_mangle]
-pub extern "C" fn main() {
-    let properties: *mut PagingProperties = unsafe { get_eax!() };
+pub fn main() {
+    let properties: &mut PagingProperties = unsafe {
+        let raw_properies: *mut PagingProperties = get_eax!();
+        &mut *raw_properies
+    };
 
-    unsafe { rust_main(&mut *properties) };
-}
-
-pub fn rust_main(properties: &mut PagingProperties) {
     logging::init();
 
     unsafe {
@@ -92,6 +91,7 @@ pub fn rust_main(properties: &mut PagingProperties) {
     task::submit_task(thread_1);
     task::submit_task(thread_2);
 
+    // task::exec("/usr/sbin/init");
     task::run();
 }
 

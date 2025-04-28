@@ -34,6 +34,10 @@ impl<'a> QuickString<'a> {
     pub fn len(&self) -> usize {
         self.as_str().len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
 }
 
 pub struct QuickStringKey;
@@ -153,6 +157,12 @@ impl<'a> MutString<'a> {
         let next_byte = self.data.add(self.len());
         next_byte.write(byte);
         self.len += 1;
+    }
+}
+
+impl<'a> AsRef<str> for MutString<'a> {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 

@@ -1,10 +1,10 @@
-use core::ptr;
+use core::{mem::MaybeUninit, ptr};
 
 use bitvec::{order::Lsb0, view::BitView};
 use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BorrowingLinkedList, LinkedList, ListNode},
-    declare_constants, Zeroed,
+    declare_constants,
 };
 use static_assertions::const_assert;
 
@@ -13,17 +13,25 @@ use crate::memory::{Page, VirtualAddress};
 use super::SlabSize;
 
 #[derive(Debug, ListNode)]
+#[repr(C)]
 pub struct SlabEntry {
     #[list_pivots]
     next: ListNode<SlabEntry>, //8
     base_offset: *mut u8, //4
-    capacity: usize,      //4
+    //todo: use reserved bytes instead
     //the count of memory unit in next pool
+    //todo: replace to PhysicalOffset to access list
+    //the count of pages can be computed from object_size and amx_size
     pages: LinkedList<'static, Page>, //8
-    object_size: u16,
-    heap_mask: u32, //maximal
-    reserved: Zeroed<[u8; 2]>,
+    capacity: u16,                    //2
+    object_size: u16,                 //2
+    heap_mask: u32,                   //4 maximal 32 objects
+    #[cfg(target_pointer_width = "32")]
+    reserved: MaybeUninit<[u8; 4]>,
 }
+
+//32bit arch. Total size = 8 + 4 + 8 + 4 + 4 + 4 (reserved) = 32
+//64 arch. Total size = 16 + 8 + 16 + 8 + 16 (reserved) = 64
 
 const_assert!(Page::SIZE % core::mem::size_of::<SlabEntry>() == 0);
 
@@ -54,7 +62,8 @@ impl SlabEntry {
             capacity: 0,
             heap_mask: 0,
             pages: LinkedList::empty(),
-            reserved: Zeroed::default(),
+
+            reserved: MaybeUninit::uninit(),
         }
     }
 
@@ -75,7 +84,7 @@ impl SlabEntry {
 
         let object_index = unsafe { self.object_index(offset) };
 
-        if object_index >= self.capacity {
+        if object_index >= self.capacity as usize {
             return false;
         }
 
@@ -141,7 +150,7 @@ impl SlabEntry {
             pages_list.push_front(page.as_node());
         }
 
-        self.capacity = capacity;
+        self.capacity = capacity as u16;
         self.pages = pages_list;
     }
 

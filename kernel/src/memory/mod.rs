@@ -482,7 +482,12 @@ unsafe impl GlobalAlloc for VirtualAllocator {
             let ptr = SYSTEM_ALLOCATOR
                 .get()
                 .alloc_slab(slab)
-                .expect("Failed to alloc virtual memory as slab");
+                .inspect_err(|cause| {
+                    log::error!(
+                        "Failed to alloc virtual memory as slab: {cause}"
+                    );
+                })
+                .unwrap_or(ptr::null_mut());
 
             return ptr;
         }
