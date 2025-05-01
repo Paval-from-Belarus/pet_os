@@ -240,11 +240,6 @@ pub fn init() -> CallbackInfo {
     CallbackInfo::new(on_timer)
 }
 
-#[allow(unused)]
-pub fn exec<PATH: AsRef<str>>(_path: PATH) -> Result<(), ()> {
-    Ok(())
-}
-
 #[no_mangle]
 extern "C" fn idle_task() {
     let _args: *mut () = unsafe { get_eax!() };

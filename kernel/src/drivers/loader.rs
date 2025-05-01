@@ -13,12 +13,16 @@ use elf::{
 use fallible_collections::{FallibleVec, TryCollect};
 use kernel_types::{
     collections::{BorrowingLinkedList, LinkedList},
+    drivers::DriverId,
     string::MutString,
 };
 
-use crate::memory::{
-    virtual_alloc, virtual_dealloc, MemoryRegion, MemoryRegionFlag,
-    VirtualAddress,
+use crate::{
+    memory::{
+        virtual_alloc, virtual_dealloc, MemoryRegion, MemoryRegionFlag,
+        ProcessId, VirtualAddress,
+    },
+    user,
 };
 
 #[derive(Debug, thiserror_no_std::Error)]
@@ -147,10 +151,15 @@ fn elf_realloc(
 
 pub fn load_in_memory(elf_data: &[u8]) -> Result<(), LoadError> {
     let loader = Loader::new(elf_data)?;
-
-    loader.load()?;
-
+    let pid = loader.load()?;
+    driver_probe(pid)?;
     Ok(())
+}
+
+//execute entry point for driver
+//all system should be already initialized
+fn driver_probe(pid: ProcessId) -> Result<u32, LoadError> {
+    Ok(0)
 }
 
 pub struct Loader<'a> {
@@ -250,7 +259,7 @@ impl<'a> Loader<'a> {
         Ok(())
     }
 
-    pub fn load(mut self) -> Result<(), LoadError> {
+    pub fn load(mut self) -> Result<ProcessId, LoadError> {
         for mut header in self.sections.iter_mut() {
             if header.sh_type == elf::abi::SHT_NOBITS {
                 if header.sh_size == 0 {
@@ -341,7 +350,7 @@ impl<'a> Loader<'a> {
             }
         }
 
-        Ok(())
+        Ok(0)
     }
 }
 

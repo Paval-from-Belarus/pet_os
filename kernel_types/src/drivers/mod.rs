@@ -55,7 +55,7 @@ impl DriverId {
         TTY = 4 , "The terminal";
         SCSI = 8, "The hard drive";
     }
-    const fn new(value: u16) -> Self {
+    pub const fn new(value: u16) -> Self {
         Self(value)
     }
     pub const fn is_reserved(&self) -> bool {

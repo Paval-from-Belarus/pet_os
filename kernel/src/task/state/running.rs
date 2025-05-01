@@ -51,7 +51,7 @@ impl BoxedNode for RunningTask {
     type Target = RunningTaskBox;
 
     fn into_boxed(
-        node: &mut <RunningTask as kernel_types::collections::TinyListNodeData>::Item,
+        node: &mut  <RunningTask as kernel_types::collections::TinyListNodeData>::Item,
     ) -> Self::Target {
         let node = memory::into_boxed(node.into());
 

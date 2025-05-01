@@ -91,7 +91,7 @@ pub fn main() {
     task::submit_task(thread_1);
     task::submit_task(thread_2);
 
-    // task::exec("/usr/sbin/init");
+    // user::exec("/usr/sbin/init");
     task::run();
 }
 

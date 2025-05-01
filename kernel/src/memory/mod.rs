@@ -268,13 +268,13 @@ pub enum AllocationStrategy {
     Device,
 }
 
-pub struct Kernel {
+pub struct SlabInPlaceAllocator {
     size: usize,
     slab_name: &'static str,
     ptr: *mut u8,
 }
 
-unsafe impl Allocator for Kernel {
+unsafe impl Allocator for SlabInPlaceAllocator {
     fn allocate(
         &self,
         layout: core::alloc::Layout,
@@ -298,7 +298,7 @@ unsafe impl Allocator for Kernel {
     }
 }
 
-pub type SlabBox<T> = Box<T, Kernel>;
+pub type SlabBox<T> = Box<T, SlabInPlaceAllocator>;
 
 pub fn slab_alloc<T: Slab>(value: T) -> Result<SlabBox<T>, AllocError> {
     let size = mem::size_of::<T>();
@@ -311,7 +311,7 @@ pub fn slab_alloc<T: Slab>(value: T) -> Result<SlabBox<T>, AllocError> {
         alignment: T::ALIGNMENT,
     })?;
 
-    let allocator = Kernel {
+    let allocator = SlabInPlaceAllocator {
         size,
         ptr: layout,
         slab_name: T::NAME,
@@ -323,7 +323,7 @@ pub fn slab_alloc<T: Slab>(value: T) -> Result<SlabBox<T>, AllocError> {
 pub fn into_boxed<T: Slab>(data: NonNull<T>) -> SlabBox<T> {
     let ptr = data.as_ptr().cast::<u8>();
 
-    let allocator = Kernel {
+    let allocator = SlabInPlaceAllocator {
         ptr,
         slab_name: T::NAME,
         size: mem::size_of::<T>(),
