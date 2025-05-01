@@ -6,20 +6,20 @@ use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
 use kernel_types::{declare_constants, declare_types, syscall};
 
-use crate::drivers::Handle;
-use crate::io::object::InterruptObject;
+use crate::io::irq::InterruptObject;
 use crate::io::pic::PicLine;
 use crate::memory::{
     self, slab_alloc, InterruptGate, PrivilegeLevel, SegmentSelector, Slab,
     SlabBox, SystemType, VirtualAddress,
 };
+use crate::object;
 use crate::task::TaskContext;
 use crate::{get_eax, get_edx, io, set_eax};
 
 mod block;
 mod char;
+mod irq;
 mod lock;
-mod object;
 pub(crate) mod pic;
 mod system;
 
@@ -48,7 +48,7 @@ pub type Callback = fn(
 #[derive(Debug, ListNode)]
 #[repr(C)]
 pub struct CallbackInfo {
-    driver: Handle,
+    driver: crate::object::Handle,
     callback: Callback,
     context: *mut (),
     #[list_pivots]
@@ -72,7 +72,7 @@ impl CallbackInfo {
     pub const fn new(callback: Callback) -> Self {
         Self {
             callback,
-            driver: Handle::KERNEL,
+            driver: object::Handle(0),
             context: ptr::null_mut(),
             next: ListNode::empty(),
         }
@@ -232,7 +232,7 @@ impl InterruptGate {
 const MAX_INTERRUPTS_COUNT: usize = 256;
 
 ///the method to registry InterruptObject
-pub fn registry(_handle: Handle, line: IrqLine, info: CallbackInfo) {
+pub fn registry(_handle: object::Handle, line: IrqLine, info: CallbackInfo) {
     let index = u8::from(line.line) as usize;
     let interceptors = INTERCEPTORS.try_lock().unwrap().unwrap();
     let manager = interceptors[index];

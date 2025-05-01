@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 use kernel_macro::ListNode;
 use kernel_types::collections::ListNode;
 
-use crate::common::{atomics::SpinLock, SpinBox};
+use crate::{common::atomics::SpinLock, memory::SlabBox};
 
 use super::{FileSystem, SuperBlock};
 
@@ -13,7 +13,7 @@ pub struct MountPoint {
     node: ListNode<MountPoint>,
 
     lock: SpinLock,
-    super_block: Arc<spin::RwLock<SuperBlock>>,
+    super_block: spin::RwLock<SlabBox<SuperBlock>>,
     // parent_mount: Option<NonNull<MountPoint>>,
     // //the vfs' root doesn't have parent
     // //child_mounts: LinkedList<'static, MountPoint>,
@@ -29,7 +29,7 @@ unsafe impl Sync for MountPoint {}
 impl MountPoint {
     pub fn new(fs: Arc<FileSystem>) -> Self {
         Self {
-            super_block: Arc::new(spin::RwLock::new(SuperBlock::new(fs, 0, 0))),
+            super_block: spin::RwLock::new(SuperBlock::new_boxed(fs, 0, 0)),
             lock: SpinLock::new(),
             node: ListNode::empty(),
         }
@@ -37,13 +37,7 @@ impl MountPoint {
 
     pub fn super_block<'a>(
         &'a self,
-    ) -> impl core::ops::Deref<Target = SuperBlock> + 'a {
+    ) -> impl core::ops::Deref<Target = SlabBox<SuperBlock>> + 'a {
         self.super_block.read()
-    }
-
-    pub fn root(&mut self) -> SpinBox<MountPoint> {
-        // let root = unsafe { self.root.as_mut() };
-        // SpinBox::new(&self.lock, )
-        todo!()
     }
 }

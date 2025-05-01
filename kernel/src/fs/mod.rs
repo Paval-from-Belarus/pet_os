@@ -11,7 +11,6 @@ use kernel_types::declare_constants;
 use kernel_types::drivers::{Device, DeviceId};
 
 use crate::current_task;
-use crate::drivers::{BlockDeviceBox, CharDeviceBox};
 use crate::object::{self};
 
 mod error;
@@ -35,11 +34,6 @@ bitflags::bitflags! {
     pub struct FileSystemKind: usize {
         const READ_ONLY = 0b01;
     }
-}
-
-pub enum DeviceKind {
-    BlockDevice(BlockDeviceBox),
-    CharDevice(CharDeviceBox),
 }
 
 bitflags::bitflags! {

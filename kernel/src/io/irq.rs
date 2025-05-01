@@ -1,10 +1,9 @@
 use kernel_types::collections::LinkedList;
 
-use crate::drivers::Handle;
 use crate::io::pic::PicLine;
 use crate::io::{pic, CallbackInfo};
 use crate::memory::{self, Slab, SlabBox};
-use crate::ticks_now;
+use crate::{object, ticks_now};
 
 use super::TaskContext;
 
@@ -65,7 +64,7 @@ impl InterruptObject {
         list.push_back(leaked_info.as_next());
     }
 
-    pub fn remove(&self, removable: Handle) {
+    pub fn remove(&self, removable: object::Handle) {
         let mut list = self.callbacks.try_lock().unwrap();
 
         let mut iterator = list.iter_mut();

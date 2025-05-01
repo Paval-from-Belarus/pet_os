@@ -1,9 +1,12 @@
+mod queue;
 mod runtime;
 
 use kernel_macro::ListNode;
 use kernel_types::collections::{HashCode, HashKey, ListNode};
 
 use crate::memory::VirtualAddress;
+
+pub use queue::Queue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 #[must_use]
@@ -20,6 +23,7 @@ pub struct Object {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
+    Unknown,
     //the corresponding operation is ready
     Completed,
     //the operation

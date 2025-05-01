@@ -7,7 +7,7 @@ use kernel_types::{
 };
 
 use crate::{
-    memory::{self, SlabBox},
+    memory::{self, slab_alloc, SlabBox},
     object,
 };
 
@@ -59,12 +59,6 @@ pub struct FileSystem {
     pub private: *mut (),
 }
 
-pub struct SuperBlockBox {
-    pub super_block: SlabBox<SuperBlock>,
-}
-
-//The implementation of the file system
-
 #[derive(ListNode)]
 #[repr(C)]
 pub struct SuperBlock {
@@ -88,12 +82,12 @@ impl crate::memory::Slab for SuperBlock {
 }
 
 impl SuperBlock {
-    pub fn new(
+    pub fn new_boxed(
         file_system: Arc<FileSystem>,
         device_id: u32,
         driver_id: u16,
-    ) -> SuperBlock {
-        SuperBlock {
+    ) -> SlabBox<SuperBlock> {
+        slab_alloc(SuperBlock {
             node: TinyListNode::empty(),
             device_id: DeviceId(device_id),
             driver_id: DriverId::new(driver_id),
@@ -102,7 +96,8 @@ impl SuperBlock {
             files: LinkedList::empty(),
             mounts: LinkedList::empty(),
             block_size: 512,
-        }
+        })
+        .unwrap()
     }
 
     pub fn work(&self, _work: Work) -> object::Handle {
@@ -110,20 +105,12 @@ impl SuperBlock {
     }
 }
 
-impl SuperBlockBox {
-    pub fn into_node(self) -> &'static mut TinyListNode<SuperBlock> {
-        unsafe { &mut *SlabBox::into_raw(self.super_block) }.as_node()
-    }
-}
-
 impl BoxedNode for SuperBlock {
-    type Target = SuperBlockBox;
+    type Target = SlabBox<SuperBlock>;
 
     fn into_boxed(
         node: &mut <SuperBlock as kernel_types::collections::TinyListNodeData>::Item,
     ) -> Self::Target {
-        let super_block = memory::into_boxed(node.into());
-
-        Self::Target { super_block }
+        memory::into_boxed(node.into())
     }
 }
