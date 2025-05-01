@@ -2,7 +2,28 @@ use core::{ptr::NonNull, sync::atomic::AtomicUsize};
 
 use kernel_types::{bitflags, collections::ListNode};
 
-use super::{FileOperations, MountPoint, PathNode};
+use super::{IndexNode, MountPoint, PathNode};
+
+#[repr(C)]
+pub struct FileOperations {
+    pub open: fn(&mut IndexNode, &mut File),
+    pub flush: fn(&mut File),
+    pub close: fn(&mut IndexNode, &mut File),
+    pub read: fn(&mut File, *mut u8, usize),
+    pub write: fn(&mut File, *const u8, usize),
+    pub seek: fn(&mut File, mode: FileSeekMode, offset: usize),
+    #[doc = "for devices only"]
+    pub ioctl: fn(&mut IndexNode, &mut File, usize),
+    //consider additionally implement file_lock and mmap handler
+}
+
+bitflags! {
+    pub FileRenameFlag(usize),
+    //if target is exist then no replacement can occurred
+    NO_REPLACE = 0b01,
+    //both files should exist; swap files by places
+    EXCHANGE = 0b10
+}
 
 ///consider to implement prefix-tree
 pub struct FileName([u8]);

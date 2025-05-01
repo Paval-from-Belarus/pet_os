@@ -9,9 +9,12 @@ use kernel_types::{
     drivers::{DeviceId, DriverId},
 };
 
-use crate::memory::{self, slab_alloc, SlabBox};
+use crate::{
+    memory::{self, slab_alloc, SlabBox},
+    object,
+};
 
-use super::{File, FileSystemKind, IndexNode, MountPoint};
+use super::{File, FileSystemKind, IndexNode, MountPoint, Work};
 
 declare_constants! {
     pub usize,
@@ -65,7 +68,6 @@ impl crate::memory::Slab for SuperBlock {
     const NAME: &str = "super_ops";
 }
 
-
 impl SuperBlock {
     pub fn new_boxed(
         file_system: Arc<FileSystem>,
@@ -85,6 +87,10 @@ impl SuperBlock {
         .unwrap();
 
         SuperBlockBox { super_block }
+    }
+
+    pub fn work(&self, _work: Work) -> object::Handle {
+        object::Handle(0)
     }
 }
 

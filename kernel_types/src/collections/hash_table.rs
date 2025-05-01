@@ -31,6 +31,7 @@ impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData>
     pub fn new() -> Self {
         let raw_table: [MaybeUninit<TinyLinkedList<'a, V>>; N] =
             MaybeUninit::uninit().transpose();
+
         let table = raw_table.map(|mut raw_bucket| {
             raw_bucket.write(TinyLinkedList::empty());
             unsafe { raw_bucket.assume_init() }

@@ -1,6 +1,6 @@
 use core::cell::UnsafeCell;
 
-use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
+use kernel_types::collections::{LinkedList, ListNode};
 
 use crate::memory::{allocators::physical::MAX_BUDDY_BATCH_SIZE, Page};
 

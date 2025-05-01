@@ -30,6 +30,8 @@ pub struct TaskMetrics {
     pub base_duration: usize,
 }
 
+pub type TaskId = usize;
+
 #[repr(C)]
 pub struct Task {
     //the pivots in scheduler list
@@ -40,7 +42,7 @@ pub struct Task {
     //that's also the place where TaskContext is storing
     pub kernel_stack_bottom: VirtualAddress,
     //the unique identifier of thread
-    pub id: usize,
+    pub id: TaskId,
     //the time when task should be started
     //the value should be greater then 0
     pub start_time: usize,
@@ -50,7 +52,7 @@ pub struct Task {
 
     pub metrics: TaskMetrics,
 
-    pub files: NonNull<FilePool>,
+    pub opened_files: FilePool,
 }
 
 pub type BlockedTask = RunningTask;
@@ -91,7 +93,7 @@ impl Task {
             status: TaskStatus::Embryo,
             start_time: 0,
             state: None,
-            files: NonNull::dangling(),
+            opened_files: Default::default(), 
             file_system: NonNull::dangling(),
 
             metrics: TaskMetrics {

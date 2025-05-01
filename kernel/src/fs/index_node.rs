@@ -39,12 +39,14 @@ impl Slab for IndexNodeItem {
     const NAME: &str = "index_node";
 }
 
+//the unique id of the node
+pub type FileId = usize;
+
 ///the i-node implementation
 #[repr(C)]
 pub struct IndexNode {
-    parent: NonNull<SuperBlock>,
-    //the unique id of the node
-    id: usize,
+    parent: Arc<spin::RwLock<SuperBlock>>,
+    id: FileId,
     permissions: FilePermissions,
     // type: u8,//file type?
     size: usize,
@@ -58,6 +60,18 @@ pub struct IndexNode {
     kind: NodeKind,
     //where file is storing
     device: Device,
+}
+
+impl IndexNode {
+    pub fn super_block<'a>(
+        &'a self,
+    ) -> impl core::ops::Deref<Target = SuperBlock> + 'a {
+        self.parent.read()
+    }
+
+    pub fn id(&self) -> FileId {
+        self.id
+    }
 }
 
 impl IndexNodeBox {

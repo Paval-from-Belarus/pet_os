@@ -1,4 +1,4 @@
-use kernel_types::collections::{BorrowingLinkedList, LinkedList};
+use kernel_types::collections::LinkedList;
 
 use crate::drivers::Handle;
 use crate::interrupts::pic::PicLine;

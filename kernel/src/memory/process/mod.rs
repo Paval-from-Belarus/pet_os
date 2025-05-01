@@ -5,10 +5,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use kernel_types::{
-    collect_list,
-    collections::{BorrowingLinkedList, LinkedList},
-};
+use kernel_types::{collect_list, collections::LinkedList};
 use segment::Segments;
 
 use crate::memory::{

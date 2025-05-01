@@ -177,6 +177,7 @@ fn find_symbol(name: &str) -> Option<VirtualAddress> {
         .find(|entry| entry.has_same_name(name))
         .map(|entry| entry.offset())
 }
+
 declare_constants! {
     pub usize,
     MAX_DEVICE_COUNT = 128;

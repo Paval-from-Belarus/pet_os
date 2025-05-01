@@ -35,6 +35,10 @@ impl SpinLock {
         }
     }
 
+    pub fn is_locked(&self) -> bool {
+        self.lock.load(Ordering::Acquire)
+    }
+
     pub fn acquire(&self) {
         loop {
             let is_acquired = !self.lock.swap(true, Ordering::Acquire);

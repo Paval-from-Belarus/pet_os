@@ -1,30 +1,27 @@
-use core::cell::UnsafeCell;
-
-use core::ptr;
-use core::ptr::NonNull;
-use core::sync::atomic::AtomicUsize;
-
+use alloc::string::{String};
+pub use error::*;
 pub use file::*;
 pub use index_node::*;
+pub use mount_point::*;
 pub use super_block::*;
+pub use path::*;
 
-use kernel_macro::ListNode;
-use kernel_types::collections::ListNode;
-use kernel_types::collections::{HashData, HashTable};
 use kernel_types::drivers::Device;
-use kernel_types::string::{MutString, QuickString};
-use kernel_types::{bitflags, declare_constants};
+use kernel_types::{declare_constants};
 
-use crate::common::atomics::{SpinLock, UnsafeLazyCell};
-use crate::common::SpinBox;
+use crate::current_task;
 use crate::drivers::{BlockDeviceBox, CharDeviceBox};
+use crate::object::{self, Object};
 
-mod fat;
+mod error;
 mod file;
 mod index_node;
+mod mount_point;
+mod path;
 mod super_block;
+mod system_fs;
 
-pub fn parse_path(_path: MutString) {}
+use system_fs::SystemMountPoints;
 
 declare_constants!(
     pub usize,
@@ -47,181 +44,93 @@ pub enum DeviceKind {
     CharDevice(CharDeviceBox),
 }
 
-bitflags! {
-    pub NodeKind(usize),
-    FILE = 0x1,
-    BLOCK = 0x2,
-    CHAR = 0x4
-}
-
-pub fn file_read(_handle: usize) -> Result<(), ()> {
-    todo!()
-}
-
-pub fn file_write(_handle: usize) -> Result<(), ()> {
-    todo!()
-}
-
-pub fn file_move(_source: &str, _target: &str) -> Result<(), ()> {
-    todo!()
-}
-
-pub fn file_open(_path: &str) -> Result<usize, ()> {
-    todo!()
-}
-
-pub fn file_close(_handle: usize) -> Result<(), ()> {
-    todo!()
-}
-
-#[derive(ListNode)]
-#[repr(C)]
-///alternative struct to linux `dentry`
-pub struct PathNode {
-    #[list_pivots]
-    node: ListNode<PathNode>,
-    file_system: NonNull<MountPoint>,
-    //linux also support ptr::null for invalid file names
-    inode: NonNull<IndexNode>,
-    name: QuickString<'static>,
-    #[doc = "The parent of corresponding inode"]
-    parent: NonNull<IndexNode>,
-    use_count: AtomicUsize,
-}
-
-impl PathNode {
-    pub fn is_parent(&self, other_parent: &IndexNode) -> bool {
-        ptr::eq(self.parent.as_ptr(), other_parent)
-    }
-    pub fn is_root(&self) -> bool {
-        ptr::eq(self.parent.as_ptr(), self.inode.as_ptr())
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy)]
+    #[repr(C)]
+    pub struct NodeKind: usize {
+        const FILE = 0x01;
+        const BLOCK = 0x02;
+        const CHAR = 0x04;
     }
 }
 
-impl PartialEq<IndexNode> for PathNode {
-    fn eq(&self, other: &IndexNode) -> bool {
-        ptr::eq(self.inode.as_ptr(), other)
-    }
+static FILE_SYSTEMS: SystemMountPoints = SystemMountPoints::new();
+
+pub fn open<T: AsRef<str>>(path: T) -> object::Handle {
+    let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
+
+    fs.super_block().work(Work::Open { name })
 }
 
-struct SearchResult {
-    path: NonNull<PathNode>,
-    name: QuickString<'static>,
+pub fn read(
+    file_handle: usize,
+    dest: *mut u8,
+    count: usize,
+) -> Result<object::Handle, FsError> {
+    let Some(file) = current_task!().opened_files.get(file_handle) else {
+        return Err(FsError::InvalidFileHandle);
+    };
+
+    let op_handle = file.super_block().work(Work::Read {
+        file: file.id(),
+        buffer: dest,
+        count,
+    });
+
+    Ok(op_handle)
 }
 
-pub fn file_name_lookup(path: &str, mount_point: &mut MountPoint) {
-    let path_iter = resolve_wildcards(path)
-        .split('/')
-        .filter(|path| !path.is_empty())
-        .map(QuickString::from);
-    let _fs = mount_point.fs();
-    let mut table = PATH_TABLE.get().table();
-    let parent_inode_option = Option::<&IndexNode>::None;
-    for path in path_iter {
-        let _found_node = table.find(&path, |node| -> bool {
-            parent_inode_option
-                .map(|parent| node.is_parent(parent))
-                //the node should be in root it no parent
-                .unwrap_or_else(|| node.is_root())
-        });
-        // }).unwrap_or_else(|| fs.)
-    }
+pub fn write(
+    file_handle: usize,
+    source: *mut u8,
+    count: usize,
+) -> Result<object::Handle, FsError> {
+    let Some(file) = current_task!().opened_files.get(file_handle) else {
+        return Err(FsError::InvalidFileHandle);
+    };
+
+    let op_handle = file.super_block().work(Work::Write {
+        file: file.id(),
+        buffer: source,
+        count,
+    });
+
+    Ok(op_handle)
 }
 
-fn resolve_wildcards(path: &str) -> &str {
-    //todo: really check wildcards
-    path
+pub fn close(file_handle: usize) -> Result<object::Handle, FsError> {
+    let Some(file) = current_task!().opened_files.get(file_handle) else {
+        return Err(FsError::InvalidFileHandle);
+    };
+
+    let op_handle = file.super_block().work(Work::Close { file: file.id() });
+
+    Ok(op_handle)
 }
 
-impl HashData for PathNode {
-    type Item<'a> = QuickString<'a>;
-
-    fn key<'a>(&self) -> &QuickString<'a> {
-        &self.name
-    }
+//handle is the address of object
+pub struct WorkObject {
+    work: Work,
+    object: Object,
 }
 
-declare_constants! {
-    pub usize,
-    HASHTABLE_CAPACITY = 500
+pub enum Work {
+    Open {
+        name: String,
+    },
+    Close {
+        file: FileId,
+    },
+    Read {
+        file: FileId,
+        buffer: *mut u8,
+        count: usize,
+    },
+    Write {
+        file: FileId,
+        buffer: *const u8,
+        count: usize,
+    },
 }
-pub type PathNodeHashTable = HashTable<'static, PathNode, HASHTABLE_CAPACITY>;
-
-pub struct FilePathHashTable {
-    table: UnsafeCell<PathNodeHashTable>,
-    lock: SpinLock,
-}
-
-unsafe impl Sync for FilePathHashTable {}
-
-impl FilePathHashTable {
-    pub fn table(&self) -> SpinBox<PathNodeHashTable> {
-        let table = unsafe { &mut *self.table.get() };
-        SpinBox::new(&self.lock, table)
-    }
-}
-
-static PATH_TABLE: UnsafeLazyCell<FilePathHashTable> = UnsafeLazyCell::empty();
 
 pub fn init() {}
-
-#[derive(ListNode)]
-#[repr(C)]
-pub struct MountPoint {
-    #[list_pivots]
-    node: ListNode<MountPoint>,
-    lock: SpinLock,
-    mounted_fs: NonNull<SuperBlock>,
-    mounted_root: NonNull<PathNode>,
-    parent_child: NonNull<PathNode>,
-    parent_mount: Option<NonNull<MountPoint>>,
-    //the vfs' root doesn't have parent
-    //child_mounts: LinkedList<'static, MountPoint>,
-    //each mount_point is storing in HashTable
-    //hash_node: TinyListNode<HashedMountPoint>,
-    mount_count: AtomicUsize,
-    device_name: &'static str,
-}
-
-impl MountPoint {
-    pub fn fs(&mut self) -> SpinBox<SuperBlock> {
-        // let fs = unsafe { self.parent_fs.as_mut() };
-        // SpinBox::new(&self.lock, fs)
-        todo!()
-    }
-    pub fn root(&mut self) -> SpinBox<MountPoint> {
-        // let root = unsafe { self.root.as_mut() };
-        // SpinBox::new(&self.lock, )
-        todo!()
-    }
-}
-
-#[repr(C)]
-pub struct FileOperations {
-    pub open: fn(&mut IndexNode, &mut File),
-    pub flush: fn(&mut File),
-    pub close: fn(&mut IndexNode, &mut File),
-    pub read: fn(&mut File, *mut u8, usize),
-    pub write: fn(&mut File, *const u8, usize),
-    pub seek: fn(&mut File, mode: FileSeekMode, offset: usize),
-    #[doc = "for devices only"]
-    pub ioctl: fn(&mut IndexNode, &mut File, usize),
-    //consider additionally implement file_lock and mmap handler
-}
-
-bitflags! {
-    pub FileRenameFlag(usize),
-    //if target is exist then no replacement can occurred
-    NO_REPLACE = 0b01,
-    //both files should exist; swap files by places
-    EXCHANGE = 0b10
-}
-
-#[cfg(test)]
-mod tests {
-    extern crate alloc;
-    extern crate std;
-
-    #[test]
-    pub fn test() {}
-}

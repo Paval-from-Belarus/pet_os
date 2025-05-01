@@ -1,9 +1,7 @@
 use core::{ops::Range, ptr::NonNull};
 
 use kernel_macro::ListNode;
-use kernel_types::collections::{
-    BorrowingLinkedList, BoxedNode, LinkedList, ListNode,
-};
+use kernel_types::collections::{BoxedNode, LinkedList, ListNode};
 
 use super::{
     slab_alloc, virtual_alloc, AllocError, Page, Slab, SlabBox, VirtualAddress,

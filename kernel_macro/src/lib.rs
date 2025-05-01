@@ -69,6 +69,11 @@ pub fn export_symbolic(attr: TokenStream, item: TokenStream) -> TokenStream {
     output.into()
 }
 
+#[proc_macro_derive(ObjectOwner, attributes(object))]
+pub fn object_container(_input: TokenStream) -> TokenStream {
+    todo!()
+}
+
 #[proc_macro_derive(ListNode, attributes(list_pivots, list_pivot))]
 pub fn list_node(input: TokenStream) -> TokenStream {
     let struct_ast = parse_macro_input!(input as DeriveInput);

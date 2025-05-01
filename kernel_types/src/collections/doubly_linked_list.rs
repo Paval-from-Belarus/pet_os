@@ -153,26 +153,11 @@ impl<'data, T: ListNodeData> BorrowingLinkedList<'data>
     type Item = ListNode<T>;
 
     fn empty() -> Self {
-        Self {
-            first: ptr::null_mut(),
-            last: ptr::null_mut(),
-            _marker: PhantomData,
-        }
+        Self::empty()
     }
 
     fn push_back<K: Into<&'data mut ListNode<T>>>(&mut self, node: K) {
-        let raw_node = NonNull::from(node.into());
-
-        unsafe {
-            if self.is_empty() {
-                self.first_link(raw_node);
-                return;
-            }
-
-            self.insert_after_last(raw_node);
-        }
-
-        self.last = raw_node.as_ptr();
+        self.push_back(node);
     }
 
     fn push_front(&mut self, node: &'data mut ListNode<T>) {
@@ -205,6 +190,28 @@ impl<'data, T: ListNodeData> BorrowingLinkedList<'data>
 }
 
 impl<'data, T: Sized + ListNodeData> LinkedList<'data, T> {
+    pub const fn empty() -> Self {
+        Self {
+            first: ptr::null_mut(),
+            last: ptr::null_mut(),
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn push_back<K: Into<&'data mut ListNode<T>>>(&mut self, node: K) {
+        let raw_node = NonNull::from(node.into());
+
+        unsafe {
+            if self.is_empty() {
+                self.first_link(raw_node);
+                return;
+            }
+
+            self.insert_after_last(raw_node);
+        }
+
+        self.last = raw_node.as_ptr();
+    }
     /// .
     ///
     /// # Safety
