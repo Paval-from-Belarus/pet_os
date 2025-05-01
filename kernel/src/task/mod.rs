@@ -11,7 +11,7 @@ use crate::common::atomics::UnsafeLazyCell;
 
 use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
-use crate::interrupts::{pic, CallbackInfo};
+use crate::io::{pic, CallbackInfo};
 use crate::memory::{
     MemoryRegionFlag, Page, SegmentSelector, TaskRoutine, VirtualAddress,
 };

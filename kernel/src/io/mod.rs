@@ -7,15 +7,17 @@ use kernel_types::collections::{BoxedNode, ListNode};
 use kernel_types::{declare_constants, declare_types, syscall};
 
 use crate::drivers::Handle;
-use crate::interrupts::object::InterruptObject;
-use crate::interrupts::pic::PicLine;
+use crate::io::object::InterruptObject;
+use crate::io::pic::PicLine;
 use crate::memory::{
     self, slab_alloc, InterruptGate, PrivilegeLevel, SegmentSelector, Slab,
     SlabBox, SystemType, VirtualAddress,
 };
 use crate::task::TaskContext;
-use crate::{get_eax, get_edx, interrupts, set_eax};
+use crate::{get_eax, get_edx, io, set_eax};
 
+mod block;
+mod char;
 mod lock;
 mod object;
 pub(crate) mod pic;
@@ -96,7 +98,7 @@ macro_rules! irq_line {
     ($index: expr, $line: ident) => {
         IrqLine {
             interrupt: $index,
-            line: $crate::interrupts::pic::PicLine::$line,
+            line: $crate::io::pic::PicLine::$line,
         }
     };
 }
@@ -167,22 +169,22 @@ declare_types! {
 #[macro_export]
 macro_rules! naked_trap {
     ($handler:ident) => {{
-        use $crate::interrupts::InterruptGate;
+        use $crate::io::InterruptGate;
         InterruptGate::with_naked_handler(
             $handler,
             $crate::memory::SegmentSelector::KERNEL_CODE,
-            $crate::interrupts::TRAP,
+            $crate::io::TRAP,
         )
     }};
 }
 #[macro_export]
 macro_rules! error_trap {
     ($handler: ident) => {{
-        use $crate::interrupts::InterruptGate;
+        use $crate::io::InterruptGate;
         InterruptGate::with_error_handler(
             $handler,
             $crate::memory::SegmentSelector::KERNEL_CODE,
-            $crate::interrupts::TRAP,
+            $crate::io::TRAP,
         )
     }};
 }
@@ -301,7 +303,7 @@ pub unsafe extern "C" fn interceptor_stub() {
 
     let mut frame_ptr: *mut TaskContext = get_edx!();
 
-    interrupts::disable();
+    io::disable();
 
     asm! {
         "mov ds, ax",

@@ -6,7 +6,7 @@ use core::{
 };
 
 use crate::{
-    current_task, interrupts, log_unchecked,
+    current_task, io, log_unchecked,
     memory::{self, SegmentSelector},
     set_eax, set_edx,
     task::{switch_context, RunningTask, TaskContext},
@@ -39,7 +39,7 @@ impl<'a> Drop for SchedulerGuard<'a> {
         }
 
         if self.restore_interrupts {
-            unsafe { interrupts::enable() };
+            unsafe { io::enable() };
         }
     }
 }
@@ -71,9 +71,9 @@ impl SchedulerLock {
     //if it has been locked (interrupts disabled) then no other way
     //to obtain schedular in another thread (this thread is never executed)
     pub fn switch_lock(&self) -> SchedulerGuard<'_> {
-        let restore_interrupts = unsafe { interrupts::status() };
+        let restore_interrupts = unsafe { io::status() };
 
-        unsafe { interrupts::disable() };
+        unsafe { io::disable() };
 
         let old_context =
             unsafe { &*self.scheduler.get() }.current.context_ptr();
@@ -87,9 +87,9 @@ impl SchedulerLock {
     }
 
     pub fn access_lock(&self) -> SchedulerGuard<'_> {
-        let restore_interrupts = unsafe { interrupts::status() };
+        let restore_interrupts = unsafe { io::status() };
 
-        unsafe { interrupts::disable() };
+        unsafe { io::disable() };
 
         let old_context = unsafe { &mut *self.scheduler.get() }
             .current_task()

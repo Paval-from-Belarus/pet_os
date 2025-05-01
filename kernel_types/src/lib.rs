@@ -167,6 +167,15 @@ pub trait ReferableResource {
     }
 }
 
+#[macro_export]
+macro_rules! container_of {
+    ($ptr: expr, $ty: ty, $field: ident) => {{
+        let field_offset = core::mem::offset_of!($ty, $field);
+        let struct_offset = unsafe { ($ptr as *mut u8).sub(field_offset) };
+        unsafe { core::mem::transmute::<*mut u8, *mut $ty>(struct_offset) }
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     extern crate alloc;

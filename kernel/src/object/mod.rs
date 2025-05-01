@@ -1,12 +1,9 @@
 mod runtime;
 
-
 use kernel_macro::ListNode;
 use kernel_types::collections::{HashCode, HashKey, ListNode};
 
 use crate::memory::VirtualAddress;
-
-pub use runtime::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 #[must_use]
@@ -32,17 +29,23 @@ pub enum Status {
 }
 
 impl Object {
-    pub fn new(kind: Kind) -> Self {
+    pub fn new_in_progress(kind: Kind) -> Self {
         Self {
             kind,
             status: Status::InProgress,
             node: ListNode::empty(),
         }
     }
+
+    pub fn handle<T: ObjectContainer>(&self) -> Handle {
+        let container = T::container_of(self);
+
+        Handle(container as VirtualAddress)
+    }
 }
 
 pub trait ObjectContainer {
-    fn container_of(object: &mut Object) -> Self;
+    fn container_of(object: *const Object) -> *const Self;
 }
 
 #[derive(Debug)]

@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use kernel_types::collections::LinkedList;
 
 use crate::task::SCHEDULER;
@@ -20,11 +22,11 @@ impl Runtime {
         }
     }
 
-    pub fn remove_object(&self, handle: Handle) -> Option<&'static Object> {
+    pub fn remove_object(&self, _handle: Handle) -> Option<&'static Object> {
         None
     }
 
-    pub fn get_mut(&self, handle: Handle) -> Option<&mut Object> {
+    pub fn get_mut(&self, _handle: Handle) -> Option<&mut Object> {
         todo!()
     }
 }

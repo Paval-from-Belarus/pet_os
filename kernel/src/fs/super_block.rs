@@ -1,16 +1,13 @@
 use alloc::sync::Arc;
 use kernel_macro::ListNode;
 use kernel_types::{
-    collections::{
-        BorrowingLinkedList, BoxedNode, LinkedList, TinyLinkedList,
-        TinyListNode,
-    },
+    collections::{BoxedNode, LinkedList, ListNode, TinyListNode},
     declare_constants,
     drivers::{DeviceId, DriverId},
 };
 
 use crate::{
-    memory::{self, slab_alloc, SlabBox},
+    memory::{self, SlabBox},
     object,
 };
 
@@ -28,6 +25,28 @@ pub struct SuperBlockOperations {
     //this method also flush changes on the disk
     pub dirty_node: fn(&mut IndexNode),
     pub destroy_node: fn(&mut IndexNode),
+}
+
+#[derive(ListNode)]
+pub struct FileSystemItem {
+    #[list_pivots]
+    node: ListNode<FileSystemItem>,
+    fs: Arc<FileSystem>,
+    pub id: usize,
+}
+
+impl FileSystemItem {
+    pub fn new(fs: FileSystem) -> Self {
+        Self {
+            node: ListNode::empty(),
+            fs: Arc::new(fs),
+            id: 0,
+        }
+    }
+
+    pub fn fs(&self) -> Arc<FileSystem> {
+        Arc::clone(&self.fs)
+    }
 }
 
 /// user-space structure to register file system
@@ -69,24 +88,21 @@ impl crate::memory::Slab for SuperBlock {
 }
 
 impl SuperBlock {
-    pub fn new_boxed(
+    pub fn new(
         file_system: Arc<FileSystem>,
-        device_id: DeviceId,
-        driver_id: DriverId,
-    ) -> SuperBlockBox {
-        let super_block = slab_alloc(SuperBlock {
+        device_id: u32,
+        driver_id: u16,
+    ) -> SuperBlock {
+        SuperBlock {
             node: TinyListNode::empty(),
-            device_id,
-            driver_id,
+            device_id: DeviceId(device_id),
+            driver_id: DriverId::new(driver_id),
             file_system,
 
             files: LinkedList::empty(),
             mounts: LinkedList::empty(),
             block_size: 512,
-        })
-        .unwrap();
-
-        SuperBlockBox { super_block }
+        }
     }
 
     pub fn work(&self, _work: Work) -> object::Handle {
@@ -110,18 +126,4 @@ impl BoxedNode for SuperBlock {
 
         Self::Target { super_block }
     }
-}
-
-fn do_stuff<'a>(
-    fs: Arc<FileSystem>,
-    nodes: &mut TinyLinkedList<'a, SuperBlock>,
-) -> SuperBlockBox {
-    let super_block =
-        SuperBlock::new_boxed(fs, DeviceId(0), DriverId::RESERVED);
-
-    nodes.push_back(super_block.into_node());
-
-    let node = nodes.iter_mut().unlink_watched().unwrap();
-
-    node.into_boxed()
 }

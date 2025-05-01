@@ -1,8 +1,8 @@
 use kernel_types::collections::LinkedList;
 
 use crate::drivers::Handle;
-use crate::interrupts::pic::PicLine;
-use crate::interrupts::{pic, CallbackInfo};
+use crate::io::pic::PicLine;
+use crate::io::{pic, CallbackInfo};
 use crate::memory::{self, Slab, SlabBox};
 use crate::ticks_now;
 

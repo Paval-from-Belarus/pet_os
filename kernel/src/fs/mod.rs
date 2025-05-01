@@ -1,17 +1,18 @@
-use alloc::string::{String};
 pub use error::*;
 pub use file::*;
 pub use index_node::*;
+use kernel_types::string::MutString;
 pub use mount_point::*;
-pub use super_block::*;
 pub use path::*;
+pub use super_block::*;
+pub use work::*;
 
-use kernel_types::drivers::Device;
-use kernel_types::{declare_constants};
+use kernel_types::declare_constants;
+use kernel_types::drivers::{Device, DeviceId};
 
 use crate::current_task;
 use crate::drivers::{BlockDeviceBox, CharDeviceBox};
-use crate::object::{self, Object};
+use crate::object::{self};
 
 mod error;
 mod file;
@@ -20,8 +21,9 @@ mod mount_point;
 mod path;
 mod super_block;
 mod system_fs;
+mod work;
 
-use system_fs::SystemMountPoints;
+use system_fs::{FileSystemId, SystemMountPoints};
 
 declare_constants!(
     pub usize,
@@ -33,10 +35,6 @@ bitflags::bitflags! {
     pub struct FileSystemKind: usize {
         const READ_ONLY = 0b01;
     }
-}
-
-pub enum NodeState {
-    Locked,
 }
 
 pub enum DeviceKind {
@@ -55,6 +53,20 @@ bitflags::bitflags! {
 }
 
 static FILE_SYSTEMS: SystemMountPoints = SystemMountPoints::new();
+
+pub fn init() {}
+
+pub fn regiser_block_dev(_id: DeviceId, _name: MutString) {}
+
+pub fn register_fs(fs: FileSystem) -> Result<FileSystemId, ()> {
+    let fs_id = FILE_SYSTEMS.register(fs)?;
+
+    Ok(fs_id)
+}
+
+pub fn unregister_fs(id: FileSystemId) -> Result<(), ()> {
+    FILE_SYSTEMS.unregister(id)
+}
 
 pub fn open<T: AsRef<str>>(path: T) -> object::Handle {
     let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
@@ -82,7 +94,7 @@ pub fn read(
 
 pub fn write(
     file_handle: usize,
-    source: *mut u8,
+    source: *const u8,
     count: usize,
 ) -> Result<object::Handle, FsError> {
     let Some(file) = current_task!().opened_files.get(file_handle) else {
@@ -107,30 +119,3 @@ pub fn close(file_handle: usize) -> Result<object::Handle, FsError> {
 
     Ok(op_handle)
 }
-
-//handle is the address of object
-pub struct WorkObject {
-    work: Work,
-    object: Object,
-}
-
-pub enum Work {
-    Open {
-        name: String,
-    },
-    Close {
-        file: FileId,
-    },
-    Read {
-        file: FileId,
-        buffer: *mut u8,
-        count: usize,
-    },
-    Write {
-        file: FileId,
-        buffer: *const u8,
-        count: usize,
-    },
-}
-
-pub fn init() {}

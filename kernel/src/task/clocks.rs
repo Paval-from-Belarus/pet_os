@@ -6,7 +6,7 @@ use kernel_types::declare_constants;
 
 use crate::common::io;
 use crate::common::time::Timestamp;
-use crate::interrupts::pic;
+use crate::io::pic;
 
 pub enum ClockType {
     //the time since epoch

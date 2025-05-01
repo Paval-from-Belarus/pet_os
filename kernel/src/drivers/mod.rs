@@ -26,6 +26,7 @@ mod management;
 mod memory;
 mod network;
 mod vga;
+mod api;
 
 use generated::STATIC_DRIVERS;
 

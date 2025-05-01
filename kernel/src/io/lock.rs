@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
-use crate::interrupts;
+use crate::io;
 
 ///should be used only in single cpu architectures
 pub struct InterruptableLazyCell<T> {
@@ -45,7 +45,7 @@ pub struct InterruptableLock<'a, T> {
 
 impl<'a, T> InterruptableLock<'a, T> {
     fn new(data: &'a mut T) -> Self {
-        unsafe { interrupts::disable() };
+        unsafe { io::disable() };
         Self {
             data: NonNull::from(data),
             _marker: PhantomData,
@@ -69,6 +69,6 @@ impl<'a, T> DerefMut for InterruptableLock<'a, T> {
 
 impl<'a, T> Drop for InterruptableLock<'a, T> {
     fn drop(&mut self) {
-        unsafe { interrupts::enable() }
+        unsafe { io::enable() }
     }
 }

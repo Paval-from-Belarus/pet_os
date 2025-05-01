@@ -33,7 +33,7 @@ mod drivers;
 #[allow(dead_code)]
 mod fs;
 #[allow(dead_code)]
-mod interrupts;
+mod io;
 #[allow(dead_code)]
 mod memory;
 
@@ -60,7 +60,7 @@ pub fn main() {
     logging::init();
 
     unsafe {
-        interrupts::disable();
+        io::disable();
     }
 
     let directory = properties.page_directory();
@@ -71,7 +71,7 @@ pub fn main() {
     memory::init_kernel_space(allocator, directory, heap_offset);
     log::info!("memory is initialized");
 
-    interrupts::init();
+    io::init();
     log::info!("interrupts are initialized");
 
     fs::init();

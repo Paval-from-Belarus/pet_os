@@ -1,8 +1,8 @@
 use kernel_types::string::MutString;
 use kernel_types::{bitflags, declare_constants, syscall};
 
-use crate::interrupts::object::InterruptObject;
-use crate::interrupts::{
+use crate::io::object::InterruptObject;
+use crate::io::{
     IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
 };
 use crate::memory::{SlabBox, VirtualAddress};
