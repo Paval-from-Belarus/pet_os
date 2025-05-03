@@ -58,7 +58,7 @@ pub fn register_fs(fs: FileSystem) -> Result<FileSystemId, ()> {
     Ok(fs_id)
 }
 
-pub fn fs_queue(id: FileSystemId) -> Result<object::Handle, ()> {
+pub fn fs_queue(id: FileSystemId) -> Result<object::RawHandle, ()> {
     match FILE_SYSTEMS.fs_queue(id) {
         Some(h) => Ok(h),
         None => Err(()),
@@ -69,17 +69,17 @@ pub fn unregister_fs(id: FileSystemId) -> Result<(), ()> {
     FILE_SYSTEMS.unregister(id)
 }
 
-pub fn open<T: AsRef<str>>(path: T) -> object::Handle {
+pub fn open<T: AsRef<str>>(path: T) -> object::RawHandle {
     let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
 
-    fs.super_block().work(Work::Open { name })
+    fs.super_block().work(Work::Open { name }).into_raw()
 }
 
 pub fn read(
     file_handle: usize,
     dest: *mut u8,
     count: usize,
-) -> Result<object::Handle, FsError> {
+) -> Result<object::RawHandle, FsError> {
     let Some(file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
@@ -90,14 +90,14 @@ pub fn read(
         count,
     });
 
-    Ok(op_handle)
+    Ok(op_handle.into_raw())
 }
 
 pub fn write(
     file_handle: usize,
     source: *const u8,
     count: usize,
-) -> Result<object::Handle, FsError> {
+) -> Result<object::RawHandle, FsError> {
     let Some(file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
@@ -108,15 +108,15 @@ pub fn write(
         count,
     });
 
-    Ok(op_handle)
+    Ok(op_handle.into_raw())
 }
 
-pub fn close(file_handle: usize) -> Result<object::Handle, FsError> {
+pub fn close(file_handle: usize) -> Result<object::RawHandle, FsError> {
     let Some(file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
 
     let op_handle = file.super_block().work(Work::Close { file: file.id() });
 
-    Ok(op_handle)
+    Ok(op_handle.into_raw())
 }

@@ -27,7 +27,10 @@ impl RunningTaskBox {
 }
 
 impl RunningTask {
-    pub fn into_blocked(&mut self, handle: object::Handle) -> &mut BlockedTask {
+    pub fn into_blocked(
+        &mut self,
+        handle: object::RawHandle,
+    ) -> &mut BlockedTask {
         self.task.status = TaskStatus::Blocked(handle);
 
         self

@@ -1,16 +1,17 @@
 mod event;
 mod handle;
-mod queue;
 pub mod runtime;
+
+use core::ptr::NonNull;
 
 use kernel_macro::ListNode;
 use kernel_types::collections::ListNode;
 
 use crate::memory::{self, slab_alloc, Slab, SlabBox, VirtualAddress};
 
-pub use handle::Handle;
+pub use handle::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Kind {
     IoWork,
@@ -27,7 +28,7 @@ pub enum Kind {
 pub struct Object {
     #[list_pivots]
     node: ListNode<Object>,
-    pub parent: Option<Handle>,
+    pub parent: Option<RawHandle>,
     pub kind: Kind,
     pub status: Status,
 }
@@ -47,16 +48,16 @@ pub enum Status {
 }
 
 impl Object {
-    fn new_root(kind: Kind) -> Result<SlabBox<Self>, memory::AllocError> {
-        slab_alloc(Self {
+    fn new_root(kind: Kind) -> Self {
+        Self {
             kind,
             parent: None,
             status: Status::Working,
             node: ListNode::empty(),
-        })
+        }
     }
 
-    fn new_child(kind: Kind, parent: Handle) -> Self {
+    fn new_child(kind: Kind, parent: RawHandle) -> Self {
         Self {
             kind,
             parent: parent.into(),
@@ -65,41 +66,57 @@ impl Object {
         }
     }
 
-    pub fn handle(&self) -> Handle {
-        Handle(self as *const Object as VirtualAddress)
+    fn handle<T: ObjectContainer>(&self) -> Handle<T> {
+        unsafe { Handle::from_raw_unchecked(self.raw_handle()) }
+    }
+
+    fn raw_handle(&self) -> RawHandle {
+        self as *const Object as VirtualAddress
     }
 }
 
-pub trait ObjectContainer {
+pub trait ObjectContainer: Sized + Slab + 'static {
     const KIND: Kind;
     fn container_of(object: *mut Object) -> *mut Self;
     fn object(&self) -> &Object;
+    fn object_mut(&mut self) -> &mut Object;
 
-    fn new_object(parent: Handle) -> Object {
+    fn new_object(parent: RawHandle) -> Object {
         assert!(runtime::lookup(parent));
 
         Object::new_child(Self::KIND, parent)
     }
 
-    fn handle(&self) -> Handle {
+    fn new_root_object() -> Object {
+        Object::new_root(Self::KIND)
+    }
+
+    fn handle(&self) -> Handle<Self> {
         self.object().handle()
     }
 }
 
 // alloc new root object
 // any root object can be used as parent for another objects
-pub fn alloc_root_object(kind: Kind) -> Result<Handle, memory::AllocError> {
-    let object = Object::new_root(kind)?;
+pub fn alloc_root_object<T: ObjectContainer + Slab + 'static>(
+    value: T,
+) -> Result<Handle<T>, memory::AllocError> {
+    let object = slab_alloc(value)?;
 
     let leaked_object = unsafe { &mut *SlabBox::into_raw(object) };
 
-    Ok(runtime::register(leaked_object))
+    let raw_handle = runtime::register(leaked_object.object_mut());
+
+    unsafe { Ok(Handle::from_raw_unchecked(raw_handle)) }
 }
 
-pub fn dealloc_root_object(handle: Handle) {
-    let Some(leaked_object) = runtime::unregister(handle) else {
-        panic!("No root object for handle: {handle:?}");
+pub fn dealloc_root_object<T: ObjectContainer>(handle: Handle<T>) {
+    let Some(object) = runtime::unregister(handle.into_raw()) else {
+        panic!("No root object for handle: {:X}", handle.into_raw());
     };
 
-    let _ = memory::into_boxed(leaked_object.into());
+    let container =
+        NonNull::new(T::container_of(object)).expect("Invalid container");
+
+    let _ = memory::into_boxed(container);
 }

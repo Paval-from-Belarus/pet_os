@@ -70,7 +70,7 @@ impl TaskScheduler {
     }
 
     /// block the current task on object handle
-    pub fn block_on(&mut self, handle: object::Handle) {
+    pub fn block_on(&mut self, handle: object::RawHandle) {
         let mut next_task = self
             .running
             .take_next()
@@ -83,7 +83,7 @@ impl TaskScheduler {
         self.blocked.insert(blocked_task.as_node());
     }
 
-    pub fn unblock_on(&mut self, handle: object::Handle) {
+    pub fn unblock_on(&mut self, handle: object::RawHandle) {
         let unblocked_task = self
             .blocked
             .remove(&handle)

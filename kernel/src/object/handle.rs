@@ -1,21 +1,66 @@
+use core::marker::PhantomData;
+
 use kernel_types::collections::{HashCode, HashKey};
 
 use crate::memory::VirtualAddress;
 
-use super::Object;
+use super::{Object, ObjectContainer};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(Debug)]
 #[must_use]
-pub struct Handle(pub VirtualAddress);
+pub struct Handle<T: ObjectContainer>(
+    // pub struct Handle(
+    RawHandle,
+    PhantomData<&'static mut T>,
+);
 
-impl HashKey for Handle {
+pub type RawHandle = VirtualAddress;
+
+impl<T: ObjectContainer> PartialEq for Handle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl<T: ObjectContainer> Eq for Handle<T> {}
+
+impl<T: ObjectContainer> HashKey for Handle<T> {
+    // impl HashKey for Handle {
     fn hash_code(&self) -> HashCode {
         self.0 as HashCode
     }
 }
 
-impl Handle {
-    pub fn object(&self) -> *const Object {
+impl<T: ObjectContainer> Handle<T> {
+    pub unsafe fn from_raw_unchecked(raw_handle: RawHandle) -> Self {
+        Self(raw_handle, PhantomData)
+    }
+
+    pub fn try_from_raw(raw_handle: RawHandle) -> Result<Self, ()> {
+        Ok(unsafe { Self::from_raw_unchecked(raw_handle) })
+    }
+
+    fn object(&self) -> *const Object {
         self.0 as *const Object
+    }
+
+    pub fn into_raw(&self) -> RawHandle {
+        self.0
+    }
+}
+
+impl<T: ObjectContainer> core::ops::Deref for Handle<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        let container = T::container_of(self.object() as *mut Object);
+
+        unsafe { &*container }
+    }
+}
+
+impl<T: ObjectContainer> core::ops::DerefMut for Handle<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let container = T::container_of(self.object() as *mut Object);
+
+        unsafe { &mut *container }
     }
 }

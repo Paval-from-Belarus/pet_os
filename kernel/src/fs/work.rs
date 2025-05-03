@@ -1,7 +1,11 @@
 use alloc::{boxed::Box, string::String};
 use kernel_types::container_of;
 
-use crate::object::{self, Object, ObjectContainer};
+use crate::{
+    memory::Slab,
+    object::{self, Object, ObjectContainer},
+    user::queue::Queue,
+};
 
 use super::FileId;
 
@@ -12,8 +16,11 @@ pub struct FsWork {
 }
 
 impl FsWork {
-    pub fn new_boxed(work: Work, parent: object::Handle) -> Box<Self> {
-        let object = Self::new_object(parent);
+    pub fn new_boxed(
+        work: Work,
+        parent: &object::Handle<Queue<FsWork>>,
+    ) -> Box<Self> {
+        let object = Self::new_object(parent.into_raw());
 
         Box::new(Self { work, object })
     }
@@ -48,10 +55,12 @@ impl ObjectContainer for FsWork {
     fn object(&self) -> &Object {
         &self.object
     }
+
+    fn object_mut(&mut self) -> &mut Object {
+        &mut self.object
+    }
 }
 
-impl From<&'static mut FsWork> for &'static mut Object {
-    fn from(value: &'static mut FsWork) -> Self {
-        &mut value.object
-    }
+impl Slab for FsWork {
+    const NAME: &str = "fs_work";
 }

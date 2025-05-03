@@ -7,10 +7,13 @@ use kernel_types::{
 };
 
 use crate::{
-    fs::FileOperations, memory::ProcessId, object::Object, user::queue::Queue,
+    fs::FileOperations,
+    memory::ProcessId,
+    object::{self, Object},
+    user::queue::Queue,
 };
 
-use super::WorkObject;
+use super::IoWork;
 
 pub struct BlockDevice {
     device: Device,
@@ -22,7 +25,7 @@ pub struct BlockDevice {
     //remove field because linux uses it to represent in file system
     driver_name: [u8; 32],
     ops: NonNull<FileOperations>,
-    io_work: Queue<'static, Object>,
+    io_work: object::Handle<Queue<IoWork>>,
 }
 
 //the type alias using to represent sector

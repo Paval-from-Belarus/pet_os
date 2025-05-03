@@ -2,4 +2,4 @@
 mod device;
 mod work;
 
-pub use work::{Work, WorkObject};
+pub use work::{Work, IoWork};

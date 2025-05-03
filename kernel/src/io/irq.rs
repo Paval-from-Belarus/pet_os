@@ -64,7 +64,7 @@ impl InterruptObject {
         list.push_back(leaked_info.as_next());
     }
 
-    pub fn remove(&self, removable: object::Handle) {
+    pub fn remove(&self, removable: object::RawHandle) {
         let mut list = self.callbacks.try_lock().unwrap();
 
         let mut iterator = list.iter_mut();

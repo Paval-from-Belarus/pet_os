@@ -40,8 +40,8 @@ impl Futex {
         Self::new(1)
     }
 
-    pub fn handle(&self) -> object::Handle {
-        object::Handle(0)
+    pub fn handle(&self) -> object::RawHandle {
+        todo!()
     }
 
     pub fn acquire(&self) {
@@ -60,7 +60,8 @@ impl Futex {
     }
 
     pub fn release(&self) {
-        SCHEDULER.switch_lock().unblock_on(self.handle());
+        todo!()
+        // SCHEDULER.switch_lock().unblock_on(self.handle());
     }
 
     fn inner(&self) -> &mut FutexInner {

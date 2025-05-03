@@ -78,12 +78,12 @@ impl SystemMountPoints {
         SpinBox::new_locked(&self.mounts_lock, root_fs)
     }
 
-    pub fn fs_queue(&self, id: FileSystemId) -> Option<object::Handle> {
+    pub fn fs_queue(&self, id: FileSystemId) -> Option<object::RawHandle> {
         self.fs
             .read()
             .iter()
             .find(|fs| fs.id == id)
-            .map(|fs| fs.queue().read().handle())
+            .map(|fs| fs.queue().into_raw())
     }
 
     pub fn lookup_fs<PATH: AsRef<str>>(

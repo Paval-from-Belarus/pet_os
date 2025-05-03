@@ -1,57 +1,84 @@
-#![allow(unused)]
+mod api;
 
-use core::marker::PhantomData;
+use core::{cell::UnsafeCell, marker::PhantomData};
 
-use kernel_types::collections::{LinkedList, ListNodeData};
+use kernel_types::{collections::LinkedList, container_of};
 
 use crate::{
-    memory,
+    common::atomics::SpinLock,
+    memory::{self, Slab},
     object::{
         alloc_root_object, dealloc_root_object, runtime, Handle, Kind, Object,
         ObjectContainer,
     },
 };
 
-pub struct Queue<'a, T> {
-    data: LinkedList<'a, Object>,
-    handle: Handle,
-    _marker: PhantomData<&'a T>,
+#[allow(unused)]
+pub use api::*;
+
+pub struct Queue<T: 'static> {
+    data: UnsafeCell<LinkedList<'static, Object>>,
+    lock: SpinLock,
+    object: Object,
+    _marker: PhantomData<T>,
 }
 
-impl<'a, T> Queue<'a, T>
+impl<T> Queue<T>
 where
-    T: ObjectContainer,
-    &'a mut T: Into<&'a mut Object>,
+    T: ObjectContainer + 'static,
 {
-    pub fn new() -> Result<Self, memory::AllocError> {
-        let handle = alloc_root_object(Kind::Queue)?;
-
-        Ok(Self {
-            handle,
-            data: LinkedList::empty(),
+    pub fn new() -> Result<Handle<Self>, memory::AllocError> {
+        let handle = alloc_root_object(Self {
+            object: Self::new_root_object(),
+            data: UnsafeCell::new(LinkedList::empty()),
+            lock: SpinLock::new(),
             _marker: PhantomData,
-        })
+        })?;
+
+        Ok(handle)
     }
 
-    pub fn push(&mut self, data: &'a mut T) {
-        let object = data.into();
+    pub fn push(&self, data: &'static mut T) {
+        self.lock.acquire();
 
-        self.data.push_back(object);
+        {
+            let list = unsafe { &mut *self.data.get() };
 
-        runtime::notify(self.handle());
+            list.push_back(data.object_mut());
+        }
+
+        self.lock.release();
+
+        runtime::notify(self.handle().into_raw());
     }
 
-    pub fn pop(&mut self) -> Option<&'a mut T> {
+    pub fn pop(&self) -> Option<&'static mut T> {
         None
     }
+}
 
-    pub fn handle(&self) -> Handle {
-        self.handle
+impl<T: 'static> ObjectContainer for Queue<T> {
+    const KIND: Kind = Kind::Queue;
+
+    fn container_of(object: *mut Object) -> *mut Self {
+        container_of!(object, Self, object)
+    }
+
+    fn object(&self) -> &Object {
+        &self.object
+    }
+
+    fn object_mut(&mut self) -> &mut Object {
+        &mut self.object
     }
 }
 
-impl<'a, T> Drop for Queue<'a, T> {
+impl<T> Slab for Queue<T> {
+    const NAME: &'static str = "queue";
+}
+
+impl<T: 'static> Drop for Queue<T> {
     fn drop(&mut self) {
-        dealloc_root_object(self.handle);
+        dealloc_root_object(self.handle());
     }
 }

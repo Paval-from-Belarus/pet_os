@@ -48,7 +48,7 @@ pub type Callback = fn(
 #[derive(Debug, ListNode)]
 #[repr(C)]
 pub struct CallbackInfo {
-    driver: crate::object::Handle,
+    driver: crate::object::RawHandle,
     callback: Callback,
     context: *mut (),
     #[list_pivots]
@@ -72,7 +72,7 @@ impl CallbackInfo {
     pub const fn new(callback: Callback) -> Self {
         Self {
             callback,
-            driver: object::Handle(0),
+            driver: 0,
             context: ptr::null_mut(),
             next: ListNode::empty(),
         }
@@ -232,7 +232,7 @@ impl InterruptGate {
 const MAX_INTERRUPTS_COUNT: usize = 256;
 
 ///the method to registry InterruptObject
-pub fn registry(_handle: object::Handle, line: IrqLine, info: CallbackInfo) {
+pub fn registry(_handle: object::RawHandle, line: IrqLine, info: CallbackInfo) {
     let index = u8::from(line.line) as usize;
     let interceptors = INTERCEPTORS.try_lock().unwrap().unwrap();
     let manager = interceptors[index];

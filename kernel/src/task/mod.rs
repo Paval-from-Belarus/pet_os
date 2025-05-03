@@ -49,13 +49,13 @@ pub enum TaskStatus {
     //the task is waiting in queue
     Sleeping,
     //the task is blocked in waiting for something
-    Blocked(object::Handle),
+    Blocked(object::RawHandle),
     //the task is died
     Killed,
 }
 
 impl TaskStatus {
-    pub fn blocking_reason(&self) -> Option<&object::Handle> {
+    pub fn blocking_reason(&self) -> Option<&object::RawHandle> {
         match self {
             TaskStatus::Blocked(handle) => Some(handle),
             _ => None,

@@ -64,7 +64,7 @@ pub struct ProccessTask {
 }
 
 impl HashData for BlockedTask {
-    type Item<'a> = object::Handle;
+    type Item<'a> = object::RawHandle;
 
     fn key<'a>(&self) -> &Self::Item<'a> {
         todo!()
@@ -93,7 +93,7 @@ impl Task {
             status: TaskStatus::Embryo,
             start_time: 0,
             state: None,
-            opened_files: Default::default(), 
+            opened_files: Default::default(),
             file_system: NonNull::dangling(),
 
             metrics: TaskMetrics {

@@ -2,7 +2,7 @@ use kernel_types::collections::LinkedList;
 
 use crate::task::SCHEDULER;
 
-use super::{Handle, Object, Status};
+use super::{Object, RawHandle, Status};
 
 struct Runtime {
     pub objects: spin::RwLock<LinkedList<'static, Object>>,
@@ -20,10 +20,13 @@ impl Runtime {
         }
     }
 
-    pub fn remove_object(&self, handle: Handle) -> Option<&'static mut Object> {
+    pub fn remove_object(
+        &self,
+        handle: RawHandle,
+    ) -> Option<&'static mut Object> {
         let mut objects = self.objects.write();
 
-        let node = objects.remove_by(|object| object.handle() == handle)?;
+        let node = objects.remove_by(|object| object.raw_handle() == handle)?;
 
         Some(&mut *node)
     }
@@ -34,11 +37,12 @@ impl Runtime {
 }
 
 #[allow(unused)]
-pub fn block_on(handle: Handle) -> Result<(), ()> {
+pub fn block_on(handle: RawHandle) -> Result<(), ()> {
     let mut objects = RUNTIME.objects.write();
 
-    let Some(object) =
-        objects.iter_mut().find(|object| object.handle() == handle)
+    let Some(object) = objects
+        .iter_mut()
+        .find(|object| object.raw_handle() == handle)
     else {
         return Err(());
     };
@@ -56,25 +60,25 @@ pub fn block_on(handle: Handle) -> Result<(), ()> {
     Ok(())
 }
 
-pub fn notify(_handle: Handle) {
+pub fn notify(_handle: RawHandle) {
     //todo: add logic to wake up all tasks
     //waiting on object
 }
 
-pub fn lookup(handle: Handle) -> bool {
+pub fn lookup(handle: RawHandle) -> bool {
     let objects = RUNTIME.objects.read();
 
-    objects.iter().any(|object| object.handle() == handle)
+    objects.iter().any(|object| object.raw_handle() == handle)
 }
 
-pub fn register(object: &'static mut Object) -> Handle {
-    let handle = object.handle();
+pub fn register(object: &'static mut Object) -> RawHandle {
+    let handle = object.raw_handle();
 
     RUNTIME.push_object(object);
 
     handle
 }
 
-pub fn unregister(handle: Handle) -> Option<&'static mut Object> {
+pub fn unregister(handle: RawHandle) -> Option<&'static mut Object> {
     RUNTIME.remove_object(handle)
 }

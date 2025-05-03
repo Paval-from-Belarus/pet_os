@@ -66,6 +66,19 @@ pub trait HashData {
     }
 }
 
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+impl HashKey for usize {
+    fn hash_code(&self) -> HashCode {
+        *self as u32
+    }
+}
+
+impl HashKey for u32 {
+    fn hash_code(&self) -> HashCode {
+        *self
+    }
+}
+
 pub trait BorrowingLinkedList<'a> {
     type Item: 'a;
     fn empty() -> Self;
