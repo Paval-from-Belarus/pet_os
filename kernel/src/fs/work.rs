@@ -20,7 +20,7 @@ impl FsWork {
         work: Work,
         parent: &object::Handle<Queue<FsWork>>,
     ) -> Box<Self> {
-        let object = Self::new_object(parent.into_raw());
+        let object = Self::new_object(parent);
 
         Box::new(Self { work, object })
     }

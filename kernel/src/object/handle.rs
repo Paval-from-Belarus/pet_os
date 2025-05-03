@@ -24,7 +24,6 @@ impl<T: ObjectContainer> PartialEq for Handle<T> {
 impl<T: ObjectContainer> Eq for Handle<T> {}
 
 impl<T: ObjectContainer> HashKey for Handle<T> {
-    // impl HashKey for Handle {
     fn hash_code(&self) -> HashCode {
         self.0 as HashCode
     }
@@ -35,7 +34,7 @@ impl<T: ObjectContainer> Handle<T> {
         Self(raw_handle, PhantomData)
     }
 
-    pub fn try_from_raw(raw_handle: RawHandle) -> Result<Self, ()> {
+    pub fn from_raw(raw_handle: RawHandle) -> Result<Self, ()> {
         Ok(unsafe { Self::from_raw_unchecked(raw_handle) })
     }
 
@@ -43,7 +42,7 @@ impl<T: ObjectContainer> Handle<T> {
         self.0 as *const Object
     }
 
-    pub fn into_raw(&self) -> RawHandle {
+    pub fn as_raw(&self) -> RawHandle {
         self.0
     }
 }

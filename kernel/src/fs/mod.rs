@@ -72,7 +72,7 @@ pub fn unregister_fs(id: FileSystemId) -> Result<(), ()> {
 pub fn open<T: AsRef<str>>(path: T) -> object::RawHandle {
     let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
 
-    fs.super_block().work(Work::Open { name }).into_raw()
+    fs.super_block().work(Work::Open { name }).as_raw()
 }
 
 pub fn read(
@@ -90,7 +90,7 @@ pub fn read(
         count,
     });
 
-    Ok(op_handle.into_raw())
+    Ok(op_handle.as_raw())
 }
 
 pub fn write(
@@ -108,7 +108,7 @@ pub fn write(
         count,
     });
 
-    Ok(op_handle.into_raw())
+    Ok(op_handle.as_raw())
 }
 
 pub fn close(file_handle: usize) -> Result<object::RawHandle, FsError> {
@@ -118,5 +118,5 @@ pub fn close(file_handle: usize) -> Result<object::RawHandle, FsError> {
 
     let op_handle = file.super_block().work(Work::Close { file: file.id() });
 
-    Ok(op_handle.into_raw())
+    Ok(op_handle.as_raw())
 }

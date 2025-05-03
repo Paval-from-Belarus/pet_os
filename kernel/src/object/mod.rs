@@ -2,7 +2,7 @@ mod event;
 mod handle;
 pub mod runtime;
 
-use core::ptr::NonNull;
+use core::{ptr::NonNull, sync::atomic::AtomicU16};
 
 use kernel_macro::ListNode;
 use kernel_types::collections::ListNode;
@@ -29,8 +29,11 @@ pub struct Object {
     #[list_pivots]
     node: ListNode<Object>,
     pub parent: Option<RawHandle>,
+
     pub kind: Kind,
     pub status: Status,
+
+    pub ref_count: AtomicU16,
 }
 
 impl Slab for Object {
@@ -38,6 +41,7 @@ impl Slab for Object {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Status {
     //the corresponding operation is ready
     Completed,
@@ -52,6 +56,7 @@ impl Object {
         Self {
             kind,
             parent: None,
+            ref_count: AtomicU16::new(0),
             status: Status::Working,
             node: ListNode::empty(),
         }
@@ -61,6 +66,7 @@ impl Object {
         Self {
             kind,
             parent: parent.into(),
+            ref_count: AtomicU16::new(0),
             status: Status::Working,
             node: ListNode::empty(),
         }
@@ -81,10 +87,10 @@ pub trait ObjectContainer: Sized + Slab + 'static {
     fn object(&self) -> &Object;
     fn object_mut(&mut self) -> &mut Object;
 
-    fn new_object(parent: RawHandle) -> Object {
-        assert!(runtime::lookup(parent));
+    fn new_object<T: ObjectContainer>(parent: &Handle<T>) -> Object {
+        assert!(runtime::lookup(parent.as_raw()));
 
-        Object::new_child(Self::KIND, parent)
+        Object::new_child(Self::KIND, parent.as_raw())
     }
 
     fn new_root_object() -> Object {
@@ -111,8 +117,8 @@ pub fn alloc_root_object<T: ObjectContainer + Slab + 'static>(
 }
 
 pub fn dealloc_root_object<T: ObjectContainer>(handle: Handle<T>) {
-    let Some(object) = runtime::unregister(handle.into_raw()) else {
-        panic!("No root object for handle: {:X}", handle.into_raw());
+    let Some(object) = runtime::unregister(handle.as_raw()) else {
+        panic!("No root object for handle: {:X}", handle.as_raw());
     };
 
     let container =

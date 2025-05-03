@@ -49,7 +49,7 @@ where
 
         self.lock.release();
 
-        runtime::notify(self.handle().into_raw());
+        runtime::notify(self.handle().as_raw());
     }
 
     pub fn pop(&self) -> Option<&'static mut T> {
