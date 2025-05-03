@@ -6,7 +6,10 @@ use core::{
 use alloc::{boxed::Box, string::ToString};
 use kernel_types::collections::LinkedList;
 
-use crate::common::{atomics::SpinLock, SpinBox};
+use crate::{
+    common::{atomics::SpinLock, SpinBox},
+    object,
+};
 
 use super::{FileSystem, FileSystemItem, MountPoint};
 
@@ -28,8 +31,10 @@ impl SystemMountPoints {
     pub const fn new() -> Self {
         Self {
             mounts: UnsafeCell::new(LinkedList::empty()),
-            fs: spin::RwLock::new(LinkedList::empty()),
             mounts_lock: SpinLock::new(),
+
+            fs: spin::RwLock::new(LinkedList::empty()),
+
             fs_id: AtomicUsize::new(1),
         }
     }
@@ -71,6 +76,14 @@ impl SystemMountPoints {
         let root_fs = mounts.first().expect("Root FS is not set");
 
         SpinBox::new_locked(&self.mounts_lock, root_fs)
+    }
+
+    pub fn fs_queue(&self, id: FileSystemId) -> Option<object::Handle> {
+        self.fs
+            .read()
+            .iter()
+            .find(|fs| fs.id == id)
+            .map(|fs| fs.queue().read().handle())
     }
 
     pub fn lookup_fs<PATH: AsRef<str>>(

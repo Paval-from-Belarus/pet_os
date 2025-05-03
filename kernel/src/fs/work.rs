@@ -1,4 +1,4 @@
-use alloc::string::String;
+use alloc::{boxed::Box, string::String};
 use kernel_types::container_of;
 
 use crate::object::{self, Object, ObjectContainer};
@@ -6,17 +6,16 @@ use crate::object::{self, Object, ObjectContainer};
 use super::FileId;
 
 //handle is the address of object
-pub struct WorkObject {
-    work: Work,
+pub struct FsWork {
+    pub work: Work,
     object: Object,
 }
 
-impl WorkObject {
-    pub fn new(work: Work) -> Self {
-        Self {
-            work,
-            object: Object::new_in_progress(object::Kind::FsWork),
-        }
+impl FsWork {
+    pub fn new_boxed(work: Work, parent: object::Handle) -> Box<Self> {
+        let object = Self::new_object(parent);
+
+        Box::new(Self { work, object })
     }
 }
 
@@ -39,8 +38,20 @@ pub enum Work {
     },
 }
 
-impl ObjectContainer for WorkObject {
-    fn container_of(object: *const Object) -> *const Self {
-        container_of!(object, WorkObject, object)
+impl ObjectContainer for FsWork {
+    const KIND: object::Kind = object::Kind::FsWork;
+
+    fn container_of(object: *mut Object) -> *mut Self {
+        container_of!(object, FsWork, object)
+    }
+
+    fn object(&self) -> &Object {
+        &self.object
+    }
+}
+
+impl From<&'static mut FsWork> for &'static mut Object {
+    fn from(value: &'static mut FsWork) -> Self {
+        &mut value.object
     }
 }

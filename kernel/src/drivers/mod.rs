@@ -15,7 +15,7 @@ use crate::fs::{
     FileOperations, FileSystem, FileSystemKind, IndexNode, IndexNodeItem,
     SuperBlock, SuperBlockOperations,
 };
-use crate::memory::{slab_alloc, SlabBox, VirtualAddress};
+use crate::memory::{slab_alloc, ProcessId, SlabBox, VirtualAddress};
 use crate::{get_eax, set_eax, set_edx};
 
 mod api;
@@ -29,6 +29,9 @@ mod network;
 mod vga;
 
 use generated::STATIC_DRIVERS;
+
+
+pub type ModuleId = ProcessId;
 
 pub fn fs() -> Arc<FileSystem> {
     let fs = FileSystem {

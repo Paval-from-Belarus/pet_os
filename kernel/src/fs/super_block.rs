@@ -1,4 +1,4 @@
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, LinkedList, ListNode, TinyListNode},
@@ -8,10 +8,11 @@ use kernel_types::{
 
 use crate::{
     memory::{self, slab_alloc, SlabBox},
-    object,
+    object::{self, ObjectContainer},
+    user::queue::Queue,
 };
 
-use super::{File, FileSystemKind, IndexNode, MountPoint, Work};
+use super::{File, FileSystemKind, FsWork, IndexNode, MountPoint, Work};
 
 declare_constants! {
     pub usize,
@@ -33,11 +34,15 @@ pub struct FileSystemItem {
     node: ListNode<FileSystemItem>,
     fs: Arc<FileSystem>,
     pub id: usize,
+    queue: Arc<spin::RwLock<Queue<'static, FsWork>>>,
 }
 
 impl FileSystemItem {
     pub fn new(fs: FileSystem) -> Self {
+        let queue = Arc::new(spin::RwLock::new(Queue::new().unwrap()));
+
         Self {
+            queue,
             node: ListNode::empty(),
             fs: Arc::new(fs),
             id: 0,
@@ -46,6 +51,10 @@ impl FileSystemItem {
 
     pub fn fs(&self) -> Arc<FileSystem> {
         Arc::clone(&self.fs)
+    }
+
+    pub fn queue(&self) -> Arc<spin::RwLock<Queue<'static, FsWork>>> {
+        Arc::clone(&self.queue)
     }
 }
 
@@ -75,6 +84,8 @@ pub struct SuperBlock {
     //consider to add block_size_bits
     pub block_size: usize,
     pub file_system: Arc<FileSystem>,
+
+    pub queue: Arc<spin::RwLock<Queue<'static, FsWork>>>,
 }
 
 impl crate::memory::Slab for SuperBlock {
@@ -84,10 +95,12 @@ impl crate::memory::Slab for SuperBlock {
 impl SuperBlock {
     pub fn new_boxed(
         file_system: Arc<FileSystem>,
+        queue: Arc<spin::RwLock<Queue<'static, FsWork>>>,
         device_id: u32,
         driver_id: u16,
     ) -> SlabBox<SuperBlock> {
         slab_alloc(SuperBlock {
+            queue,
             node: TinyListNode::empty(),
             device_id: DeviceId(device_id),
             driver_id: DriverId::new(driver_id),
@@ -100,8 +113,18 @@ impl SuperBlock {
         .unwrap()
     }
 
-    pub fn work(&self, _work: Work) -> object::Handle {
-        object::Handle(0)
+    pub fn work(&self, work: Work) -> object::Handle {
+        let mut queue = self.queue.write();
+
+        let work = FsWork::new_boxed(work, queue.handle());
+
+        let handle = work.handle();
+
+        let leaked = unsafe { &mut *Box::into_raw(work) };
+
+        queue.push(leaked);
+
+        handle
     }
 }
 

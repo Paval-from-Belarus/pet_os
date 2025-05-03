@@ -58,6 +58,13 @@ pub fn register_fs(fs: FileSystem) -> Result<FileSystemId, ()> {
     Ok(fs_id)
 }
 
+pub fn fs_queue(id: FileSystemId) -> Result<object::Handle, ()> {
+    match FILE_SYSTEMS.fs_queue(id) {
+        Some(h) => Ok(h),
+        None => Err(()),
+    }
+}
+
 pub fn unregister_fs(id: FileSystemId) -> Result<(), ()> {
     FILE_SYSTEMS.unregister(id)
 }

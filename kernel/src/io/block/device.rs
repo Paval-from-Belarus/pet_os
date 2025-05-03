@@ -7,9 +7,7 @@ use kernel_types::{
 };
 
 use crate::{
-    fs::FileOperations,
-    memory::ProcessId,
-    object::{Object, Queue},
+    fs::FileOperations, memory::ProcessId, object::Object, user::queue::Queue,
 };
 
 use super::WorkObject;

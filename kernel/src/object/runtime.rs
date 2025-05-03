@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use kernel_types::collections::LinkedList;
 
 use crate::task::SCHEDULER;
@@ -22,34 +20,61 @@ impl Runtime {
         }
     }
 
-    pub fn remove_object(&self, _handle: Handle) -> Option<&'static Object> {
-        None
+    pub fn remove_object(&self, handle: Handle) -> Option<&'static mut Object> {
+        let mut objects = self.objects.write();
+
+        let node = objects.remove_by(|object| object.handle() == handle)?;
+
+        Some(&mut *node)
     }
 
-    pub fn get_mut(&self, _handle: Handle) -> Option<&mut Object> {
-        todo!()
+    pub fn push_object(&self, object: &'static mut Object) {
+        self.objects.write().push_back(object.as_node());
     }
 }
 
-pub fn block_on(handle: Handle) -> Result<&'static Object, ()> {
-    let Some(object) = RUNTIME.get_mut(handle) else {
+#[allow(unused)]
+pub fn block_on(handle: Handle) -> Result<(), ()> {
+    let mut objects = RUNTIME.objects.write();
+
+    let Some(object) =
+        objects.iter_mut().find(|object| object.handle() == handle)
+    else {
         return Err(());
     };
 
     if object.status == Status::Completed {
-        let object = RUNTIME.remove_object(handle).unwrap();
-        return Ok(object);
+        return Ok(());
     }
 
     object.status = Status::Blocked;
 
-    let _ = object;
+    let _ = objects;
 
     SCHEDULER.switch_lock().block_on(handle);
 
-    let object = RUNTIME
-        .remove_object(handle)
-        .expect("Completed object doesn't exist");
+    Ok(())
+}
 
-    Ok(object)
+pub fn notify(_handle: Handle) {
+    //todo: add logic to wake up all tasks
+    //waiting on object
+}
+
+pub fn lookup(handle: Handle) -> bool {
+    let objects = RUNTIME.objects.read();
+
+    objects.iter().any(|object| object.handle() == handle)
+}
+
+pub fn register(object: &'static mut Object) -> Handle {
+    let handle = object.handle();
+
+    RUNTIME.push_object(object);
+
+    handle
+}
+
+pub fn unregister(handle: Handle) -> Option<&'static mut Object> {
+    RUNTIME.remove_object(handle)
 }

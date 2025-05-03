@@ -3,7 +3,7 @@ use kernel_types::container_of;
 use crate::object::{self, ObjectContainer};
 
 pub struct WorkObject {
-    pub object: object::Object,
+    object: object::Object,
     pub work: Work,
 }
 
@@ -24,14 +24,14 @@ pub enum Work {
     },
 }
 
-impl WorkObject {
-    pub fn as_object(&mut self) -> &mut object::Object {
-        &mut self.object
-    }
-}
-
 impl ObjectContainer for WorkObject {
-    fn container_of(object: *const object::Object) -> *const Self {
+    const KIND: object::Kind = object::Kind::IoWork;
+
+    fn container_of(object: *mut object::Object) -> *mut Self {
         container_of!(object, WorkObject, object)
+    }
+
+    fn object(&self) -> &object::Object {
+        &self.object
     }
 }

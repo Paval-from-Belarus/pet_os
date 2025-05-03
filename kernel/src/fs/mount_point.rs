@@ -1,10 +1,9 @@
-use alloc::sync::Arc;
 use kernel_macro::ListNode;
 use kernel_types::collections::ListNode;
 
 use crate::{common::atomics::SpinLock, memory::SlabBox};
 
-use super::{FileSystem, SuperBlock};
+use super::{FileSystemItem, SuperBlock};
 
 #[derive(ListNode)]
 #[repr(C)]
@@ -27,9 +26,11 @@ unsafe impl Send for MountPoint {}
 unsafe impl Sync for MountPoint {}
 
 impl MountPoint {
-    pub fn new(fs: Arc<FileSystem>) -> Self {
+    pub fn new(fs: &FileSystemItem) -> Self {
+        let super_block = SuperBlock::new_boxed(fs.fs(), fs.queue(), 0, 0);
+
         Self {
-            super_block: spin::RwLock::new(SuperBlock::new_boxed(fs, 0, 0)),
+            super_block: spin::RwLock::new(super_block),
             lock: SpinLock::new(),
             node: ListNode::empty(),
         }

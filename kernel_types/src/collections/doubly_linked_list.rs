@@ -235,6 +235,24 @@ impl<'data, T: Sized + ListNodeData> LinkedList<'data, T> {
         }
     }
 
+    pub fn remove_by<F: FnOnce(&ListNode<T>) -> bool + Copy>(
+        &mut self,
+        predicate: F,
+    ) -> Option<&'data mut ListNode<T>> {
+        let mut iter = self.iter_mut();
+
+        loop {
+            let Some(node) = iter.next() else {
+                break None;
+            };
+
+            if predicate(node) {
+                let node = iter.unlink_watched().unwrap();
+                break Some(node);
+            }
+        }
+    }
+
     pub fn clear(&mut self) {
         todo!()
     }
