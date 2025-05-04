@@ -27,7 +27,7 @@ impl<T> Queue<T>
 where
     T: ObjectContainer + 'static,
 {
-    pub fn new() -> Result<Handle<Self>, memory::AllocError> {
+    pub fn new_unbounded() -> Result<Handle<Self>, memory::AllocError> {
         let handle = alloc_root_object(Self {
             object: Self::new_root_object(),
             data: UnsafeCell::new(LinkedList::empty()),
@@ -36,6 +36,12 @@ where
         })?;
 
         Ok(handle)
+    }
+
+    pub fn new_bounded(
+        _capacity: usize,
+    ) -> Result<Handle<Self>, memory::AllocError> {
+        todo!()
     }
 
     pub fn push(&self, data: &'static mut T) {

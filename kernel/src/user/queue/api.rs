@@ -2,13 +2,24 @@
 
 use crate::{
     fs::FsWork,
-    object::{self, Handle},
+    object::{self, runtime, Handle, ObjectContainer},
     user::queue::Queue,
 };
 
-pub fn try_fetch(queue: object::RawHandle) {
-    let _queue = Handle::<Queue<FsWork>>::from_raw(queue).unwrap();
-    //i'm really needed a way to access queue from object:В результате эти убийцы считают себя слугами Смерти, обязанные служить ей. В своих убеждениях Безликие считают, что только помогают исполнять волю Смерти и не могут:Handle
+pub fn try_fetch(queue: object::RawHandle) -> Option<&'static mut FsWork> {
+    let queue = Handle::<Queue<FsWork>>::from_raw(queue).unwrap();
+
+    queue.pop()
 }
 
-pub fn blocking_fetch(_queue: object::RawHandle) {}
+pub fn blocking_fetch(queue: object::RawHandle) -> Option<&'static mut FsWork> {
+    loop {
+        let queue = Handle::<Queue<FsWork>>::from_raw(queue).unwrap();
+
+        if let Some(event) = queue.pop() {
+            break Some(event);
+        }
+
+        runtime::block_on(queue.as_raw()).unwrap();
+    }
+}

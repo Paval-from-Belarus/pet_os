@@ -40,7 +40,7 @@ pub struct FileSystemItem {
 impl FileSystemItem {
     pub fn new(fs: FileSystem) -> Self {
         Self {
-            queue: Arc::new(Queue::<FsWork>::new().unwrap()),
+            queue: Arc::new(Queue::<FsWork>::new_unbounded().unwrap()),
             node: ListNode::empty(),
             fs: Arc::new(fs),
             id: 0,

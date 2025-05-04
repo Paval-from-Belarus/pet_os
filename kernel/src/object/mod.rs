@@ -36,10 +36,6 @@ pub struct Object {
     pub ref_count: AtomicU16,
 }
 
-impl Slab for Object {
-    const NAME: &str = "kobject";
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Status {

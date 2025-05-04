@@ -63,3 +63,28 @@ impl<T: ObjectContainer> core::ops::DerefMut for Handle<T> {
         unsafe { &mut *container }
     }
 }
+
+impl<T: ObjectContainer> Drop for Handle<T> {
+    fn drop(&mut self) {
+        use core::sync::atomic::Ordering;
+
+        let object = unsafe { &*self.object() };
+        let prev_value = object.ref_count.fetch_sub(1, Ordering::SeqCst);
+
+        let value = prev_value - 1;
+
+        if value == 0 {
+            assert!(object.parent.is_none());
+            let _ = object;
+
+            let container =
+                unsafe { &mut *T::container_of(self.object() as *mut Object) };
+            let _ = container;
+        } else if value == 1 {
+            if let Some(_parent) = object.parent.as_ref() {
+                //parent.remove_child(object);
+                //parent should drop object by itself
+            }
+        }
+    }
+}
