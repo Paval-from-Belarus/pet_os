@@ -6,7 +6,7 @@ use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
 use kernel_types::{declare_constants, declare_types, syscall};
 
-use crate::io::irq::InterruptObject;
+use crate::io::irq::IrqChain;
 use crate::io::pic::PicLine;
 use crate::memory::{
     self, slab_alloc, InterruptGate, PrivilegeLevel, SegmentSelector, Slab,
@@ -94,6 +94,7 @@ pub struct IrqLine {
     //the index in InterruptTable
     line: PicLine,
 }
+
 macro_rules! irq_line {
     ($index: expr, $line: ident) => {
         IrqLine {
@@ -267,10 +268,10 @@ pub fn init() {
         INTERRUPT_TABLE = table;
         INTERRUPT_TABLE_HANDLE = IDTHandle::new(&raw const INTERRUPT_TABLE);
 
-        asm!(
+        asm! {
         "lidt [eax]",
         in("eax") &raw const INTERRUPT_TABLE_HANDLE
-        )
+        }
     }
 
     unsafe {
@@ -289,7 +290,7 @@ extern "C" {
 
 #[no_mangle]
 static INTERCEPTORS: spin::Mutex<
-    Option<[&'static InterruptObject; pic::LINES_COUNT]>,
+    Option<[&'static IrqChain; pic::LINES_COUNT]>,
 > = spin::Mutex::new(None);
 
 ///the interceptor_stub is invoked by corresponding asm stub for certain interrupt
@@ -312,12 +313,12 @@ pub unsafe extern "C" fn interceptor_stub() {
         options(preserves_flags)
     };
 
-    let object = &mut INTERCEPTORS
+    let chain = &mut INTERCEPTORS
         .try_lock()
         .expect("Busy loop on interrupts")
         .unwrap()[index];
 
-    object.dispatch(&mut frame_ptr);
+    chain.dispatch(&mut frame_ptr);
 
     set_eax!(frame_ptr)
 }
@@ -330,7 +331,7 @@ fn init_interceptors(table: &mut IDTable) {
             let pic_line = PicLine::try_from(index as u8)
                 .expect("index cannot exceed array size");
 
-            let object = slab_alloc(InterruptObject::new(pic_line)).unwrap();
+            let object = slab_alloc(IrqChain::new(pic_line)).unwrap();
 
             SlabBox::leak(object)
         };

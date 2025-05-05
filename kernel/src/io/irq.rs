@@ -9,21 +9,21 @@ use super::TaskContext;
 
 ///The manager struct that handle all request for given interrupt.
 #[derive(Debug)]
-pub struct InterruptObject {
+pub struct IrqChain {
     callbacks: spin::Mutex<LinkedList<'static, CallbackInfo>>,
     //the interrupt number
     line: PicLine,
 }
 
-impl Slab for InterruptObject {
-    const NAME: &str = "int_obj";
+impl Slab for IrqChain {
+    const NAME: &str = "irq_chain";
 }
 
-unsafe impl Sync for InterruptObject {}
+unsafe impl Sync for IrqChain {}
 
-unsafe impl Send for InterruptObject {}
+unsafe impl Send for IrqChain {}
 
-impl InterruptObject {
+impl IrqChain {
     pub fn new(line: PicLine) -> Self {
         let callbacks = spin::Mutex::new(Default::default());
 

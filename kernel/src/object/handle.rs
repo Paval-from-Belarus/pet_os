@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use kernel_types::collections::{HashCode, HashKey};
 
-use crate::memory::VirtualAddress;
+use crate::{memory::VirtualAddress, object::runtime};
 
 use super::{Object, ObjectContainer};
 
@@ -81,9 +81,9 @@ impl<T: ObjectContainer> Drop for Handle<T> {
                 unsafe { &mut *T::container_of(self.object() as *mut Object) };
             let _ = container;
         } else if value == 1 {
-            if let Some(_parent) = object.parent.as_ref() {
-                //parent.remove_child(object);
+            if let Some(parent) = object.parent {
                 //parent should drop object by itself
+                runtime::remove_child(self.as_raw(), parent);
             }
         }
     }

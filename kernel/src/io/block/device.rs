@@ -15,6 +15,8 @@ use crate::{
 
 use super::IoWork;
 
+pub const MAX_DEVICE_NAME_LEN: usize = 32;
+
 pub struct BlockDevice {
     device: Device,
     module: ProcessId,
@@ -24,6 +26,7 @@ pub struct BlockDevice {
     partitions: LinkedList<'static, Partition>,
     //remove field because linux uses it to represent in file system
     driver_name: [u8; 32],
+    name: heapless::String<MAX_DEVICE_NAME_LEN>,
     ops: NonNull<FileOperations>,
     io_work: object::Handle<Queue<IoWork>>,
 }

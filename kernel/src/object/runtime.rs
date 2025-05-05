@@ -82,3 +82,6 @@ pub fn register(object: &'static mut Object) -> RawHandle {
 pub fn unregister(handle: RawHandle) -> Option<&'static mut Object> {
     RUNTIME.remove_object(handle)
 }
+
+//remove child from parent
+pub fn remove_child(_child: RawHandle, _parent: RawHandle) {}

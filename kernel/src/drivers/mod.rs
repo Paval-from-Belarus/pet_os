@@ -30,8 +30,13 @@ mod vga;
 
 use generated::STATIC_DRIVERS;
 
-
 pub type ModuleId = ProcessId;
+
+pub struct AutoLoad {
+    pub shout_down_count: usize,
+}
+
+pub fn auto_load() {}
 
 pub fn fs() -> Arc<FileSystem> {
     let fs = FileSystem {

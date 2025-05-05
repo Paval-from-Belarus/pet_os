@@ -1,7 +1,7 @@
 use kernel_types::string::MutString;
 use kernel_types::{bitflags, declare_constants, syscall};
 
-use crate::io::irq::InterruptObject;
+use crate::io::irq::IrqChain;
 use crate::io::{
     IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
 };
@@ -56,9 +56,9 @@ pub fn init_traps(table: &mut IDTable) {
     table.set(IDTable::ALIGNMENT_CHECK, error_trap!(alignment_check));
 }
 
-pub fn init_timer_isr() -> &'static InterruptObject {
+pub fn init_timer_isr() -> &'static IrqChain {
     let object =
-        memory::slab_alloc(InterruptObject::new(IrqLine::SYS_TIMER.line))
+        memory::slab_alloc(IrqChain::new(IrqLine::SYS_TIMER.line))
             .unwrap();
 
     let timer_object = SlabBox::leak(object);

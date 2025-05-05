@@ -75,6 +75,7 @@ impl<'a> PageMarker<'a> {
     pub fn directory(&self) -> &PageDirectory<'a> {
         self.directory
     }
+
     pub fn new(
         directory: &'a mut PageDirectory<'a>,
         alloc_handler: AllocHandler,
@@ -99,7 +100,7 @@ impl<'a> PageMarker<'a> {
         (self.dealloc_handler)(offset)
     }
 
-    fn mark_pages(
+    fn mark_pageg(
         &'a mut self,
         virtual_offset: VirtualAddress,
         flags: MemoryMappingFlag,
