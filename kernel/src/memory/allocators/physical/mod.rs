@@ -274,6 +274,8 @@ impl PhysicalAllocator {
             return Err(AllocError::NoMemory);
         };
 
+        //todo: release from head unused pages
+
         let mut batch = unsafe { BuddyBatch::new(count, head) };
         batch.iter_mut().for_each(|page| page.acquire());
 

@@ -23,6 +23,11 @@ pub enum Alignment {
     Page, //the alignment on Page::SIZE
 }
 
+pub enum AllocContext {
+    Kernel,
+    Interrupt,
+}
+
 struct MemBounds {
     lower: VirtualAddress,
     upper: VirtualAddress,

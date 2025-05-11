@@ -89,9 +89,10 @@ impl CallbackInfo {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct IrqLine {
-    interrupt: u8,
     //the index in InterruptTable
+    interrupt: u8,
     line: PicLine,
 }
 
@@ -103,6 +104,7 @@ macro_rules! irq_line {
         }
     };
 }
+
 impl From<PicLine> for IrqLine {
     fn from(line: PicLine) -> Self {
         use PicLine::*;
@@ -127,6 +129,11 @@ impl From<PicLine> for IrqLine {
     }
 }
 
+impl From<IrqLine> for PicLine {
+    fn from(value: IrqLine) -> Self {
+        value.line
+    }
+}
 impl IrqLine {
     declare_constants! {
         pub IrqLine,

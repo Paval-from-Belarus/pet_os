@@ -5,7 +5,7 @@ use core::{mem, ptr};
 use alloc::boxed::Box;
 use allocators::SlabAlloc;
 
-pub use allocators::PhysicalAllocator;
+pub use allocators::{Alignment, AllocContext, PhysicalAllocator};
 pub use arch::*;
 use kernel_macro::ListNode;
 use kernel_types::collections::{LinkedList, ListNode};

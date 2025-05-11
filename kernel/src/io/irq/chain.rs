@@ -5,7 +5,7 @@ use crate::io::{pic, CallbackInfo};
 use crate::memory::{self, Slab, SlabBox};
 use crate::{object, ticks_now};
 
-use super::TaskContext;
+use crate::task::TaskContext;
 
 ///The manager struct that handle all request for given interrupt.
 #[derive(Debug)]

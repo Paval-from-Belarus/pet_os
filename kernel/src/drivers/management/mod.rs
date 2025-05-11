@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use kernel_types::drivers::DriverId;
 
 use crate::{
-    common::SystemCall,
+    common::{io, SystemCall},
     memory::{PhysicalAddress, VirtualAddress},
 };
 

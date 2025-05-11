@@ -31,6 +31,24 @@ pub struct BlockDevice {
     io_work: object::Handle<Queue<IoWork>>,
 }
 
+impl BlockDevice {
+    pub fn file_ops(&self) -> FileOperations {
+        FileOperations {
+            open: todo!(),
+            flush: todo!(),
+            close: todo!(),
+            read: todo!(),
+            write: todo!(),
+            seek: todo!(),
+            ioctl: todo!(),
+        }
+    }
+}
+
+fn open_block_device() {
+
+}
+
 //the type alias using to represent sector
 pub type Sector = usize;
 

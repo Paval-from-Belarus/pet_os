@@ -58,6 +58,10 @@ where
         runtime::notify(self.handle().as_raw());
     }
 
+    pub fn try_push(&self, _data: &'static mut T) -> Result<(), ()> {
+        Ok(())
+    }
+
     pub fn pop(&self) -> Option<&'static mut T> {
         None
     }
