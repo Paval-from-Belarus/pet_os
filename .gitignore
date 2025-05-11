@@ -8,4 +8,4 @@ Cargo.lock
 *.iml
 **/*.o
 
-logs/**
+logs

@@ -21,6 +21,7 @@ impl<T: ObjectContainer> PartialEq for Handle<T> {
         self.0 == other.0
     }
 }
+
 impl<T: ObjectContainer> Eq for Handle<T> {}
 
 impl<T: ObjectContainer> HashKey for Handle<T> {
@@ -61,6 +62,17 @@ impl<T: ObjectContainer> core::ops::DerefMut for Handle<T> {
         let container = T::container_of(self.object() as *mut Object);
 
         unsafe { &mut *container }
+    }
+}
+
+impl<T: ObjectContainer> Clone for Handle<T> {
+    fn clone(&self) -> Self {
+        use core::sync::atomic::Ordering;
+        let object = unsafe { &*self.object() };
+
+        object.ref_count.fetch_add(1, Ordering::SeqCst);
+
+        Self(self.0, PhantomData)
     }
 }
 

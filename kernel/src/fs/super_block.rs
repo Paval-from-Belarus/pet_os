@@ -34,13 +34,13 @@ pub struct FileSystemItem {
     node: ListNode<FileSystemItem>,
     fs: Arc<FileSystem>,
     pub id: usize,
-    queue: Arc<object::Handle<Queue<FsWork>>>,
+    queue: object::Handle<Queue<FsWork>>,
 }
 
 impl FileSystemItem {
     pub fn new(fs: FileSystem) -> Self {
         Self {
-            queue: Arc::new(Queue::<FsWork>::new_unbounded().unwrap()),
+            queue: Queue::<FsWork>::new_unbounded().unwrap(),
             node: ListNode::empty(),
             fs: Arc::new(fs),
             id: 0,
@@ -51,8 +51,8 @@ impl FileSystemItem {
         Arc::clone(&self.fs)
     }
 
-    pub fn queue(&self) -> Arc<object::Handle<Queue<FsWork>>> {
-        Arc::clone(&self.queue)
+    pub fn queue(&self) -> object::Handle<Queue<FsWork>> {
+        self.queue.clone()
     }
 }
 
@@ -83,7 +83,7 @@ pub struct SuperBlock {
     pub block_size: usize,
     pub file_system: Arc<FileSystem>,
 
-    pub queue: Arc<object::Handle<Queue<FsWork>>>,
+    pub queue: object::Handle<Queue<FsWork>>,
 }
 
 impl crate::memory::Slab for SuperBlock {
@@ -93,7 +93,7 @@ impl crate::memory::Slab for SuperBlock {
 impl SuperBlock {
     pub fn new_boxed(
         file_system: Arc<FileSystem>,
-        queue: Arc<object::Handle<Queue<FsWork>>>,
+        queue: object::Handle<Queue<FsWork>>,
         device_id: u32,
         driver_id: u16,
     ) -> SlabBox<SuperBlock> {
@@ -114,7 +114,7 @@ impl SuperBlock {
     pub fn work(&self, work: Work) -> object::Handle<FsWork> {
         let queue = &self.queue;
 
-        let work = FsWork::new_boxed(work, &queue);
+        let work = FsWork::new_boxed(work, queue);
 
         let handle = work.handle();
 

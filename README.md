@@ -66,4 +66,10 @@
 
 issue list:
 1. Unhandled IRQ6 cause system be in not working state
+2. physicall alloc use too many physical pages
+3. physical dealloc works poorly (not working)
+
+4. user tasks are not tested
+5. relocation is not tested
+6. communication is not tested
 
