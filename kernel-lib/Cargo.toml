@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-heapless = { workspace = true }
+heapless = { version = "0.7", default-features = false }
 kernel-types = { workspace = true }
 log = { version = "0.4", optional = true }
 

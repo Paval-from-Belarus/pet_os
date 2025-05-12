@@ -11,6 +11,8 @@ fallible_collections = { workspace = true }
 bitfield = { workspace = true }
 paste = { workspace = true }
 log.workspace = true
+bitflags = "2.9.0"
+heapless.workspace = true
 
 
 [features]

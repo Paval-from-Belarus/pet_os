@@ -11,8 +11,10 @@ use thiserror_no_std::Error;
 pub mod collections;
 pub mod drivers;
 pub mod fs;
+pub mod io;
 pub mod string;
 pub mod syscall;
+pub mod object;
 
 extern crate alloc;
 

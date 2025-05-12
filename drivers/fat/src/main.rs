@@ -10,6 +10,8 @@
 // mod dir;
 // mod table;
 
+use kernel_lib::fs::{self, FileSystemKind};
+
 // extern crate alloc;
 extern crate core;
 
@@ -19,11 +21,23 @@ pub fn panic(_info: &core::panic::PanicInfo) -> ! {
     unsafe { core::arch::asm!("hlt", options(noreturn)) }
 }
 
+pub fn handle_work(work: ()) {
+    //мы знаем, что система смонтирована
+}
+
 #[no_mangle]
 unsafe extern "C" fn init() {
     kernel_lib::log::init().unwrap();
 
     log::info!("log from fat driver");
+
+    let Ok(fs_id) = fs::register(FileSystem {
+        name: "fat".into(),
+        kind: FileSystemKind::READ_ONLY,
+        max_file_size: None,
+    }) else {
+        return;
+    };
 }
 
 #[no_mangle]

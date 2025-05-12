@@ -1,5 +1,5 @@
 [workspace]
-members = ["ata", "fat"]
+members = ["ata", "fat", "keyboard"]
 
 resolver = "2"
 

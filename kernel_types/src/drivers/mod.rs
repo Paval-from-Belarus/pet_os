@@ -102,3 +102,11 @@ pub struct DeviceEntry {
     owner: NonNull<*mut u8>,
     get: fn(),
 }
+
+bitflags::bitflags! {
+    #[derive(Default, Clone, Copy)]
+    pub struct DriverKind: u8 {
+        const FS  = 0x01;
+        const IO  = 0x01;
+    }
+}

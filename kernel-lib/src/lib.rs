@@ -7,3 +7,8 @@ pub mod io;
 pub mod log;
 
 pub mod alloc;
+pub mod object;
+
+pub fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
