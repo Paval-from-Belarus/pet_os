@@ -2,8 +2,11 @@
 
 use core::{marker::PhantomData, ops::Deref};
 
+pub trait KernelObject {}
+
 #[derive(Debug, Clone)]
-pub struct Handle<T>(usize, PhantomData<T>);
+pub struct Handle<T: KernelObject>(usize, PhantomData<T>);
+pub type RawHandle = usize;
 
 impl Handle<Event> {
     pub fn new_event() -> Result<Self, ()> {
@@ -17,8 +20,9 @@ impl Handle<Event> {
 
 #[derive(Debug, Clone)]
 pub struct Event;
+impl KernelObject for Event {}
 
-impl<T> Deref for Handle<T> {
+impl<T: KernelObject> Deref for Handle<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         todo!()

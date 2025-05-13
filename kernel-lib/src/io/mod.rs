@@ -3,6 +3,7 @@ pub mod char;
 pub mod spin;
 
 pub use kernel_types::io::op::*;
+pub use kernel_types::io::Result;
 
 #[repr(C)]
 pub struct FileOperations {
@@ -24,6 +25,6 @@ pub fn set_irq<T: Send + Sync>(
     _line: u8,
     _handler: FnIrq<T>,
     _context: *const T,
-) -> Result<(), ()> {
+) -> Result<()> {
     Ok(())
 }

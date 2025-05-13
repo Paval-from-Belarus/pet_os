@@ -4,8 +4,8 @@
 mod ide;
 
 use kernel_lib::io::{
-    block::{self},
-    OpError,
+    self,
+    block::{self, BlockDeviceInfo},
 };
 
 #[no_mangle]
@@ -19,7 +19,7 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
     kernel_lib::panic(info)
 }
 
-fn handle_request(request: block::Request) -> Result<(), OpError> {
+fn handle_request(request: block::Request) -> io::Result<()> {
     match request.work {
         block::Work::Read { sector, mut buffer } => {
             assert!(buffer.remaining_capacity() % 512 == 0);
@@ -48,7 +48,7 @@ fn handle_request(request: block::Request) -> Result<(), OpError> {
             Ok(())
         }
 
-        block::Work::Passthrough { .. } => Err(OpError::NotSupported),
+        block::Work::Passthrough { .. } => Err(io::Error::NotSupported),
     }
 }
 
@@ -56,7 +56,7 @@ fn handle_request(request: block::Request) -> Result<(), OpError> {
 extern "C" fn init() -> i32 {
     kernel_lib::log::init().expect("Failed to set logger");
 
-    let Ok(()) = block::register_device(block::Device {
+    let Ok(()) = block::register_device(BlockDeviceInfo {
         name: DEVICE_NAME.into(),
         sector_size: 512,
         queue_size: 10,

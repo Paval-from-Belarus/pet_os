@@ -32,6 +32,8 @@ pub struct BlockDevice {
 }
 
 impl BlockDevice {
+    //file operations are created from
+    //blocK::Operations
     pub fn file_ops(&self) -> FileOperations {
         FileOperations {
             open: todo!(),

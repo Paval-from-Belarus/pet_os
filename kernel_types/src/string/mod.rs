@@ -7,7 +7,7 @@ use core::{ptr, slice};
 use crate::collections::{FastHasher, HashCode, HashKey, PolynomialHasher};
 
 //alternative to linux qstr
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 #[repr(C)]
 pub struct QuickString<'a> {
     hash_code: HashCode,
@@ -56,6 +56,12 @@ impl<'a> From<&'a str> for QuickString<'a> {
         let mut hasher = PolynomialHasher::<DEFAULT_BASE>::new();
         hasher.write_str(value);
         Self::new(value, hasher.fast_hash())
+    }
+}
+
+impl AsRef<str> for QuickString<'_> {
+    fn as_ref(&self) -> &str {
+        self.data
     }
 }
 

@@ -134,11 +134,11 @@ impl IoTransaction<Read> {
         }
     }
 
-    pub fn port_u8(self, _port: u16) -> Result<u8, OpError> {
+    pub fn port_u8(self, _port: u16) -> Result<u8, Error> {
         todo!()
     }
 
-    pub fn port_u16(self, _port: u16) -> Result<u16, OpError> {
+    pub fn port_u16(self, _port: u16) -> Result<u16, Error> {
         todo!()
     }
 
@@ -146,13 +146,13 @@ impl IoTransaction<Read> {
         self,
         _port: u16,
         _buffer: &mut KernelBufMut,
-    ) -> Result<(), OpError> {
+    ) -> Result<(), Error> {
         todo!()
     }
 }
 
 #[derive(Debug, thiserror_no_std::Error)]
-pub enum OpError {
+pub enum Error {
     #[error("Not Supported Operation")]
     NotSupported,
     #[error("Syscall is failed")]
@@ -181,7 +181,7 @@ impl IoTransaction<Write> {
         self
     }
 
-    pub fn commit(&mut self) -> Result<(), OpError> {
+    pub fn commit(&mut self) -> Result<(), Error> {
         Ok(())
     }
 

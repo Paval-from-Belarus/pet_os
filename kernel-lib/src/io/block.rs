@@ -1,8 +1,8 @@
 pub use kernel_types::io::block::*;
 
-use kernel_types::io::OpError;
+use kernel_types::io::Error;
 
-pub fn register_device(_device: Device) -> Result<(), ()> {
+pub fn register_device(_device: BlockDeviceInfo) -> Result<(), ()> {
     Ok(())
 }
 
@@ -21,6 +21,6 @@ pub fn handle_open() {}
 
 pub fn handle_close() {}
 
-pub fn handle_request(_work: Request) -> Result<(), OpError> {
-    Err(OpError::NotSupported)
+pub fn handle_request(_work: Request) -> Result<(), Error> {
+    Err(Error::NotSupported)
 }

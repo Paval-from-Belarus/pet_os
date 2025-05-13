@@ -1,6 +1,6 @@
 pub use kernel_types::io::char::*;
 use kernel_types::{
-    io::{UserBuf, OpError},
+    io::{UserBuf, Error},
     object::{Handle},
     fs::File,
 };
@@ -9,15 +9,15 @@ pub fn register_device(_device: Device) -> Result<(), ()> {
     todo!()
 }
 
-pub fn noop_write(_file: Handle<File>, _buf: UserBuf) -> Result<(), OpError> {
+pub fn noop_write(_file: Handle<File>, _buf: UserBuf) -> Result<(), Error> {
     Ok(())
 }
 
 pub fn not_supported_write(
     _file: Handle<File>,
     _buf: UserBuf,
-) -> Result<(), OpError> {
-    Err(OpError::NotSupported)
+) -> Result<(), Error> {
+    Err(Error::NotSupported)
 }
 
 // Нерешённые задачи:

@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, sync::Arc};
 use kernel_macro::ListNode;
 use kernel_types::{
-    collections::{BoxedNode, LinkedList, ListNode, TinyListNode},
+    collections::{BoxedNode, LinkedList, ListNode},
     drivers::{DeviceId, DriverId},
     fs::FileSystem,
 };
@@ -12,16 +12,7 @@ use crate::{
     user::queue::Queue,
 };
 
-use super::{File, FsWork, IndexNode, MountPoint, Work};
-
-#[repr(C)]
-pub struct SuperBlockOperations {
-    pub create_node: fn(&mut SuperBlock) -> &mut IndexNode,
-    //mark the node as dirty because its data was modified
-    //this method also flush changes on the disk
-    pub dirty_node: fn(&mut IndexNode),
-    pub destroy_node: fn(&mut IndexNode),
-}
+use super::{File, FsWork, MountPoint, Work};
 
 #[derive(ListNode)]
 pub struct FileSystemItem {
@@ -54,8 +45,8 @@ impl FileSystemItem {
 #[derive(ListNode)]
 #[repr(C)]
 pub struct SuperBlock {
-    #[list_pivot]
-    node: TinyListNode<SuperBlock>,
+    #[list_pivots]
+    node: ListNode<SuperBlock>,
     //to find context to switch
     pub driver_id: DriverId,
     pub device_id: DeviceId,
@@ -84,7 +75,7 @@ impl SuperBlock {
     ) -> SlabBox<SuperBlock> {
         slab_alloc(SuperBlock {
             queue,
-            node: TinyListNode::empty(),
+            node: ListNode::empty(),
             device_id: DeviceId(device_id),
             driver_id: DriverId::new(driver_id),
             file_system,

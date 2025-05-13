@@ -1,19 +1,47 @@
-mod ops;
+use crate::{io::block, object::Handle};
+
 mod file;
+mod index_node;
+mod ops;
+mod super_block;
+
+pub use file::*;
+pub use index_node::*;
+pub use super_block::*;
 
 const MAX_FILE_SYSTEM_NAME: usize = 32;
+
+pub type Result<T> = core::result::Result<T, FsError>;
+
+pub type FnMount = fn(Handle<block::BlockDevice>) -> Result<SuperBlockInfo>;
+pub type FnUnmount = fn(Handle<SuperBlock>) -> Result<()>;
+
+#[derive(Debug, thiserror_no_std::Error)]
+pub enum FsError {
+    #[error("Io operation failed")]
+    Io(#[from] crate::io::Error),
+
+    #[cfg(feature = "alloc")]
+    #[error("Failed to alloc memory")]
+    AllocError(#[from] core::alloc::AllocError),
+
+    #[error("File is not found")]
+    NotFound,
+}
 
 /// user-space structure to register file system
 #[repr(C)]
 pub struct FileSystem {
     pub name: heapless::String<MAX_FILE_SYSTEM_NAME>,
     pub kind: FileSystemKind,
-    //the limitation of file system about max file size
-    pub max_file_size: Option<usize>,
+
+    pub mount: FnMount,
+    pub unmount: FnUnmount,
 }
 
 bitflags::bitflags! {
     pub struct FileSystemKind: usize {
+        const NORMAL = 0b00;
         const READ_ONLY = 0b01;
     }
 }
@@ -47,25 +75,4 @@ pub enum WorkKind {
 pub struct MountedDevice {
     pub lba_offset: u32,
     pub device_id: u32,
-}
-
-#[derive(Debug, Clone)]
-#[repr(C)]
-pub struct File {
-    pub offset: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct IndexNode;
-
-impl File {
-    pub fn context<T: Send + Sync>(&self) -> *const T {
-        todo!()
-    }
-}
-
-impl IndexNode {
-    pub fn context<T: Send + Sync>(&self) -> *const T {
-        todo!()
-    }
 }

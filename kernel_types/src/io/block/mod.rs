@@ -1,4 +1,7 @@
-use crate::io::{KernelBuf, KernelBufMut, OpError};
+mod device;
+
+use crate::io::{KernelBuf, KernelBufMut, Error};
+pub use device::*;
 
 #[derive(Debug)]
 pub enum Work {
@@ -21,7 +24,7 @@ pub struct Request {
     pub work: Work,
 }
 
-pub struct Device {
+pub struct BlockDeviceInfo {
     pub name: heapless::String<12>,
     pub sector_size: usize,
     //deseriable queue size
@@ -35,5 +38,5 @@ pub struct Operations {
     pub open: fn(),
     pub close: fn(),
     pub ioctl: fn(),
-    pub request: fn(Request) -> Result<(), OpError>,
+    pub request: fn(Request) -> Result<(), Error>,
 }
