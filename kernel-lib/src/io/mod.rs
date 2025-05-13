@@ -1,6 +1,6 @@
 pub mod block;
-
-use crate::object;
+pub mod char;
+pub mod spin;
 
 pub use kernel_types::io::op::*;
 
@@ -15,4 +15,15 @@ pub struct FileOperations {
     // #[doc = "for devices only"]
     // pub ioctl: fn(&mut IndexNode, &mut File, usize),
     //consider additionally implement file_lock and mmap handler
+}
+
+pub type FnIrq<T> = fn(*const T);
+
+//set callback handler on irq
+pub fn set_irq<T: Send + Sync>(
+    _line: u8,
+    _handler: FnIrq<T>,
+    _context: *const T,
+) -> Result<(), ()> {
+    Ok(())
 }

@@ -1,6 +1,7 @@
 pub use error::*;
 pub use file::*;
 pub use index_node::*;
+use kernel_types::fs::FileSystem;
 use kernel_types::string::MutString;
 pub use mount_point::*;
 pub use path::*;
@@ -29,12 +30,6 @@ declare_constants!(
     MAX_FILE_NAME_LEN = 255, "The maximal length for file name";
     MAX_FILES_COUNT = 15, "The count of files for process";
 );
-
-bitflags::bitflags! {
-    pub struct FileSystemKind: usize {
-        const READ_ONLY = 0b01;
-    }
-}
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy)]

@@ -34,10 +34,13 @@ bitflags! {
     WRITABLE = 0x02,
     READABLE = 0x04,
 }
-bitflags! {
-    pub FileAccessMode(u8),
-    READ = 0x01,
-    WRITE = 0x02
+
+bitflags::bitflags! {
+    #[derive(PartialEq, Eq, Clone, Copy)]
+    pub struct FileAccessMode: u8 {
+        const READ = 0x01;
+        const WRITE = 0x02;
+    }
 }
 
 bitflags! {
@@ -47,24 +50,33 @@ bitflags! {
     END = 0x4
 }
 
-bitflags! {
-    pub FileOpenMode(u8),
-    READ = 0x1,
-    WRITE = 0x2,
-    CREATE = 0x4,
-    APPEND = 0x8 | FileOpenMode::WRITE,
-    TRUNC = 0x10
+bitflags::bitflags! {
+    #[derive(PartialEq, Eq, Clone, Copy)]
+    pub struct FileOpenMode: u8 {
+        const READ = 0x1;
+        const WRITE = 0x2;
+        const CREATE = 0x4;
+        const APPEND = 0x8 | FileOpenMode::WRITE.bits();
+        const TRUNC = 0x10;
+    }
 }
 
 impl FileOpenMode {
     pub fn is_accessible(&self, mode: FileAccessMode) -> bool {
-        match mode.bits() {
-            FileAccessMode::READ => !self.test_with(FileOpenMode::WRITE),
-            FileAccessMode::WRITE => self.test_with(FileOpenMode::WRITE),
-            _ => panic!("Unknown access mode"),
+        if mode == FileAccessMode::READ {
+            return !self.contains(FileOpenMode::WRITE);
         }
+
+        if mode == FileAccessMode::WRITE {
+            return self.contains(FileOpenMode::WRITE);
+        }
+
+        false
     }
 }
+
+//IndexNode has no state (as class)
+//Whereas file is an implementation of this class
 
 #[derive(kernel_macro::ListNode)]
 #[repr(C)]
@@ -72,8 +84,8 @@ pub struct File {
     file_system: NonNull<MountPoint>,
     path: PathNode,
     //the next offset to be read
-    offset: usize,
-    mode: FileOpenMode,
+    pub offset: usize,
+    pub mode: FileOpenMode,
     #[list_pivots]
     node: ListNode<File>,
     //copy of the IndexNode file operations

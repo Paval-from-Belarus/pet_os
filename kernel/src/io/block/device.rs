@@ -45,9 +45,7 @@ impl BlockDevice {
     }
 }
 
-fn open_block_device() {
-
-}
+fn open_block_device() {}
 
 //the type alias using to represent sector
 pub type Sector = usize;

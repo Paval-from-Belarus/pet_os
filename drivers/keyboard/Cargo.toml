@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+heapless = "0.8.0"
 kernel-lib.workspace = true
 log.workspace = true
+pc-keyboard = "0.8.0"

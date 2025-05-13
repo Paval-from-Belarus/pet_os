@@ -1,3 +1,6 @@
+mod ops;
+mod file;
+
 const MAX_FILE_SYSTEM_NAME: usize = 32;
 
 /// user-space structure to register file system
@@ -44,4 +47,25 @@ pub enum WorkKind {
 pub struct MountedDevice {
     pub lba_offset: u32,
     pub device_id: u32,
+}
+
+#[derive(Debug, Clone)]
+#[repr(C)]
+pub struct File {
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexNode;
+
+impl File {
+    pub fn context<T: Send + Sync>(&self) -> *const T {
+        todo!()
+    }
+}
+
+impl IndexNode {
+    pub fn context<T: Send + Sync>(&self) -> *const T {
+        todo!()
+    }
 }

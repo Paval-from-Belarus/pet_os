@@ -1,4 +1,5 @@
-use kernel_lib::io::{block::OpError, IoTransaction, KernelBuffer};
+#![allow(unused)]
+use kernel_lib::io::{IoTransaction, KernelBuf, KernelBufMut, OpError};
 
 pub const ATA_PRIMARY: u8 = 0x0;
 pub const ATA_SECONDARY: u8 = 0x01;
@@ -98,7 +99,7 @@ pub fn read_sector(
     bus: u8,
     drive: u8,
     lba: u32,
-    buffer: &KernelBuffer,
+    buffer: &mut KernelBufMut,
 ) -> Result<(), OpError> {
     let io_base = if bus == ATA_PRIMARY {
         ATA_PRIMARY_IO
@@ -122,9 +123,9 @@ pub fn read_sector(
         .port_u8(io_base + ATA_REG_COMMAND, ATA_CMD_READ_PIO)
         .commit()?;
 
-    poll(io_base);
+    poll(io_base)?;
 
-    IoTransaction::new_read().port_to_buffer(io_base + ATA_REG_DATA, buffer)?;
+    IoTransaction::new_read().port_to_buf(io_base + ATA_REG_DATA, buffer)?;
 
     delay(io_base)?;
 
@@ -135,7 +136,7 @@ pub fn write_sector(
     _bus: u8,
     _drive: u8,
     _lba: u32,
-    _buffer: &KernelBuffer,
+    _buffer: &KernelBuf,
 ) -> Result<(), OpError> {
     todo!()
 }

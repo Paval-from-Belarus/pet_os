@@ -1,2 +1,1 @@
-pub type Handle = usize;
-
+pub use kernel_types::object::*;

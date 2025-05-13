@@ -1,5 +1,3 @@
-use super::block::OpError;
-
 pub enum MemoryOperation {
     Write {},
 }
@@ -64,12 +62,44 @@ pub struct IoTransaction<Kind: IoKind> {
 
 #[derive(Debug)]
 #[repr(C)]
-pub struct KernelBuffer {
+pub struct KernelBuf {
     ptr: *mut u8,
     size: usize,
 }
 
-impl KernelBuffer {
+#[derive(Debug)]
+#[repr(C)]
+pub struct KernelBufMut {
+    ptr: *mut u8,
+    size: usize,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct UserBuf {
+    ptr: *mut u8,
+    size: usize,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct UserBufMut {
+    ptr: *mut u8,
+    size: usize,
+}
+
+impl UserBufMut {
+    /// the capacity available to be filled
+    pub fn remaining_capacity(&self) -> usize {
+        self.size
+    }
+
+    pub fn has_remaining_capacity(&self) -> bool {
+        self.remaining_capacity() != 0
+    }
+}
+
+impl KernelBuf {
     pub fn size(&self) -> usize {
         self.size
     }
@@ -80,6 +110,12 @@ impl KernelBuffer {
 
     pub unsafe fn as_ptr(&self) -> *const u8 {
         self.ptr
+    }
+}
+
+impl KernelBufMut {
+    pub fn remaining_capacity(&self) -> usize {
+        self.size
     }
 }
 
@@ -106,13 +142,21 @@ impl IoTransaction<Read> {
         todo!()
     }
 
-    pub fn port_to_buffer(
+    pub fn port_to_buf(
         self,
         _port: u16,
-        _buffer: &KernelBuffer,
+        _buffer: &mut KernelBufMut,
     ) -> Result<(), OpError> {
         todo!()
     }
+}
+
+#[derive(Debug, thiserror_no_std::Error)]
+pub enum OpError {
+    #[error("Not Supported Operation")]
+    NotSupported,
+    #[error("Syscall is failed")]
+    SyscallFailed,
 }
 
 impl IoTransaction<Write> {
@@ -139,6 +183,14 @@ impl IoTransaction<Write> {
 
     pub fn commit(&mut self) -> Result<(), OpError> {
         Ok(())
+    }
+
+    pub fn slice_to_buf(
+        &mut self,
+        _slice: &[u8],
+        _buf: &mut UserBufMut,
+    ) -> &mut Self {
+        self
     }
 }
 

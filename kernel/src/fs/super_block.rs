@@ -2,8 +2,8 @@ use alloc::{boxed::Box, sync::Arc};
 use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, LinkedList, ListNode, TinyListNode},
-    declare_constants,
     drivers::{DeviceId, DriverId},
+    fs::FileSystem,
 };
 
 use crate::{
@@ -12,12 +12,7 @@ use crate::{
     user::queue::Queue,
 };
 
-use super::{File, FileSystemKind, FsWork, IndexNode, MountPoint, Work};
-
-declare_constants! {
-    pub usize,
-    MAX_FILE_SYSTEM_NAME = 32;
-}
+use super::{File, FsWork, IndexNode, MountPoint, Work};
 
 #[repr(C)]
 pub struct SuperBlockOperations {
@@ -54,16 +49,6 @@ impl FileSystemItem {
     pub fn queue(&self) -> object::Handle<Queue<FsWork>> {
         self.queue.clone()
     }
-}
-
-/// user-space structure to register file system
-pub struct FileSystem {
-    pub name: heapless::String<MAX_FILE_SYSTEM_NAME>,
-    pub kind: FileSystemKind,
-    pub operations: SuperBlockOperations,
-    //the limitation of file system about max file size
-    pub max_file_size: Option<usize>,
-    pub private: *mut (),
 }
 
 #[derive(ListNode)]

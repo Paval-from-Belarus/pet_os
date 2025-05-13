@@ -3,7 +3,10 @@
 
 mod ide;
 
-use kernel_lib::io::block::{self, OpError};
+use kernel_lib::io::{
+    block::{self},
+    OpError,
+};
 
 #[no_mangle]
 static DRIVER_ID: usize = 0;
@@ -19,15 +22,13 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
 fn handle_request(request: block::Request) -> Result<(), OpError> {
     match request.work {
         block::Work::Read { sector, mut buffer } => {
-            assert!(buffer.size() % 512 == 0);
+            assert!(buffer.remaining_capacity() % 512 == 0);
 
-            let sector_count = buffer.size() / 512;
+            let sector_count = buffer.remaining_capacity() / 512;
 
             for i in 0..sector_count {
                 let sector = sector + i as u32;
-                ide::read_sector(0, request.disk as u8, sector, &buffer)?;
-
-                buffer.move_bytes(512).unwrap();
+                ide::read_sector(0, request.disk as u8, sector, &mut buffer)?;
             }
 
             Ok(())

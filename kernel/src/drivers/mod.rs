@@ -9,11 +9,11 @@ use kernel_macro::{export_symbolic, ListNode};
 use kernel_types::collections::{LinkedList, ListNode, Queue};
 use kernel_types::declare_constants;
 use kernel_types::drivers::{Device, DeviceId, DriverId, KernelSymbol};
+use kernel_types::fs::{FileSystem, FileSystemKind};
 
 use crate::common::atomics::SpinLockLazyCell;
 use crate::fs::{
-    FileOperations, FileSystem, FileSystemKind, IndexNode, IndexNodeItem,
-    SuperBlock, SuperBlockOperations,
+    FileOperations, IndexNode, IndexNodeItem, SuperBlock, SuperBlockOperations,
 };
 use crate::memory::{slab_alloc, ProcessId, SlabBox, VirtualAddress};
 use crate::{get_eax, set_eax, set_edx};
@@ -43,12 +43,6 @@ pub fn fs() -> Arc<FileSystem> {
         name: "dev-fs".into(),
         kind: FileSystemKind::READ_ONLY,
         max_file_size: None,
-        private: core::ptr::null_mut(),
-        operations: SuperBlockOperations {
-            create_node: todo!(),
-            dirty_node: todo!(),
-            destroy_node: todo!(),
-        },
     };
 
     Arc::new(fs)

@@ -5,26 +5,11 @@ use crate::{
     object::{self, ObjectContainer},
 };
 
+pub use kernel_types::io::block::Work;
+
 pub struct IoWork {
     object: object::Object,
     pub work: Work,
-}
-
-#[derive(Debug, Clone)]
-pub enum Work {
-    Read {
-        sector: u64,       // Starting sector (LBA)
-        sector_count: u32, // Number of sectors to read
-        buffer: *mut u8,   // Data buffer (raw pointer for simplicity)
-    },
-    Write {
-        sector: u64,       // Starting sector (LBA)
-        sector_count: u32, // Number of sectors to write
-        buffer: *const u8, // Data buffer (read-only for write)
-    },
-    Passthrough {
-        cmd: u32, // Command code (e.g., for flush or ioctl)
-    },
 }
 
 impl ObjectContainer for IoWork {

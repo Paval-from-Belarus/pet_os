@@ -1,16 +1,14 @@
-use crate::object;
-
-use super::op::KernelBuffer;
+use crate::io::{KernelBuf, KernelBufMut, OpError};
 
 #[derive(Debug)]
 pub enum Work {
     Read {
         sector: u32, // Starting sector (LBA)
-        buffer: KernelBuffer,
+        buffer: KernelBufMut,
     },
     Write {
         sector: u32, // Starting sector (LBA)
-        buffer: KernelBuffer,
+        buffer: KernelBuf,
     },
     Passthrough {
         cmd: u32, // Command code (e.g., for flush or ioctl)
@@ -24,17 +22,11 @@ pub struct Request {
 }
 
 pub struct Device {
-    pub name: &'static str,
+    pub name: heapless::String<12>,
     pub sector_size: usize,
     //deseriable queue size
     pub queue_size: usize,
     pub ops: Operations,
-}
-
-#[derive(thiserror_no_std::Error)]
-pub enum OpError {
-    #[error("This operation is not supported")]
-    NotSupported,
 }
 
 //todo: handle hardware and software request

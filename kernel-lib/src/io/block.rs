@@ -1,5 +1,7 @@
 pub use kernel_types::io::block::*;
 
+use kernel_types::io::OpError;
+
 pub fn register_device(_device: Device) -> Result<(), ()> {
     Ok(())
 }

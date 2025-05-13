@@ -4,14 +4,14 @@ use core::{
 };
 
 use alloc::{boxed::Box, string::ToString};
-use kernel_types::collections::LinkedList;
+use kernel_types::{collections::LinkedList, fs::FileSystem};
 
 use crate::{
     common::{atomics::SpinLock, SpinBox},
     object,
 };
 
-use super::{FileSystem, FileSystemItem, MountPoint};
+use super::{FileSystemItem, MountPoint};
 
 pub type FileSystemId = usize;
 
