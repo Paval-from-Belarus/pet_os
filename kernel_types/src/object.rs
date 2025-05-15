@@ -5,6 +5,7 @@ use core::{marker::PhantomData, ops::Deref};
 pub trait KernelObject {}
 
 #[derive(Debug, Clone)]
+#[repr(C)]
 pub struct Handle<T: KernelObject>(usize, PhantomData<T>);
 pub type RawHandle = usize;
 
