@@ -13,3 +13,12 @@ pub mod string;
 pub fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
+
+#[macro_export]
+macro_rules! module {
+    ($name: expr) => {
+        #[link_section = ".modinfo"]
+        #[used]
+        pub static MODINFO_NAME: [u8; $name.len()] = *$name;
+    };
+}

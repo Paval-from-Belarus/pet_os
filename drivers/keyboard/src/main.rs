@@ -6,12 +6,9 @@ mod pc;
 
 use alloc::sync::Arc;
 use kernel_lib::{
-    io::{
-        self,
-        char::{not_supported_write, OpError},
-        spin, IoTransaction, KernelBufMut, UserBufMut,
-    },
-    object::{Event, File, Handle, IndexNode},
+    fs::{File, IndexNode},
+    io::{self, char::not_supported_write, spin, IoTransaction, UserBufMut},
+    object::{Event, Handle},
 };
 
 static DEVICE_NAME: &str = "keyboard";
@@ -43,7 +40,7 @@ fn handle_irq(raw_lock: *const DriverContextLock) {
     context.event.notify();
 }
 
-fn handle_read(file: Handle<File>, mut buf: UserBufMut) -> Result<(), OpError> {
+fn handle_read(file: Handle<File>, mut buf: UserBufMut) -> io::Result<()> {
     let context_lock = unsafe { &*file.context::<DriverContextLock>() };
 
     while buf.has_remaining_capacity() {
@@ -66,9 +63,7 @@ fn handle_read(file: Handle<File>, mut buf: UserBufMut) -> Result<(), OpError> {
     Ok(())
 }
 
-fn handle_open(node: Handle<IndexNode>, file: Handle<File>) {
-
-}
+fn handle_open(_node: Handle<IndexNode>, _file: Handle<File>) {}
 
 //allocation in user space
 pub type DriverContextLock = spin::Mutex<DriverContext>;
@@ -117,5 +112,5 @@ extern "C" fn driver_init() -> i32 {
     0
 }
 
-#[export_name = "init"]
+#[export_name = "exit"]
 fn driver_exit() {}

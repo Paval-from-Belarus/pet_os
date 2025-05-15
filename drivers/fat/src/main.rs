@@ -192,6 +192,9 @@ pub fn unmount_fs(super_block: Handle<SuperBlock>) -> fs::Result<()> {
 }
 
 #[no_mangle]
+static MODULE_NAME: &str = "disk";
+
+#[no_mangle]
 unsafe extern "C" fn init() -> i32 {
     kernel_lib::log::init().unwrap();
 

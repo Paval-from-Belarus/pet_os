@@ -8,10 +8,9 @@ use kernel_lib::io::{
     block::{self, BlockDeviceInfo},
 };
 
-#[no_mangle]
-static DRIVER_ID: usize = 0;
-
 const DEVICE_NAME: &str = "disk";
+
+kernel_lib::module!(b"name=ata-disk\0");
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -68,7 +67,10 @@ extern "C" fn init() -> i32 {
         return -1;
     };
 
-    log::info!("Driver is configured");
-
     0
+}
+
+#[export_name = "exit"]
+extern "C" fn exit() {
+
 }

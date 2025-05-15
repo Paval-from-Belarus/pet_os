@@ -1,5 +1,5 @@
-use kernel_lib::io::char::OpError;
+use kernel_lib::io;
 
-pub fn read_scan_code() -> Result<u8, OpError> {
+pub fn read_scan_code() -> io::Result<u8> {
     Ok(0)
 }
