@@ -40,7 +40,6 @@ bitvec = { git = "https://github.com/ferrilab/ferrilab", default-features = fals
 #static_assertions = "1.1.0"
 #volatile = "0.2.6"
 #bitfield = "0.14.0"
-#pc-keyboard = "0.7.0"
 #paste = "1.0.14"
 #num_enum = { version = "0.7.0", default-features = false }
 #fallible_collections = { version = "0.4.9", features = ["hashbrown"] }

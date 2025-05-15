@@ -215,8 +215,14 @@ Kernel.setPaging:
     pusha
     mov ecx, edi
 
+    add ecx, 0x100000 / 0x1000
+
     mov esi, Kernel.start
     mov edi, Kernel.start
+
+    sub esi, 0x100000
+    sub edi, 0x100000
+
     call MMU.markRegion
 
     popa

@@ -24,7 +24,7 @@ mod loader;
 mod management;
 mod memory;
 mod network;
-mod vga;
+pub mod vga;
 
 use generated::STATIC_DRIVERS;
 
