@@ -1,9 +1,11 @@
 use crate::object::KernelObject;
 
-use super::FileId;
+use super::{FileId, FileOperations};
 
 pub struct IndexNode {}
-pub struct IndexNodeInfo {}
+pub struct IndexNodeInfo {
+    pub ops: FileOperations
+}
 
 impl IndexNode {
     pub fn id(&self) -> FileId {

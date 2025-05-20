@@ -3,20 +3,22 @@
 
 mod ide;
 
-use kernel_lib::io::{
-    self,
-    block::{self, BlockDeviceInfo},
+use kernel_lib::{
+    io::{
+        self,
+        block::{self, BlockDeviceInfo},
+    },
+    KernelModule, ModuleError,
 };
 
-const DEVICE_NAME: &str = "disk";
+const DEVICE_NAME: &str = "ata";
 
-kernel_lib::module!(b"name=ata-disk\0");
-
-#[cfg(not(test))]
-#[panic_handler]
-pub fn panic(info: &core::panic::PanicInfo) -> ! {
-    kernel_lib::panic(info)
+kernel_lib::module! {
+    module: AtaDriver,
+    name: "ata-disk",
 }
+
+pub struct AtaDriver {}
 
 fn handle_request(request: block::Request) -> io::Result<()> {
     match request.work {
@@ -51,26 +53,32 @@ fn handle_request(request: block::Request) -> io::Result<()> {
     }
 }
 
+impl KernelModule for AtaDriver {
+    fn init() -> Result<(), ModuleError> {
+        kernel_lib::log::init().expect("Failed to set logger");
+
+        block::register_device(BlockDeviceInfo {
+            name: DEVICE_NAME.into(),
+            sector_size: 512,
+            queue_size: 10,
+            ops: block::Operations {
+                request: handle_request,
+                ..block::default_operations()
+            },
+        })?;
+
+        Ok(())
+    }
+}
+
+impl Drop for AtaDriver {
+    fn drop(&mut self) {}
+}
+
 #[export_name = "init"]
 extern "C" fn init() -> i32 {
-    kernel_lib::log::init().expect("Failed to set logger");
-
-    let Ok(()) = block::register_device(BlockDeviceInfo {
-        name: DEVICE_NAME.into(),
-        sector_size: 512,
-        queue_size: 10,
-        ops: block::Operations {
-            request: handle_request,
-            ..block::default_operations()
-        },
-    }) else {
-        return -1;
-    };
-
     0
 }
 
 #[export_name = "exit"]
-extern "C" fn exit() {
-
-}
+extern "C" fn exit() {}

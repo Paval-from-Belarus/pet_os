@@ -18,29 +18,24 @@ use kernel_lib::{
         self, FileId, FileSystemKind, IndexNode, IndexNodeInfo, SuperBlock,
         SuperBlockInfo,
     },
-    io::{self, block::BlockDevice, spin::Mutex},
+    io::{self, block::BlockDevice, spin::Mutex, UserBuf, UserBufMut},
     object::Handle,
     string::QuickString,
+    KernelModule, ModuleError,
 };
 
 extern crate alloc;
 extern crate core;
 
-#[cfg(not(test))]
-#[panic_handler]
-pub fn panic(_info: &core::panic::PanicInfo) -> ! {
-    unsafe { core::arch::asm!("hlt", options(noreturn)) }
-}
-
-pub struct DriverContext {
+pub struct FatDriver {
     pub bpb: BiosParameterBlock,
 }
 
-pub type DriverContextLock = Mutex<DriverContext>;
+pub type DriverContextLock = Mutex<FatDriver>;
 
 pub struct FatEntry;
 
-impl DriverContext {
+impl FatDriver {
     pub fn new(bpb: BiosParameterBlock, _disk: Handle<BlockDevice>) -> Self {
         Self { bpb }
     }
@@ -74,7 +69,9 @@ impl DriverContext {
     }
 
     pub fn alloc_node(&self, _entry: FatEntry) -> io::Result<IndexNodeInfo> {
-        todo!()
+        Ok(IndexNodeInfo {
+            ops: fs::FileOperations { write, read },
+        })
     }
 
     pub fn flush(&self, _entry: FatEntry) -> io::Result<()> {
@@ -84,6 +81,22 @@ impl DriverContext {
     pub fn destroy_by_id(&self, _id: FileId) -> fs::Result<()> {
         todo!()
     }
+}
+
+pub fn read(
+    _super_block: Handle<SuperBlock>,
+    _node: Handle<IndexNode>,
+    _buf: UserBufMut,
+) -> fs::Result<()> {
+    Ok(())
+}
+
+pub fn write(
+    _super_block: Handle<SuperBlock>,
+    _node: Handle<IndexNode>,
+    _buf: UserBuf,
+) -> fs::Result<()> {
+    Ok(())
 }
 
 pub fn lookup_node(
@@ -166,7 +179,7 @@ pub fn mount_fs(disk: Handle<BlockDevice>) -> fs::Result<SuperBlockInfo> {
 
     let bpb = bpb::parse(&buffer)?;
 
-    let context = Mutex::new(DriverContext::new(bpb, disk));
+    let context = Mutex::new(FatDriver::new(bpb, disk));
 
     let boxed = Box::try_new(context)?;
 
@@ -194,19 +207,32 @@ pub fn unmount_fs(super_block: Handle<SuperBlock>) -> fs::Result<()> {
 #[no_mangle]
 static MODULE_NAME: &str = "disk";
 
+kernel_lib::module! {
+    module: FatDriver,
+    name: "fat-fs",
+}
+
+impl KernelModule for FatDriver {
+    fn init() -> Result<(), ModuleError> {
+        kernel_lib::log::init().unwrap();
+
+        fs::register(fs::FileSystem {
+            name: "fat32".into(),
+            kind: FileSystemKind::NORMAL,
+            mount: mount_fs,
+            unmount: unmount_fs,
+        })?;
+
+        Ok(())
+    }
+}
+
+impl Drop for FatDriver {
+    fn drop(&mut self) {}
+}
+
 #[no_mangle]
 unsafe extern "C" fn init() -> i32 {
-    kernel_lib::log::init().unwrap();
-
-    let Ok(()) = fs::register(fs::FileSystem {
-        name: "fat32".into(),
-        kind: FileSystemKind::NORMAL,
-        mount: mount_fs,
-        unmount: unmount_fs,
-    }) else {
-        return -1;
-    };
-
     0
 }
 

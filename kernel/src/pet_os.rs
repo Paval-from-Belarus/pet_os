@@ -90,11 +90,31 @@ pub fn main() {
 
     let thread_2 = task::new_task(task2, 52 as *mut (), TaskPriority::Kernel);
 
+    // let thread_3 =
+    //     task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(10));
+    //
+    // let thread_4 =
+    //     task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(5));
+
     task::submit_task(thread_1);
     task::submit_task(thread_2);
-
+    // task::submit_task(thread_3);
+    // task::submit_task(thread_4);
+    //
     // user::exec("/usr/sbin/init");
     task::run();
+}
+
+#[allow(unused)]
+extern "C" fn task3() {
+    log::info!("task 3 started");
+
+    let task_id = current_task!().id;
+    loop {
+        for i in 0..100 {
+            log::info!("Task {task_id} #{i}");
+        }
+    }
 }
 
 extern "C" fn task1() {
