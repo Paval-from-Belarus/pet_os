@@ -18,9 +18,10 @@ use kernel_types::{
 };
 
 use crate::{
+    error::KernelError,
     memory::{
-        virtual_alloc, virtual_dealloc, MemoryRegion, MemoryRegionFlag,
-        ProcessId, VirtualAddress,
+        virtual_alloc, virtual_dealloc, MemoryMappingRegion, MemoryRegion,
+        MemoryRegionFlag, Page, PageMarker, Process, ProcessId, VirtualAddress,
     },
     user,
 };
@@ -35,6 +36,11 @@ pub enum LoadError {
     NoSegments,
     #[error("No Memory")]
     NoMemory(#[from] fallible_collections::TryReserveError),
+    #[error("Failed to alloc {0}")]
+    AllocFailed(#[from] crate::memory::AllocError),
+
+    #[error("Kernel Error {0}")]
+    Kernel(#[from] KernelError),
 }
 
 fn check_elf_format(
@@ -47,6 +53,10 @@ fn check_elf_format(
 
     if driver_file.ehdr.version != elf::abi::EV_CURRENT as u32 {
         log::debug!("Not supported elf version");
+        return Err(LoadError::NotSupportedElfFormat);
+    }
+
+    if driver_file.ehdr.e_type & elf::abi::ET_EXEC == 0 {
         return Err(LoadError::NotSupportedElfFormat);
     }
 
@@ -150,7 +160,7 @@ fn elf_realloc(
 }
 
 pub fn load_in_memory(elf_data: &[u8]) -> Result<(), LoadError> {
-    let loader = Loader::new(elf_data)?;
+    let loader = Loader::new(elf_data, todo!())?;
     let pid = loader.load()?;
     driver_probe(pid)?;
     Ok(())
@@ -169,10 +179,15 @@ pub struct Loader<'a> {
     //holds copy of elf bytes available to be modified
     buffer: Vec<u8>,
     dyn_segments: LinkedList<'static, MemoryRegion>,
+
+    marker: &'a mut PageMarker<'a>,
 }
 
 impl<'a> Loader<'a> {
-    pub fn new(elf_bytes: &'a [u8]) -> Result<Self, LoadError> {
+    pub fn new(
+        elf_bytes: &'a [u8],
+        marker: &'a mut PageMarker<'a>,
+    ) -> Result<Self, LoadError> {
         let elf_file = ElfBytes::<AnyEndian>::minimal_parse(elf_bytes)?;
 
         check_elf_format(&elf_file)?;
@@ -199,6 +214,7 @@ impl<'a> Loader<'a> {
             segments,
             buffer,
             dyn_segments: LinkedList::empty(),
+            marker,
         })
     }
 
@@ -271,7 +287,7 @@ impl<'a> Loader<'a> {
                     let region = MemoryRegion::new_zeroed(
                         header.sh_size as usize,
                         MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
-                    );
+                    )?;
 
                     header.sh_offset = (region.mem_ptr() as usize
                         - self.buffer.as_ptr() as usize)
@@ -283,6 +299,8 @@ impl<'a> Loader<'a> {
         }
 
         self.relocate_symbols()?;
+
+        let mut builder = Process::builder()?.switch_address_space();
 
         let mut process_regions = LinkedList::<'static, MemoryRegion>::empty();
 
@@ -296,57 +314,40 @@ impl<'a> Loader<'a> {
 
                 log::debug!("Requested interpreter: {name}");
             } else if header.p_type == elf::abi::PT_LOAD {
-                let mut flags = MemoryRegionFlag::READ;
+                let region_flags = {
+                    let mut flags = MemoryRegionFlag::READ;
 
-                if header.p_flags & elf::abi::PF_W != 0 {
-                    flags |= MemoryRegionFlag::WRITE;
-                }
+                    if header.p_flags & elf::abi::PF_W != 0 {
+                        flags |= MemoryRegionFlag::WRITE;
+                    }
 
-                if header.p_flags & elf::abi::PF_X != 0 {
-                    flags |= MemoryRegionFlag::EXEC;
-                }
+                    if header.p_flags & elf::abi::PF_X != 0 {
+                        flags |= MemoryRegionFlag::EXEC;
+                    }
 
-                let region =
-                    MemoryRegion::new_uninit(header.p_memsz as usize, flags)
-                        .into_node();
+                    flags
+                };
 
-                // let source = driver_file.section_data(header)?;
-                // region.copy_from(source);
+                let virt_addr = header.p_vaddr as VirtualAddress;
 
-                process_regions.push_back(region);
-            }
+                let mem_size = header.p_memsz as usize;
 
-            if header.p_type == elf::abi::PT_LOAD {
-                let file_offset = header.p_offset as usize;
-                let segment_size = header.p_memsz as usize;
-                let virt_addr = header.p_vaddr as *mut u8;
+                assert!(mem_size >= header.p_filesz as usize);
 
-                // let dest = virt_addr;
+                let offset_in_page = virt_addr as usize % Page::SIZE;
+                let aligned_virt_offset = virt_addr - offset_in_page;
 
-                // let file_data = if file_offset < elf_data.len() {
-                //     &elf_data[file_offset
-                //         ..(file_offset + header.p_filesz as usize)
-                //             .min(elf_data.len())]
-                // } else {
-                //     &[]
-                // };
+                let aligned_size = mem_size + offset_in_page;
 
-                // unsafe {
-                //     core::ptr::copy_nonoverlapping(
-                //         file_data.as_ptr(),
-                //         dest,
-                //         file_data.len(),
-                //     );
-                //
-                //     // Zero remaining memory (e.g., .bss)
-                //     if file_data.len() < segment_size {
-                //         core::ptr::write_bytes(
-                //             dest.add(file_data.len()),
-                //             0,
-                //             segment_size - file_data.len(),
-                //         );
-                //     }
-                // }
+                let region = builder.alloc_region(
+                    aligned_virt_offset,
+                    mem_size + offset_in_page,
+                    region_flags,
+                )?;
+
+                let region_data = self.elf_file.segment_data(&header)?;
+
+                region.copy_from(region_data);
             }
         }
 

@@ -32,12 +32,17 @@ pub enum CommonError {
     OutOfBounds,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror_no_std::Error)]
 pub enum PageMarkerError {
+    #[error("Empty Page Directory Entry")]
     EmptyDirEntry,
+    #[error("Empty Page Table Entry")]
     EmptyTableEntry,
+    #[error("Invalid Table Address")]
     InvalidTableAddress,
+    #[error("No Memory")]
     OutOfMemory,
+    #[error("Captured Memory Range")]
     CapturedMemoryRange,
 }
 

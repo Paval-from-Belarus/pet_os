@@ -1,3 +1,4 @@
+mod builder;
 mod segment;
 
 use core::{
@@ -5,12 +6,16 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use builder::{KernelSpace, ProcessBuilder};
 use kernel_types::{collect_list, collections::LinkedList};
 use segment::Segments;
 
-use crate::memory::{
-    self, MemoryMappingFlag, MemoryMappingRegion, SegmentSelector,
-    ToPhysicalAddress,
+use crate::{
+    error::KernelError,
+    memory::{
+        self, MemoryMappingFlag, MemoryMappingRegion, SegmentSelector,
+        ToPhysicalAddress,
+    },
 };
 
 use super::{
@@ -36,6 +41,14 @@ pub fn new_proccess_id() -> Option<ProcessId> {
 }
 
 pub type ProcessStateLock = spin::Mutex<ProcessState>;
+
+pub type Process = ProcessState;
+
+impl Process {
+    pub fn builder() -> Result<ProcessBuilder<KernelSpace>, KernelError> {
+        Ok(ProcessBuilder::new()?)
+    }
+}
 
 ///Alternative to linux mm_struct
 pub struct ProcessState {
@@ -224,6 +237,7 @@ impl ProcessState {
         }
         prev_region.map(|node| node as &MemoryRegion)
     }
+
     pub fn find_intersect_region(
         &mut self,
         range: Range<VirtualAddress>,

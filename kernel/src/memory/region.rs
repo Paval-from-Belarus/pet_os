@@ -4,7 +4,8 @@ use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, LinkedList, ListNode};
 
 use super::{
-    slab_alloc, virtual_alloc, AllocError, Page, Slab, SlabBox, VirtualAddress,
+    slab_alloc, virtual_alloc, virtual_dealloc, AllocError, Page, Slab,
+    SlabBox, VirtualAddress,
 };
 
 pub struct MemoryRegionBox {
@@ -41,7 +42,7 @@ bitflags::bitflags! {
 
 impl MemoryRegion {
     /// Create new region with no underlying physical memory
-    pub fn new_boxed(
+    pub unsafe fn empty(
         range: Range<VirtualAddress>,
         flag: MemoryRegionFlag,
     ) -> Result<MemoryRegionBox, AllocError> {
@@ -55,22 +56,22 @@ impl MemoryRegion {
         Ok(MemoryRegionBox { region })
     }
 
-    pub fn new_uninit(size: usize, flag: MemoryRegionFlag) -> MemoryRegionBox {
-        let offset = virtual_alloc(size, flag);
+    pub fn new_uninit(
+        size: usize,
+        flag: MemoryRegionFlag,
+    ) -> Result<MemoryRegionBox, AllocError> {
+        assert!(size % Page::SIZE == 0);
 
-        let region = slab_alloc(Self {
-            node: ListNode::empty(),
-            range: offset..(offset + size as VirtualAddress),
-            flag,
-            pages: LinkedList::empty(),
-        })
-        .unwrap();
+        let offset = virtual_alloc(size, flag)?;
 
-        MemoryRegionBox { region }
+        unsafe { Self::empty(offset..(offset + size), flag) }
     }
 
-    pub fn new_zeroed(size: usize, flag: MemoryRegionFlag) -> MemoryRegionBox {
-        let mut region = Self::new_uninit(size, flag);
+    pub fn new_zeroed(
+        size: usize,
+        flag: MemoryRegionFlag,
+    ) -> Result<MemoryRegionBox, AllocError> {
+        let mut region = Self::new_uninit(size, flag)?;
 
         let bytes = unsafe {
             core::slice::from_raw_parts_mut(region.mem_mut_ptr(), region.size())
@@ -80,15 +81,14 @@ impl MemoryRegion {
             *byte = 0;
         }
 
-        region
+        Ok(region)
     }
 
     pub fn copy_from(&self, source: &[u8]) {
+        let len = usize::min(self.range.len(), source.len());
+
         let target = unsafe {
-            core::slice::from_raw_parts_mut(
-                self.range.start as *mut u8,
-                self.range.len(),
-            )
+            core::slice::from_raw_parts_mut(self.range.start as *mut u8, len)
         };
 
         target.copy_from_slice(source);
@@ -143,11 +143,11 @@ impl core::ops::DerefMut for MemoryRegionBox {
     }
 }
 
-// impl Drop for MemoryRegion {
-//     fn drop(&mut self) {
-//         virtual_dealloc(self.mem_ptr() as VirtualAddress, self.size());
-//     }
-// }
+impl Drop for MemoryRegion {
+    fn drop(&mut self) {
+        virtual_dealloc(self.mem_ptr() as VirtualAddress, self.size());
+    }
+}
 
 impl Slab for MemoryRegion {
     const NAME: &str = "mem_region";

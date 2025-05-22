@@ -9,6 +9,7 @@ use kernel_types::{bitflags, declare_constants, Zeroed};
 
 use crate::common::atomics::UnsafeLazyCell;
 
+use crate::error::KernelError;
 use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
 use crate::io::{pic, CallbackInfo};
@@ -165,11 +166,11 @@ pub fn new_task(
     routine: TaskRoutine,
     arg: *mut (),
     priority: TaskPriority,
-) -> &'static mut RunningTask {
+) -> Result<&'static mut RunningTask, KernelError> {
     let kernel_stack = memory::virtual_alloc(
         TASK_STACK_SIZE,
         MemoryRegionFlag::WRITE | MemoryRegionFlag::READ,
-    );
+    )?;
 
     let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
     let task = Task::new_boxed(task_id, kernel_stack, priority);

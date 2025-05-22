@@ -169,6 +169,7 @@ bitflags::bitflags! {
     #[derive(Debug, Clone, Copy)]
     pub struct MemoryMappingFlag: usize {
         const KERNEL_LAYOUT = Self::WRITABLE.bits() | Self::PRESENT.bits();
+        const USER_LAYOUT = Self::NO_PRIVILEGE.bits() | Self::PRESENT.bits();
         const USER_CODE = Self::NO_PRIVILEGE.bits() | Self::PRESENT.bits();
 
         const USER_DATA = Self::WRITABLE.bits() | Self::PRESENT.bits() | Self::NO_PRIVILEGE.bits();
@@ -179,6 +180,18 @@ bitflags::bitflags! {
         const WRITABLE = 0b10;
         const PRESENT = 0b1;
         const EMPTY = 0b0;
+    }
+}
+
+impl From<MemoryRegionFlag> for MemoryMappingFlag {
+    fn from(value: MemoryRegionFlag) -> Self {
+        let mut flags = MemoryMappingFlag::USER_LAYOUT;
+
+        if value.contains(MemoryRegionFlag::WRITE) {
+            flags |= Self::WRITABLE;
+        }
+
+        flags
     }
 }
 
@@ -336,11 +349,14 @@ pub fn into_boxed<T: Slab>(data: NonNull<T>) -> SlabBox<T> {
 ///The each virtual page, probably, will be separate
 ///The current implementation is simple slab allocation (it will fail with too huge memory size)
 #[must_use]
-pub fn virtual_alloc(size: usize, _flags: MemoryRegionFlag) -> VirtualAddress {
+pub fn virtual_alloc(
+    size: usize,
+    _flags: MemoryRegionFlag,
+) -> Result<VirtualAddress, AllocError> {
     SYSTEM_ALLOCATOR
         .get()
         .virtual_alloc(size)
-        .expect("Failed to allocate virtual memory") as VirtualAddress
+        .map(|ptr| ptr as VirtualAddress)
 }
 
 pub fn virtual_dealloc(offset: VirtualAddress, size: usize) {
@@ -372,19 +388,52 @@ pub fn new_page_marker() -> Result<PageMarker<'static>, AllocError> {
     ))
 }
 
+pub struct PhysicalAllocation {
+    pages: LinkedList<'static, Page>,
+}
+
+impl core::ops::Deref for PhysicalAllocation {
+    type Target = LinkedList<'static, Page>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pages
+    }
+}
+
+impl core::ops::DerefMut for PhysicalAllocation {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.pages
+    }
+}
+
+impl Drop for PhysicalAllocation {
+    fn drop(&mut self) {
+        if self.pages.is_empty() {
+            return;
+        }
+
+        let mut dealloc_pages = LinkedList::empty();
+        dealloc_pages.splice(&mut self.pages);
+    }
+}
+
+impl From<LinkedList<'static, Page>> for PhysicalAllocation {
+    fn from(pages: LinkedList<'static, Page>) -> Self {
+        Self { pages }
+    }
+}
+
 /// allocate physical memory
 /// not continuous
-pub fn physical_alloc(
-    bytes: usize,
-) -> Result<LinkedList<'static, Page>, AllocError> {
+pub fn physical_alloc(bytes: usize) -> Result<PhysicalAllocation, AllocError> {
     let pages_count = Page::upper_bound(bytes);
 
     let list = PHYSICAL_ALLOCATOR.get().alloc_zeroed_pages(pages_count)?;
 
-    Ok(list)
+    Ok(list.into())
 }
 
-pub fn physical_dealloc(_offset: *mut u8) {
+pub fn physical_dealloc(_pages: LinkedList<'static, Page>) {
     todo!()
 }
 
@@ -496,7 +545,9 @@ unsafe impl GlobalAlloc for VirtualAllocator {
         virtual_alloc(
             layout.size(),
             MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
-        ) as *mut u8
+        )
+        .map(|offset| offset as *mut u8)
+        .unwrap_or(ptr::null_mut())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {

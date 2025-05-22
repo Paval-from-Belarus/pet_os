@@ -149,9 +149,9 @@ impl SlabAllocator {
             let allocated_pages =
                 self.allocator.alloc_continuous_pages(pages_to_alloc)?;
 
-            let commited_entries = self.commit_new_entries(allocated_pages);
+            let mut commited_entries = self.commit_new_entries(allocated_pages);
 
-            self.cached_entries.splice(commited_entries);
+            self.cached_entries.splice(&mut commited_entries);
         }
 
         let mut entries = {

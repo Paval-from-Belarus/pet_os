@@ -42,6 +42,7 @@ mod common;
 mod object;
 mod task;
 mod user;
+pub mod error;
 
 #[cfg(not(test))]
 #[panic_handler]

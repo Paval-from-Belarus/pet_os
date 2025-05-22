@@ -296,7 +296,7 @@ impl<'data, T: Sized + ListNodeData> LinkedList<'data, T> {
         LimitedIterator::new(self.cyclic_iter_mut())
     }
 
-    pub fn splice(&mut self, other: LinkedList<'data, T>) {
+    pub fn splice(&mut self, other: &mut LinkedList<'data, T>) {
         if other.is_empty() {
             return;
         }
@@ -312,6 +312,9 @@ impl<'data, T: Sized + ListNodeData> LinkedList<'data, T> {
         unsafe {
             self.splice_bounds(other.first, other.last);
         }
+
+        other.first = ptr::null_mut();
+        other.last = ptr::null_mut();
     }
     //this function assumes the current list is not empty
     unsafe fn splice_bounds(
@@ -344,6 +347,22 @@ impl<'data, T: Sized + ListNodeData> LinkedList<'data, T> {
         }
 
         unsafe { &mut *self.first }.into()
+    }
+
+    pub fn last(&self) -> Option<&ListNode<T>> {
+        if self.is_empty() {
+            return None;
+        }
+
+        unsafe { &*self.last }.into()
+    }
+
+    pub fn last_mut(&mut self) -> Option<&mut ListNode<T>> {
+        if self.is_empty() {
+            return None;
+        }
+
+        unsafe { &mut *self.last }.into()
     }
 
     pub fn remove_first(&mut self) -> Option<&'data mut ListNode<T>> {

@@ -78,10 +78,10 @@ impl SlabHead {
 
     pub fn extend_with_free_entries(
         &mut self,
-        entries: LinkedList<'static, SlabEntry>,
+        mut entries: LinkedList<'static, SlabEntry>,
     ) {
         assert!(entries.iter().all(|entry| entry.is_empty()));
 
-        self.partial.splice(entries);
+        self.partial.splice(&mut entries);
     }
 }
