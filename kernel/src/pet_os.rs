@@ -65,7 +65,7 @@ pub fn main() {
         io::disable();
     }
 
-    drivers::vga::init();
+    // drivers::vga::init();
 
     let directory = properties.page_directory();
     let heap_offset = properties.heap_offset();

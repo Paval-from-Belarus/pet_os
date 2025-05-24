@@ -1,5 +1,5 @@
 use kernel_types::string::MutString;
-use kernel_types::{bitflags, declare_constants, syscall};
+use kernel_types::{declare_constants, syscall};
 
 use crate::io::irq::IrqChain;
 use crate::io::{
@@ -7,28 +7,22 @@ use crate::io::{
 };
 use crate::memory::{SlabBox, VirtualAddress};
 use crate::{
-    error_trap, get_eax, get_edx, log_unchecked, memory, naked_trap, set_eax,
-    task,
+    current_task, error_trap, get_eax, get_edx, log_unchecked, memory,
+    naked_trap, set_eax, task,
 };
 
 //the common handlers
-bitflags!(
-    pub PageFaultError(usize),
-    NOT_PRESENT = 0b0,
-    LEVEL_PROTECTION = 0b1,
-    CAUSE_MASK = 0b1,
 
-    READ_FAULT = 0b00,
-    WRITE_FAULT = 0b10,
-    READ_WRITE_MASK = 0b10,
-
-    SUPER_MODE = 0b000,
-    USER_MODE = 0b100,
-    MODE_MASK = 0b100,
-
-    RESERVED_BIT_CAUSE = 0b1000,
-    FETCH_CAUSE = 0b10000 //the cause is instruction fetch from page
-);
+#[cfg(target_arch = "x86")]
+bitfield::bitfield! {
+    pub struct PageFaultError(u32);
+    impl Debug;
+    pub present, _: 0;      // Bit 0: P
+    pub write, _: 1;        // Bit 1: W/R
+    pub user, _: 2;         // Bit 2: U/S
+    pub reserved, _: 3;     // Bit 3: RSVD
+    pub instruction, _: 4;  // Bit 4: I/D
+}
 
 pub fn init_traps(table: &mut IDTable) {
     for i in 0..MAX_INTERRUPTS_COUNT {
@@ -179,9 +173,8 @@ pub extern "x86-interrupt" fn general_protection(
 
 pub extern "x86-interrupt" fn page_fault(
     frame: InterruptStackFrame,
-    error_code: usize,
+    code: usize,
 ) {
-    let fault_code = unsafe { PageFaultError::wrap(error_code) };
     let access_address: VirtualAddress;
 
     unsafe {
@@ -192,16 +185,24 @@ pub extern "x86-interrupt" fn page_fault(
         }
     }
 
-    log_unchecked!(
-        "Page Fault ({access_address:X}): {error_code} at IP={:X} CS={:X}\n",
+    let code = PageFaultError(code as u32);
+
+    log_unchecked! {
+        "Page Fault ({access_address:X}): {code:?} at IP={:X} CS={:X}\n",
         frame.ip,
         frame.cs
-    );
+    };
 
-    let _code = fault_code.contains_with_mask(
-        PageFaultError::CAUSE_MASK,
-        PageFaultError::MODE_MASK,
-    );
+    if let Some(process) = current_task!().process.as_ref() {
+        let lookuped = process
+            .state
+            .try_lock()
+            .unwrap()
+            .marker
+            .lookup_physical(access_address);
+
+        log_unchecked!("Lookuped value: {lookuped:?}");
+    }
 }
 
 pub extern "x86-interrupt" fn alignment_check(

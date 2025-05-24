@@ -131,6 +131,7 @@ pub fn enable_task_switching(table: &mut GDTTable) {
     let mut state = TaskState::null();
     state.set_io_map(0xFFFF);
     state.set_stack_selector(SegmentSelector::KERNEL_DATA);
+    state.set_code_selector(SegmentSelector::KERNEL_CODE);
 
     unsafe { TASK_STATE = state };
 

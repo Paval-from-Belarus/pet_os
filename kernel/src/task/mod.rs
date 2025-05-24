@@ -88,7 +88,7 @@ pub enum TaskSignal {
 #[cfg(target_arch = "x86")]
 #[repr(C)]
 pub struct TaskState {
-    last_task: Option<SegmentSelector>,
+    last_task: SegmentSelector,
     reserved_1: Zeroed<u16>,
     esp0: u32,
     ss0: u16,
@@ -126,14 +126,20 @@ pub struct TaskState {
     reserved_11: Zeroed<u16>,
     debug_flag: u16,
     io_map_address: u16,
+    ssp: u32,
 }
 
 impl TaskState {
     pub const fn null() -> Self {
         unsafe { MaybeUninit::zeroed().assume_init() }
     }
+
     pub fn set_stack_selector(&mut self, ss0: SegmentSelector) {
         self.ss0 = u16::from(ss0);
+    }
+
+    pub fn set_code_selector(&mut self, cs: SegmentSelector) {
+        self.cs = cs.into();
     }
 
     pub fn set_io_map(&mut self, address: u16) {

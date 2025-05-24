@@ -60,15 +60,19 @@ impl ProcessBuilder<ProcessSpace> {
         size: usize,
         flags: MemoryRegionFlag,
     ) -> Result<&mut MemoryRegion, KernelError> {
-        assert!(start_offset % Page::SIZE == 0);
+        let offset_in_page = start_offset % Page::SIZE;
+
+        // let start_offset = start_offset - offset_in_page;
+        // let size = size + offset_in_page;
 
         let region = unsafe {
             MemoryRegion::empty(start_offset..(start_offset + size), flags)
         }?;
 
-        let mut pages = physical_alloc(size)?;
+        let mut pages = physical_alloc(size + offset_in_page)?;
 
-        let mut offset = start_offset;
+        let mut offset = start_offset - offset_in_page;
+
         for page in pages.iter() {
             self.marker.map_user_range(&MemoryMappingRegion {
                 flags: flags.into(),

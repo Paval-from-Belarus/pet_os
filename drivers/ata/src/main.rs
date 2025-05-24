@@ -79,9 +79,9 @@ impl Drop for AtaDriver {
 extern "C" fn init() -> i32 {
     kernel_lib::logging::init().unwrap();
 
-    log::info!("From ata driver");
-
-    0
+    loop {
+        log::info!("From ata driver");
+    }
 }
 
 #[export_name = "exit"]

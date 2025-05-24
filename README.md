@@ -72,8 +72,7 @@ issue list:
 4. user tasks are not tested
 5. relocation is not tested
 6. communication is not tested
-7. Освобождать log lock, если текущая задача была изменена?
 8. отладить исполнение задач
-9. Исправления тестов расширенного тестирования
 10. Добавить поддержку grub command line
 11. Проверка на некорректный дескриптор объекта
+12. return from process should do something reasonable

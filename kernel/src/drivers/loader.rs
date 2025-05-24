@@ -312,7 +312,7 @@ impl<'a> Loader<'a> {
             }
         }
 
-        self.relocate_symbols()?;
+        // self.relocate_symbols()?;
 
         for header in self.segments.iter() {
             if header.p_type == elf::abi::PT_INTERP {
@@ -344,16 +344,8 @@ impl<'a> Loader<'a> {
 
                 assert!(mem_size >= header.p_filesz as usize);
 
-                let offset_in_page = virt_addr as usize % Page::SIZE;
-                let aligned_virt_offset = virt_addr - offset_in_page;
-
-                let aligned_size = mem_size + offset_in_page;
-
-                let region = builder.alloc_region(
-                    aligned_virt_offset,
-                    mem_size + offset_in_page,
-                    region_flags,
-                )?;
+                let region =
+                    builder.alloc_region(virt_addr, mem_size, region_flags)?;
 
                 log::debug!("Allocated region: {region:?}");
 
