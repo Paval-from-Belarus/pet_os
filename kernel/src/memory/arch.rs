@@ -22,24 +22,25 @@ impl SegmentSelector {
     declare_constants!(
         pub SegmentSelector,
         NULL = SegmentSelector(0);
-        KERNEL_CODE = SegmentSelector(0x08);
-        KERNEL_DATA = SegmentSelector(0x10);
-        KERNEL_STACK = SegmentSelector(0x10);
-        USER_CODE = SegmentSelector(0x18);
-        USER_DATA = SegmentSelector(0x20);
-        TASK = SegmentSelector(0x28)
+        KERNEL_CODE = SegmentSelector(0x08); //1
+        KERNEL_DATA = SegmentSelector(0x10); //2
+        KERNEL_STACK = SegmentSelector(0x10); //3
+        USER_CODE = SegmentSelector::new(4, PrivilegeLevel::USER, SelectorType::Gdt); //4
+        USER_DATA = SegmentSelector::new(5, PrivilegeLevel::USER, SelectorType::Gdt);//5
+        TASK = SegmentSelector(0x28);//6
+
     );
 
-    pub fn new(
+    pub const fn new(
         index: usize,
         ring: PrivilegeLevel,
         parent: SelectorType,
     ) -> Self {
         assert!(index < u32::MAX as usize);
-        let type_bit = if parent == SelectorType::Ldt {
-            0x04
-        } else {
-            0x00
+
+        let type_bit = match parent {
+            SelectorType::Gdt => 0x00,
+            SelectorType::Ldt => 0x04,
         };
 
         let selector = (index & !0x3) | type_bit | (ring.bits() as usize);
@@ -58,7 +59,8 @@ impl SegmentSelector {
 
     pub const fn get_ring(&self) -> PrivilegeLevel {
         let bits = (self.0 & 0x03) as u8;
-        unsafe { PrivilegeLevel::wrap(bits) }
+
+        PrivilegeLevel::from_bits(bits).expect("Unknwon privilege level")
     }
 }
 
@@ -76,10 +78,12 @@ impl core::ops::Deref for SegmentSelector {
     }
 }
 
-bitflags! {
-pub PrivilegeLevel(u8),
-KERNEL = 0b00,
-USER = 0b11
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy)]
+    pub struct  PrivilegeLevel: u8 {
+        const KERNEL = 0b00;
+        const USER = 0b11;
+    }
 }
 
 bitflags! {
@@ -138,6 +142,7 @@ impl<T: DescriptorType> DescriptorFlags<T> {
             _marker: PhantomData,
         }
     }
+
     #[deprecated]
     pub const fn without_type(present: bool, ring: PrivilegeLevel) -> Self {
         let present_bit: u8 = if present { 1 } else { 0 };
@@ -149,13 +154,18 @@ impl<T: DescriptorType> DescriptorFlags<T> {
     pub const fn is_present(&self) -> bool {
         (self.value >> 1) & 1 == 1
     }
+
     pub const fn ring(&self) -> PrivilegeLevel {
-        unsafe { PrivilegeLevel::wrap(self.value >> 6) }
+        let bits = (self.value >> 6) & 0b11;
+
+        PrivilegeLevel::from_bits(bits).expect("Invalid ring level")
     }
+
     pub fn set_present(&mut self, present: bool) {
         let present_bit = if present { 1 } else { 0 };
         self.value = (self.value & 0x7F) | (present_bit << 7);
     }
+
     pub fn set_ring(&mut self, ring: PrivilegeLevel) {
         let bits = ring.bits();
         self.value = (self.value & 0x9F) | (bits << 5);
@@ -186,7 +196,7 @@ impl MemoryDescriptor {
         limit: usize,
         memory_type: MemoryType,
     ) -> Self {
-        let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
+        let ring = PrivilegeLevel::KERNEL;
         let flags = DescriptorFlags::new(false, ring, memory_type);
         let mut instance = MemoryDescriptor::null();
         instance.set_granularity(false);
@@ -243,7 +253,7 @@ assert_eq_size!(TaskStateDescriptor, [u32; 2]);
 
 impl TaskStateDescriptor {
     pub fn active(base: VirtualAddress, limit: usize) -> Self {
-        let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
+        let ring = PrivilegeLevel::KERNEL;
 
         let system_type =
             unsafe { SystemType::wrap(SystemType::TSS_FREE_32BIT) };
@@ -303,7 +313,7 @@ impl Descriptor for TaskGate {}
 
 impl TaskGate {
     pub fn default(task: SegmentSelector) -> Self {
-        let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
+        let ring = PrivilegeLevel::KERNEL;
         let task_type = unsafe { SystemType::wrap(SystemType::TASK) };
         let flags = DescriptorFlags::new(false, ring, task_type);
         Self {
@@ -341,7 +351,7 @@ impl InterruptGate {
         // let physical_offset = handler_offset.as_physical();
         let lower_offset = (handler_offset & 0xFFFF) as u16;
         let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
-        let ring = unsafe { PrivilegeLevel::wrap(PrivilegeLevel::KERNEL) };
+        let ring = PrivilegeLevel::KERNEL;
 
         InterruptGate {
             lower_offset,

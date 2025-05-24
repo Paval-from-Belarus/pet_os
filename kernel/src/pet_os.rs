@@ -39,10 +39,10 @@ mod memory;
 
 #[allow(dead_code)]
 mod common;
+pub mod error;
 mod object;
 mod task;
 mod user;
-pub mod error;
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -87,9 +87,10 @@ pub fn main() {
     log::info!("Task switching is enabled");
 
     let thread_1 =
-        task::new_task(task1, 51 as *mut (), TaskPriority::Module(0));
+        task::new_task(task1, 51 as *mut (), TaskPriority::Module(0)).unwrap();
 
-    let thread_2 = task::new_task(task2, 52 as *mut (), TaskPriority::Kernel);
+    let thread_2 =
+        task::new_task(task2, 52 as *mut (), TaskPriority::Kernel).unwrap();
 
     // let thread_3 =
     //     task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(10));

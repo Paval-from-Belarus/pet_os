@@ -212,7 +212,7 @@ pub fn new_task(
         context.esp += 32; //popa is performing from stack bottom
     }
 
-    task
+    Ok(task)
 }
 
 pub fn submit_task(task: &'static mut RunningTask) {
@@ -234,7 +234,8 @@ pub fn sleep(milliseconds: usize) {
 pub fn init() -> CallbackInfo {
     clocks::init();
 
-    let idle = new_task(idle_task, 42 as _, TaskPriority::Idle);
+    let idle = new_task(idle_task, 42 as _, TaskPriority::Idle)
+        .expect("Failed to alloc idle task");
 
     SCHEDULER.set(SchedulerLock::new(idle));
 

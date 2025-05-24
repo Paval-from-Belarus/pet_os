@@ -10,6 +10,7 @@ pub use arch::*;
 use kernel_macro::ListNode;
 use kernel_types::collections::{LinkedList, ListNode};
 use kernel_types::declare_constants;
+use paging::PageDirectoryEntries;
 pub use paging::PagingProperties;
 
 use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
@@ -78,6 +79,8 @@ extern "C" {
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
 
+//This trait is available for stucture on fixed
+//memory place
 impl ToPhysicalAddress for VirtualAddress {
     fn as_physical(&self) -> PhysicalAddress {
         self - kernel_virtual_offset()
@@ -95,7 +98,7 @@ impl ToVirtualAddress for PhysicalAddress {
 #[no_mangle]
 pub fn init_kernel_space(
     allocator: BootAllocator,
-    directory: &'static mut PageDirectory<'static>,
+    directory: PageDirectory<'static, 'static>,
     heap_offset: VirtualAddress,
 ) {
     let marker =
@@ -366,20 +369,30 @@ pub fn virtual_dealloc(offset: VirtualAddress, size: usize) {
 pub fn new_page_marker() -> Result<PageMarker<'static>, AllocError> {
     static_assertions::const_assert_eq!(
         Page::SIZE,
-        mem::size_of::<PageDirectory>()
+        mem::size_of::<PageDirectoryEntries>()
     );
 
-    let raw_directory = SYSTEM_ALLOCATOR
+    let raw_entries = SYSTEM_ALLOCATOR
         .get()
         .virtual_alloc(Page::SIZE)?
-        .cast::<PageDirectory<'static>>();
+        .cast::<PageDirectoryEntries<'static>>();
 
-    let directory = unsafe { &mut *raw_directory };
+    let entries = unsafe { &mut *raw_entries };
 
     //essential data structures will be copied
     //but we must ensure integrity kernel space
     //in all processes
-    directory.copy_from_slice(KERNEL_MARKER.get().directory());
+    entries.copy_from_slice(KERNEL_MARKER.get().directory().entries);
+
+    let physical_offset = KERNEL_MARKER
+        .get()
+        .lookup_physical(raw_entries as VirtualAddress)
+        .expect("vmalloc without page");
+
+    let directory = PageDirectory {
+        entries,
+        physical_offset,
+    };
 
     Ok(PageMarker::new(
         directory,
@@ -449,8 +462,8 @@ pub unsafe fn switch_to_task(task: &mut Task) {
     let task_state = &raw mut TASK_STATE;
     unsafe { (*task_state).set_kernel_stack(stack) };
 
-    if let Some(state_lock) = task.state.as_ref() {
-        let state = state_lock.try_lock().unwrap();
+    if let Some(process) = task.process.as_ref() {
+        let state = process.state.try_lock().unwrap();
         state.marker.load();
     } else {
         KERNEL_MARKER.get().load();

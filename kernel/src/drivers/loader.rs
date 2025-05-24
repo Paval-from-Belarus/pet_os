@@ -2,7 +2,7 @@ use core::ffi::{c_char, CStr};
 
 use alloc::vec::Vec;
 use elf::{
-    abi::ELFOSABI_FENIXOS,
+    abi::{ELFOSABI_FENIXOS, ET_EXEC},
     endian::AnyEndian,
     relocation::Rel,
     section::{self, SectionHeader, SectionHeaderTable},
@@ -18,12 +18,15 @@ use kernel_types::{
 };
 
 use crate::{
+    current_task,
     error::KernelError,
+    io,
     memory::{
-        virtual_alloc, virtual_dealloc, MemoryMappingRegion, MemoryRegion,
-        MemoryRegionFlag, Page, PageMarker, Process, ProcessId, VirtualAddress,
+        self, virtual_alloc, virtual_dealloc, MemoryMappingRegion,
+        MemoryRegion, MemoryRegionFlag, Page, PageMarker, Process, ProcessId,
+        SegmentSelector, VirtualAddress,
     },
-    user,
+    task, user,
 };
 
 #[derive(Debug, thiserror_no_std::Error)]
@@ -38,9 +41,10 @@ pub enum LoadError {
     NoMemory(#[from] fallible_collections::TryReserveError),
     #[error("Failed to alloc {0}")]
     AllocFailed(#[from] crate::memory::AllocError),
-
     #[error("Kernel Error {0}")]
     Kernel(#[from] KernelError),
+    #[error("Module has no entry point")]
+    NoEntryPoint,
 }
 
 fn check_elf_format(
@@ -58,6 +62,10 @@ fn check_elf_format(
 
     if driver_file.ehdr.e_type & elf::abi::ET_EXEC == 0 {
         return Err(LoadError::NotSupportedElfFormat);
+    }
+
+    if driver_file.ehdr.e_entry == 0 {
+        return Err(LoadError::NoEntryPoint);
     }
 
     Ok(())
@@ -160,9 +168,9 @@ fn elf_realloc(
 }
 
 pub fn load_in_memory(elf_data: &[u8]) -> Result<(), LoadError> {
-    let loader = Loader::new(elf_data, todo!())?;
-    let pid = loader.load()?;
-    driver_probe(pid)?;
+    let loader = Loader::new(elf_data)?;
+    // let pid = loader.load()?;
+    // driver_probe(pid)?;
     Ok(())
 }
 
@@ -179,15 +187,10 @@ pub struct Loader<'a> {
     //holds copy of elf bytes available to be modified
     buffer: Vec<u8>,
     dyn_segments: LinkedList<'static, MemoryRegion>,
-
-    marker: &'a mut PageMarker<'a>,
 }
 
 impl<'a> Loader<'a> {
-    pub fn new(
-        elf_bytes: &'a [u8],
-        marker: &'a mut PageMarker<'a>,
-    ) -> Result<Self, LoadError> {
+    pub fn new(elf_bytes: &'a [u8]) -> Result<Self, LoadError> {
         let elf_file = ElfBytes::<AnyEndian>::minimal_parse(elf_bytes)?;
 
         check_elf_format(&elf_file)?;
@@ -214,7 +217,6 @@ impl<'a> Loader<'a> {
             segments,
             buffer,
             dyn_segments: LinkedList::empty(),
-            marker,
         })
     }
 
@@ -276,6 +278,10 @@ impl<'a> Loader<'a> {
     }
 
     pub fn load(mut self) -> Result<ProcessId, LoadError> {
+        unsafe { io::disable() };
+
+        let mut builder = Process::builder()?.switch_address_space();
+
         for mut header in self.sections.iter_mut() {
             if header.sh_type == elf::abi::SHT_NOBITS {
                 if header.sh_size == 0 {
@@ -284,23 +290,21 @@ impl<'a> Loader<'a> {
 
                 if header.sh_flags as u32 & elf::abi::SHF_ALLOC != 0 {
                     //alloc bss
-                    let region = MemoryRegion::new_zeroed(
-                        header.sh_size as usize,
-                        MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
-                    )?;
-
-                    header.sh_offset = (region.mem_ptr() as usize
-                        - self.buffer.as_ptr() as usize)
-                        as _;
-
-                    self.dyn_segments.push_back(region.into_node());
+                    // let region = MemoryRegion::new_zeroed(
+                    //     header.sh_size as usize,
+                    //     MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
+                    // )?;
+                    //
+                    // header.sh_offset = (region.mem_ptr() as usize
+                    //     - self.buffer.as_ptr() as usize)
+                    //     as _;
+                    //
+                    // self.dyn_segments.push_back(region.into_node());
                 }
             }
         }
 
         self.relocate_symbols()?;
-
-        let mut builder = Process::builder()?.switch_address_space();
 
         let mut process_regions = LinkedList::<'static, MemoryRegion>::empty();
 
@@ -351,7 +355,56 @@ impl<'a> Loader<'a> {
             }
         }
 
+        let entry_point = self.elf_file.ehdr.e_entry as VirtualAddress;
+        assert!(entry_point != 0);
+        let process = builder.build(entry_point)?;
+        //
+        // let task = task::new_task(
+        //     run_process,
+        //     core::ptr::null_mut(),
+        //     task::TaskPriority::Module(1),
+        // )?;
+        //
+        // task.set_process(process);
+        //
+        // task::submit_task(task);
+
+        unsafe { memory::switch_to_kernel() };
+
+        unsafe { io::enable() };
+
         Ok(0)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn run_process() {
+    let (entry_point, stack_end) = {
+        let process = current_task!().process.as_ref().unwrap().clone();
+
+        let state = process.state.try_lock().unwrap();
+
+        (state.entry_point, state.stack.end)
+    };
+
+    log::debug!("Running proccess");
+
+    unsafe {
+        core::arch::asm! {
+            "shl edx, 16",
+            "mov dx, cx",
+            "mov ecx, eax",
+            in("eax") stack_end,
+            in("cx") *SegmentSelector::USER_DATA,
+            in("dx") *SegmentSelector::USER_CODE,
+            options(nomem, nostack, preserves_flags)
+        }
+
+        core::arch::asm! {
+            "jmp start_process",
+            in("eax") entry_point,
+            options(nomem, nostack, preserves_flags)
+        }
     }
 }
 

@@ -225,15 +225,11 @@ impl InterruptGate {
 
     pub fn syscall(handler: NakedExceptionHandler) -> Self {
         let offset = handler as *const NakedExceptionHandler as VirtualAddress;
-        let mut instance =
+        let mut gate =
             InterruptGate::new(offset, SegmentSelector::KERNEL_CODE, INTERRUPT);
-        instance.flags.set_present(true);
-        unsafe {
-            instance
-                .flags
-                .set_ring(PrivilegeLevel::wrap(PrivilegeLevel::USER))
-        };
-        instance
+        gate.flags.set_present(true);
+        gate.flags.set_ring(PrivilegeLevel::USER);
+        gate
     }
 }
 

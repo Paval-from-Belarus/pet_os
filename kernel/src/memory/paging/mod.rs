@@ -17,6 +17,8 @@ pub(crate) mod table;
 
 pub use marker::*;
 
+use super::ToPhysicalAddress;
+
 declare_constants!(
     pub usize,
     DIRECTORY_ENTRIES_COUNT = 1024;
@@ -26,7 +28,13 @@ declare_constants!(
     TABLE_PAGES_COUNT = 1;
 );
 
-pub type PageDirectory<'a> = [DirEntry<'a>; DIRECTORY_ENTRIES_COUNT];
+pub type PageDirectoryEntries<'a> = [DirEntry<'a>; DIRECTORY_ENTRIES_COUNT];
+
+pub struct PageDirectory<'page_dir, 'page_table> {
+    pub entries:
+        &'page_dir mut [DirEntry<'page_table>; DIRECTORY_ENTRIES_COUNT],
+    pub physical_offset: PhysicalAddress,
+}
 
 pub enum CommonError {
     OutOfBounds,
@@ -141,8 +149,13 @@ pub struct BootAllocator<'a> {
 }
 
 impl PagingProperties {
-    pub fn page_directory(&self) -> &'static mut PageDirectory<'static> {
-        unsafe { core::mem::transmute(self.directory) }
+    pub fn page_directory(&self) -> PageDirectory<'static, 'static> {
+        let entries = unsafe { core::mem::transmute(self.directory) };
+
+        PageDirectory {
+            entries,
+            physical_offset: (self.directory as VirtualAddress).as_physical(),
+        }
     }
 
     pub fn boot_allocator(&mut self) -> BootAllocator {
@@ -253,7 +266,7 @@ macro_rules! table_index {
 }
 
 #[macro_export]
-macro_rules! entry_index {
+macro_rules! page_index {
     ($argument:expr) => {
         ($argument >> 12) & 0x3FF
     };

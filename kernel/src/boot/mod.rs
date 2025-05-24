@@ -6,14 +6,13 @@ use multiboot2::BootInformation;
 use properties::KernelProperties;
 
 use crate::{
-    entry_index, get_eax,
+    get_eax,
     memory::{
-        self, CaptureMemRec, DirEntry, DirEntryFlag, Page, PageDirectory,
-        PhysicalAddress, TableEntry, TableEntryFlag, ToPhysicalAddress,
-        VirtualAddress, DIRECTORY_ENTRIES_COUNT, DIRECTORY_PAGES_COUNT,
-        TABLE_ENTRIES_COUNT,
+        self, CaptureMemRec, DirEntry, DirEntryFlag, PhysicalAddress,
+        TableEntry, TableEntryFlag, ToPhysicalAddress, DIRECTORY_ENTRIES_COUNT,
+        DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT,
     },
-    set_eax, table_index,
+    set_eax,
 };
 
 #[repr(u32)]
@@ -139,38 +138,38 @@ unsafe fn enable_paging() {
     // mark_region(DirEntryFlag(DirEntryFlag::), table_flag, dir, p_o, v_o, pages_count)
 }
 
-#[allow(unused)]
-fn mark_region(
-    dir_flag: DirEntryFlag,
-    table_flag: TableEntryFlag,
-    dir: &mut PageDirectory<'static>,
-    p_o: PhysicalAddress,
-    v_o: VirtualAddress,
-    pages_count: usize,
-) {
-    let mut next_virtual_offset = v_o;
-    let mut next_physical_offset = p_o;
-
-    for _ in 0..pages_count {
-        let dir_entry = {
-            let index = table_index!(next_virtual_offset);
-            dir.get_mut(index).unwrap()
-        };
-
-        dir_entry.set_flags(dir_flag);
-
-        if let Some(page_table) = dir_entry.page_table_mut() {
-            let table_entry =
-                &mut page_table[entry_index!(next_virtual_offset)];
-
-            table_entry.set_flags(table_flag);
-            table_entry.set_page_offset(next_physical_offset);
-        }
-
-        next_virtual_offset += Page::SIZE;
-        next_physical_offset += Page::SIZE;
-    }
-}
+// #[allow(unused)]
+// fn mark_region(
+//     dir_flag: DirEntryFlag,
+//     table_flag: TableEntryFlag,
+//     dir: &mut PageDirectory<'static>,
+//     p_o: PhysicalAddress,
+//     v_o: VirtualAddress,
+//     pages_count: usize,
+// ) {
+//     let mut next_virtual_offset = v_o;
+//     let mut next_physical_offset = p_o;
+//
+//     for _ in 0..pages_count {
+//         let dir_entry = {
+//             let index = table_index!(next_virtual_offset);
+//             dir.get_mut(index).unwrap()
+//         };
+//
+//         dir_entry.set_flags(dir_flag);
+//
+//         if let Some(page_table) = dir_entry.page_table_mut() {
+//             let table_entry =
+//                 &mut page_table[entry_index!(next_virtual_offset)];
+//
+//             table_entry.set_flags(table_flag);
+//             table_entry.set_page_offset(next_physical_offset);
+//         }
+//
+//         next_virtual_offset += Page::SIZE;
+//         next_physical_offset += Page::SIZE;
+//     }
+// }
 // ;Input:
 // ;eax -> PageDirectoryFlag
 // ;edx -> PageTableFlag

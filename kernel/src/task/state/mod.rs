@@ -7,7 +7,7 @@ use kernel_types::collections::{HashData, ListNode};
 use static_assertions::const_assert;
 
 use crate::{
-    memory::{slab_alloc, Page, ProcessStateLock, Slab, VirtualAddress},
+    memory::{slab_alloc, Page, Process, Slab, VirtualAddress},
     object,
 };
 
@@ -47,7 +47,7 @@ pub struct Task {
     //the value should be greater then 0
     pub start_time: usize,
     //the process context for thread
-    pub state: Option<&'static ProcessStateLock>,
+    pub process: Option<Process>,
     pub file_system: NonNull<TaskFileSystem>,
 
     pub metrics: TaskMetrics,
@@ -92,7 +92,7 @@ impl Task {
             priority,
             status: TaskStatus::Embryo,
             start_time: 0,
-            state: None,
+            process: None,
             opened_files: Default::default(),
             file_system: NonNull::dangling(),
 
@@ -124,5 +124,9 @@ impl Task {
 
     pub fn context_mut(&mut self) -> &mut TaskContext {
         unsafe { &mut *(self.kernel_stack_bottom as *mut TaskContext) }
+    }
+
+    pub fn set_process(&mut self, process: Process) {
+        self.process = process.into();
     }
 }

@@ -7,5 +7,7 @@ pub enum KernelError {
 
     #[error("PageMarker failed: {0}")]
     PageMarker(#[from] PageMarkerError),
-}
 
+    #[error("No pid is availabel")]
+    NoPidAvailable,
+}
