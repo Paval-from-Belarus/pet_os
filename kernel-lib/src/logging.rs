@@ -15,7 +15,7 @@ macro_rules! log {
 	( $($arg:tt)* ) => ({
 		use core::fmt::Write;
 
-                let mut logger = $crate::log::Logger;
+                let mut logger = $crate::logging::Logger;
 	        let _ = write!(logger, $($arg)*);
 	})
 }

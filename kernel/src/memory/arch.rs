@@ -24,9 +24,9 @@ impl SegmentSelector {
         NULL = SegmentSelector(0);
         KERNEL_CODE = SegmentSelector(0x08); //1
         KERNEL_DATA = SegmentSelector(0x10); //2
-        KERNEL_STACK = SegmentSelector(0x10); //3
-        USER_CODE = SegmentSelector::new(4, PrivilegeLevel::USER, SelectorType::Gdt); //4
-        USER_DATA = SegmentSelector::new(5, PrivilegeLevel::USER, SelectorType::Gdt);//5
+        KERNEL_STACK = SegmentSelector(0x10); //2
+        USER_CODE = SegmentSelector::new(3, PrivilegeLevel::USER, SelectorType::Gdt); //3
+        USER_DATA = SegmentSelector::new(4, PrivilegeLevel::USER, SelectorType::Gdt);//4
         TASK = SegmentSelector(0x28);//6
 
     );
@@ -43,7 +43,7 @@ impl SegmentSelector {
             SelectorType::Ldt => 0x04,
         };
 
-        let selector = (index & !0x3) | type_bit | (ring.bits() as usize);
+        let selector = (index << 3) | type_bit | (ring.bits() as usize);
 
         Self(selector as u16)
     }

@@ -96,13 +96,14 @@ start_process:
     mov fs, dx
     mov gs, dx
 
-    push dx ;ss
-    shr edx, 16 ;dx holds cs
+    push (4 shl 3) or 3 ;ss
+    ; shr edx, 16 ;dx holds cs
 
     push ecx
     push 200h; eflags with enabled interrupts
     
-    push dx
+    push (3 shl 3) or 3
+    ; push edx ;cs, but iret 
     push eax
 
     iret

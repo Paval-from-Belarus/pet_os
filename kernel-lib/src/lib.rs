@@ -4,7 +4,7 @@ pub mod fs;
 pub mod io;
 
 #[cfg(feature = "log")]
-pub mod log;
+pub mod logging;
 
 pub mod alloc;
 pub mod object;
@@ -12,7 +12,9 @@ pub mod string;
 
 #[cfg(not(test))]
 #[panic_handler]
-pub fn panic(_info: &core::panic::PanicInfo) -> ! {
+pub fn panic(info: &core::panic::PanicInfo) -> ! {
+    #[cfg(feature = "log")]
+    log::error!("Panic is detected: {info}");
     loop {}
 }
 

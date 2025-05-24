@@ -55,7 +55,7 @@ fn handle_request(request: block::Request) -> io::Result<()> {
 
 impl KernelModule for AtaDriver {
     fn init() -> Result<(), ModuleError> {
-        kernel_lib::log::init().expect("Failed to set logger");
+        kernel_lib::logging::init().expect("Failed to set logger");
 
         block::register_device(BlockDeviceInfo {
             name: DEVICE_NAME.into(),
@@ -77,7 +77,7 @@ impl Drop for AtaDriver {
 
 #[export_name = "init"]
 extern "C" fn init() -> i32 {
-    kernel_lib::log::init().unwrap();
+    kernel_lib::logging::init().unwrap();
 
     log::info!("From ata driver");
 

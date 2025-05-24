@@ -16,7 +16,7 @@ use kernel_types::collections::{
 use queue::TaskQueue;
 
 use crate::task::{switch_context, RunningTask, TaskContext, TaskStatus};
-use crate::{io, memory, ticks_size};
+use crate::{io, log_unchecked, memory, ticks_size};
 use crate::{object, ticks_now};
 
 use super::{BlockedTask, RunningTaskBox, Task, TaskPriority};
@@ -143,22 +143,32 @@ impl TaskScheduler {
 
         if let Some(candidate) = self.running.probe_next() {
             assert!(
-                candidate.metrics.elapsed < candidate.metrics.base_duration
+                candidate.metrics.elapsed <= candidate.metrics.base_duration,
+                "elapsed = {}, base = {}, id = {}",
+                candidate.metrics.elapsed,
+                candidate.metrics.base_duration,
+                candidate.id
             );
 
             if candidate.priority > self.current.priority {
-                log::debug!("Replacing task with higher");
+                log::debug!(
+                    "Replacing task {} with higher {}",
+                    self.current.id,
+                    candidate.id
+                );
 
                 let mut task = self.running.take_next().expect("Success probe");
 
                 mem::swap(&mut task, &mut self.current);
+
+                log::debug!("Old = {}. New = {}", task.id, self.current.id);
 
                 //the problem: if task has too small execution time
                 //should it be executed at whole?
                 if task.priority == TaskPriority::Idle {
                     task.metrics.elapsed = 0;
                     self.idle_tasks.push_back(task);
-                } else if task.metrics.elapsed > task.metrics.base_duration {
+                } else if task.metrics.elapsed >= task.metrics.base_duration {
                     self.delayed.push(task);
                 } else {
                     self.running.push(task);

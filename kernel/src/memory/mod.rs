@@ -101,6 +101,9 @@ pub fn init_kernel_space(
     directory: PageDirectory<'static, 'static>,
     heap_offset: VirtualAddress,
 ) {
+    //page directory is comming without any reference
+    let _ = unsafe { directory.share_entries() };
+
     let marker =
         PageMarker::new(directory, alloc_physical_pages, first_dealloc_handler);
 
@@ -382,7 +385,10 @@ pub fn new_page_marker() -> Result<PageMarker<'static>, AllocError> {
     //essential data structures will be copied
     //but we must ensure integrity kernel space
     //in all processes
-    entries.copy_from_slice(KERNEL_MARKER.get().directory().entries);
+    unsafe {
+        entries
+            .copy_from_slice(KERNEL_MARKER.get().directory().share_entries());
+    }
 
     let physical_offset = KERNEL_MARKER
         .get()
@@ -427,6 +433,8 @@ impl Drop for PhysicalAllocation {
 
         let mut dealloc_pages = LinkedList::empty();
         dealloc_pages.splice(&mut self.pages);
+
+        physical_dealloc(dealloc_pages);
     }
 }
 
@@ -446,8 +454,18 @@ pub fn physical_alloc(bytes: usize) -> Result<PhysicalAllocation, AllocError> {
     Ok(list.into())
 }
 
-pub fn physical_dealloc(_pages: LinkedList<'static, Page>) {
-    todo!()
+pub fn physical_dealloc(mut pages: LinkedList<'static, Page>) {
+    let mut iter = pages.iter_mut();
+
+    loop {
+        if iter.next().is_none() {
+            break;
+        }
+
+        let page = iter.unlink_watched().unwrap();
+
+        PHYSICAL_ALLOCATOR.get().dealloc_page(page);
+    }
 }
 
 //the method should be invoked only by one thread

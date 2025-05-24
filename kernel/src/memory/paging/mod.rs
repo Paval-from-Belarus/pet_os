@@ -12,9 +12,11 @@ use crate::memory::{
     TaskStateDescriptor, ToVirtualAddress, VirtualAddress,
 };
 
+mod directory;
 mod marker;
 pub(crate) mod table;
 
+pub use directory::*;
 pub use marker::*;
 
 use super::ToPhysicalAddress;
@@ -29,12 +31,6 @@ declare_constants!(
 );
 
 pub type PageDirectoryEntries<'a> = [DirEntry<'a>; DIRECTORY_ENTRIES_COUNT];
-
-pub struct PageDirectory<'page_dir, 'page_table> {
-    pub entries:
-        &'page_dir mut [DirEntry<'page_table>; DIRECTORY_ENTRIES_COUNT],
-    pub physical_offset: PhysicalAddress,
-}
 
 pub enum CommonError {
     OutOfBounds,

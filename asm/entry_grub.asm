@@ -123,8 +123,8 @@ Kernel.setProtectedMode:
      push ds 
      pop es
      mov ax, 0
-    ;  push ax ax
-    ;  pop fs gs ;fs ds are not used; so it' forbidden to use them
+     ; push ax ax
+     ; pop fs gs ;fs ds are not used; so it' forbidden to use them
 
      mov eax, KernelStack.top
      call Kernel.toPhysicalAddress

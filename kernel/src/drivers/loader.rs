@@ -169,8 +169,8 @@ fn elf_realloc(
 
 pub fn load_in_memory(elf_data: &[u8]) -> Result<(), LoadError> {
     let loader = Loader::new(elf_data)?;
-    // let pid = loader.load()?;
-    // driver_probe(pid)?;
+    let pid = loader.load()?;
+    driver_probe(pid)?;
     Ok(())
 }
 
@@ -278,6 +278,8 @@ impl<'a> Loader<'a> {
     }
 
     pub fn load(mut self) -> Result<ProcessId, LoadError> {
+        let should_enable_io = unsafe { io::status() };
+
         unsafe { io::disable() };
 
         let mut builder = Process::builder()?.switch_address_space();
@@ -289,24 +291,28 @@ impl<'a> Loader<'a> {
                 }
 
                 if header.sh_flags as u32 & elf::abi::SHF_ALLOC != 0 {
-                    //alloc bss
-                    // let region = MemoryRegion::new_zeroed(
-                    //     header.sh_size as usize,
-                    //     MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
-                    // )?;
-                    //
-                    // header.sh_offset = (region.mem_ptr() as usize
-                    //     - self.buffer.as_ptr() as usize)
-                    //     as _;
-                    //
-                    // self.dyn_segments.push_back(region.into_node());
+                    let mut flags = MemoryRegionFlag::READ;
+
+                    if header.sh_flags as u32 & elf::abi::SHF_WRITE != 0 {
+                        flags |= MemoryRegionFlag::WRITE;
+                    }
+
+                    if header.sh_flags as u32 & elf::abi::SHF_EXECINSTR != 0 {
+                        flags |= MemoryRegionFlag::EXEC;
+                    }
+
+                    let region = builder.alloc_region(
+                        header.sh_offset as usize,
+                        header.sh_size as usize,
+                        flags,
+                    )?;
+
+                    log::debug!("Dyn Region {region:?}");
                 }
             }
         }
 
         self.relocate_symbols()?;
-
-        let mut process_regions = LinkedList::<'static, MemoryRegion>::empty();
 
         for header in self.segments.iter() {
             if header.p_type == elf::abi::PT_INTERP {
@@ -349,6 +355,8 @@ impl<'a> Loader<'a> {
                     region_flags,
                 )?;
 
+                log::debug!("Allocated region: {region:?}");
+
                 let region_data = self.elf_file.segment_data(&header)?;
 
                 region.copy_from(region_data);
@@ -358,23 +366,32 @@ impl<'a> Loader<'a> {
         let entry_point = self.elf_file.ehdr.e_entry as VirtualAddress;
         assert!(entry_point != 0);
         let process = builder.build(entry_point)?;
-        //
-        // let task = task::new_task(
-        //     run_process,
-        //     core::ptr::null_mut(),
-        //     task::TaskPriority::Module(1),
-        // )?;
-        //
-        // task.set_process(process);
-        //
-        // task::submit_task(task);
+
+        let task = task::new_task(
+            run_process,
+            core::ptr::null_mut(),
+            task::TaskPriority::Module(1),
+        )?;
+
+        task.set_process(process);
+
+        task::submit_task(task);
 
         unsafe { memory::switch_to_kernel() };
 
-        unsafe { io::enable() };
+        if should_enable_io {
+            unsafe { io::enable() };
+        }
 
         Ok(0)
     }
+}
+
+#[allow(unused)]
+#[no_mangle]
+#[inline(never)]
+extern "C" fn breakpoint() {
+    log::info!("Breakpoint");
 }
 
 #[no_mangle]

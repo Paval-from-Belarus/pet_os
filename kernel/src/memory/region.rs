@@ -13,7 +13,7 @@ pub struct MemoryRegionBox {
 }
 
 /// The region of continous virtual memory
-#[derive(ListNode)]
+#[derive(Debug, ListNode)]
 #[repr(C)]
 pub struct MemoryRegion {
     #[list_pivots]

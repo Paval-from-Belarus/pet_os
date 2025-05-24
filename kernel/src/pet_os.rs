@@ -47,6 +47,7 @@ mod user;
 #[cfg(not(test))]
 #[panic_handler]
 pub fn panic(info: &core::panic::PanicInfo) -> ! {
+    unsafe { io::disable() };
     log_unchecked!("kernel panics={}", info);
     unsafe { core::arch::asm!("hlt", options(noreturn)) }
 }
@@ -92,16 +93,18 @@ pub fn main() {
     let thread_2 =
         task::new_task(task2, 52 as *mut (), TaskPriority::Kernel).unwrap();
 
-    // let thread_3 =
-    //     task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(10));
-    //
-    // let thread_4 =
-    //     task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(5));
+    let thread_3 =
+        task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(10))
+            .unwrap();
+
+    let thread_4 =
+        task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(5))
+            .unwrap();
 
     task::submit_task(thread_1);
     task::submit_task(thread_2);
-    // task::submit_task(thread_3);
-    // task::submit_task(thread_4);
+    task::submit_task(thread_3);
+    task::submit_task(thread_4);
     //
     // user::exec("/usr/sbin/init");
     task::run();
@@ -116,28 +119,34 @@ extern "C" fn task3() {
         for i in 0..100 {
             log::info!("Task {task_id} #{i}");
         }
+
+        task::sleep(10);
     }
 }
 
 extern "C" fn task1() {
-    log::info!("task 1 started");
+    let id = current_task!().id;
 
-    log::info!("Task 1 priority: {}", current_task!().priority);
+    log::info!("task {id} started");
+
+    log::info!("Task {id} priority: {}", current_task!().priority);
 
     loop {
         task::sleep(300);
-        log::info!("task 1 awaken");
+        log::info!("task {id} awaken");
     }
 }
 
 extern "C" fn task2() {
-    log::info!("task 2 started");
+    let id = current_task!().id;
 
-    log::info!("Task 2 priority: {}", current_task!().priority);
+    log::info!("task {id} started");
+
+    log::info!("Task {id} priority: {}", current_task!().priority);
 
     loop {
         task::sleep(400);
-        log::info!("task 2 awaken");
+        log::info!("task {id} awaken");
     }
 }
 

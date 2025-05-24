@@ -214,7 +214,7 @@ kernel_lib::module! {
 
 impl KernelModule for FatDriver {
     fn init() -> Result<(), ModuleError> {
-        kernel_lib::log::init().unwrap();
+        kernel_lib::logging::init().unwrap();
 
         fs::register(fs::FileSystem {
             name: "fat32".into(),

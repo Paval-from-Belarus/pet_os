@@ -1,20 +1,17 @@
 use core::arch::asm;
 
-use kernel_types::collections::LinkedList;
-
 use crate::{
     log,
     memory::{
-        AllocHandler, DeallocHandler, DirEntry, MemoryMappingFlag,
-        MemoryMappingRegion, Page, PhysicalAddress, ToPhysicalAddress,
-        ToVirtualAddress, VirtualAddress,
+        AllocHandler, DeallocHandler, MemoryMappingFlag, MemoryMappingRegion,
+        Page, PhysicalAddress, VirtualAddress,
     },
     page_index, table_index,
 };
 
 use super::{
     table::RefTableEntry, PageDirectory, PageMarkerError, UnmapParamsFlag,
-    DIRECTORY_ENTRIES_COUNT, DIRECTORY_PAGES_COUNT, TABLE_PAGES_COUNT,
+    TABLE_PAGES_COUNT,
 };
 
 /// The struct is simply used to transfer physical layout for page allcoator
@@ -250,7 +247,8 @@ impl<'a> PageMarker<'a> {
 
 impl<'a> Drop for PageMarker<'a> {
     fn drop(&mut self) {
-        log!("Deallocation page marker");
+        log::debug!("Deallocation page marker");
+
         let deallocator = self.dealloc_handler;
 
         for dir_entry in self.directory.entries.iter_mut() {

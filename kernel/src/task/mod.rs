@@ -187,8 +187,8 @@ pub fn new_task(
     context.ds = *SegmentSelector::KERNEL_DATA;
     context.es = *SegmentSelector::KERNEL_DATA;
 
-    context.fs = *SegmentSelector::USER_CODE;
-    context.gs = *SegmentSelector::USER_CODE;
+    context.fs = *SegmentSelector::USER_DATA;
+    context.gs = *SegmentSelector::USER_DATA;
 
     context.esp = (kernel_stack + TASK_STACK_SIZE - 1) as u32;
     context.eflags = 0x200; //enable interrupts for each task

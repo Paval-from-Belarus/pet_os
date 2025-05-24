@@ -224,7 +224,7 @@ impl PhysicalAllocator {
         page.release();
 
         if !page.is_used() {
-            let mut lock = self.buddies.lock();
+            let mut lock = self.buddies.try_lock().unwrap();
             let last_list = lock.last_mut().unwrap();
             last_list.push_back(page.as_node());
         }
@@ -277,6 +277,9 @@ impl PhysicalAllocator {
         //todo: release from head unused pages
 
         let mut batch = unsafe { BuddyBatch::new(count, head) };
+
+        // let (mut requested_pages, rest_pages) = batch.split(count);
+
         batch.iter_mut().for_each(|page| page.acquire());
 
         Ok(batch)

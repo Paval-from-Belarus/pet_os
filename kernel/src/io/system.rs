@@ -3,7 +3,7 @@ use kernel_types::{bitflags, declare_constants, syscall};
 
 use crate::io::irq::IrqChain;
 use crate::io::{
-    IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
+    self, IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
 };
 use crate::memory::{SlabBox, VirtualAddress};
 use crate::{
@@ -58,8 +58,7 @@ pub fn init_traps(table: &mut IDTable) {
 
 pub fn init_timer_isr() -> &'static IrqChain {
     let object =
-        memory::slab_alloc(IrqChain::new(IrqLine::SYS_TIMER.line))
-            .unwrap();
+        memory::slab_alloc(IrqChain::new(IrqLine::SYS_TIMER.line)).unwrap();
 
     let timer_object = SlabBox::leak(object);
 
@@ -121,7 +120,13 @@ pub extern "x86-interrupt" fn bound_check(_frame: InterruptStackFrame) {
 }
 
 pub extern "x86-interrupt" fn invalid_opcode(frame: InterruptStackFrame) {
-    log_unchecked!("Invalid Opcode. EIP = {:X}, CS = {:X}", frame.ip, frame.cs);
+    let op_code: u8 = unsafe { (frame.ip as *const u8).read() };
+
+    log_unchecked!(
+        "Invalid Opcode {op_code:X}. EIP = {:X}, CS = {:X}",
+        frame.ip,
+        frame.cs
+    );
 }
 
 pub extern "x86-interrupt" fn device_not_available(
@@ -160,10 +165,16 @@ pub extern "x86-interrupt" fn stack_fault(
 }
 
 pub extern "x86-interrupt" fn general_protection(
-    _frame: InterruptStackFrame,
-    _code: usize,
+    frame: InterruptStackFrame,
+    code: usize,
 ) {
-    log_unchecked!("general protection fault");
+    let should_enable = unsafe { io::status() };
+    unsafe { io::disable() };
+    log_unchecked!("\ngeneral protection fault({code:X}). Frame: {frame:?}\n",);
+
+    if should_enable {
+        unsafe { io::enable() };
+    }
 }
 
 pub extern "x86-interrupt" fn page_fault(

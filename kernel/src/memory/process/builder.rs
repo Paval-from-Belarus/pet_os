@@ -74,7 +74,7 @@ impl ProcessBuilder<ProcessSpace> {
                 flags: flags.into(),
                 virtual_offset: offset,
                 physical_offset: page.as_physical(),
-                page_count: pages.len(),
+                page_count: 1,
                 ..Default::default()
             })?;
 

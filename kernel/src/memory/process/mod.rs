@@ -10,10 +10,7 @@ use alloc::sync::Arc;
 use builder::{KernelSpace, ProcessBuilder};
 use kernel_types::collections::LinkedList;
 
-use crate::{
-    error::KernelError,
-    memory::{self, SegmentSelector},
-};
+use crate::{error::KernelError, memory};
 
 use super::{
     paging::PageMarker, AllocError, MemoryRegion, MemoryRegionFlag, Page,

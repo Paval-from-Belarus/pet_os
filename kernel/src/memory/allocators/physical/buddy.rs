@@ -23,7 +23,8 @@ impl BuddyBatch {
 
         Self {
             power,
-            size: 2usize.pow(power as u32),
+            size: pages_count,
+            // size: 2usize.pow(power as u32),
             first_page_cell: UnsafeCell::new(buffer),
         }
     }
@@ -60,5 +61,11 @@ impl BuddyBatch {
         }
 
         pages
+    }
+
+    pub fn split(self, size: usize) -> (BuddyBatch, BuddyBatch) {
+        assert!(size < self.len());
+
+        todo!()
     }
 }

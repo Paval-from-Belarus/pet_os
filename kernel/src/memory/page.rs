@@ -76,6 +76,7 @@ impl Page {
         let old_value = self.ref_count.fetch_sub(1, Ordering::SeqCst);
         if old_value == 0 {
             panic!("The free page releases again");
+            // self.ref_count.store(0, Ordering::SeqCst);
         }
     }
 
