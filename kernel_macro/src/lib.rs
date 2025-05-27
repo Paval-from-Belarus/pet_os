@@ -213,6 +213,14 @@ fn define_node_data_marker(
                 let value = unsafe { core::mem::transmute::<*mut u8, *mut #target>(struct_offset) };
                 unsafe { &mut *value }
             }
+
+            fn from_ref(node: &kernel_types::collections::ListNode<Self>) -> &Self::Item {
+                let pointer = node as *const kernel_types::collections::ListNode<Self>;
+                let field_offset = core::mem::offset_of!(#target, #field);
+                let struct_offset = unsafe { (pointer as *const u8).sub(field_offset) };
+                let value = unsafe { core::mem::transmute::<*const u8, *const #target>(struct_offset) };
+                unsafe { &*value }
+            }
         }
         impl #target {
             #[doc = "Prefer explicit type casting"]

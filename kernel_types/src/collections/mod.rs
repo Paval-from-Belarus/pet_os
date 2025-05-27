@@ -106,14 +106,7 @@ pub unsafe trait ListNodeData: Sized {
     type Item;
 
     fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item;
-
-    unsafe fn from_node_unchecked(
-        mut raw_node: NonNull<ListNode<Self>>,
-    ) -> NonNull<Self::Item> {
-        let node = Self::from_node(raw_node.as_mut());
-
-        NonNull::from(node)
-    }
+    fn from_ref(node: &ListNode<Self>) -> &Self::Item;
 }
 
 /// As `ListNodeData` allows any struct to be list node in singly linked list (`TinyLinkedList`)

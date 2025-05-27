@@ -75,12 +75,12 @@ impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData>
         todo!()
     }
 
-    pub fn get_mut<'b, K>(&mut self, _key: &K) -> Option<&'a mut V>
+    pub fn get_mut<'b, K>(&mut self, key: &K) -> Option<&'a mut V>
     where
         K: HashKey,
         V: HashData<Item<'b> = K>,
     {
-        todo!()
+        self.find(key, |_| true)
     }
 
     pub fn find<'b, P, K>(
@@ -162,12 +162,13 @@ mod tests {
     extern crate alloc;
     extern crate std;
 
-    use crate::collections::{HashCode, HashKey, ListNode};
-    use crate::list_node;
+    use crate::{
+        collections::{HashCode, HashKey, ListNode},
+        list_node,
+    };
 
-    list_node!(
-        pub DataType(node)
-    );
+    list_node!(DataType, node);
+
     struct DataType {
         node: ListNode<DataType>,
     }
@@ -175,7 +176,7 @@ mod tests {
     impl Eq for DataType {}
 
     impl PartialEq for DataType {
-        fn eq(&self, other: &Self) -> bool {
+        fn eq(&self, _other: &Self) -> bool {
             true
         }
     }
@@ -187,11 +188,20 @@ mod tests {
     }
 
     #[test]
-    fn integrity_test() {
-        let node = unsafe {
-            DataType {
-                node: ListNode::empty(),
-            }
-        };
-    }
+    fn integrity_test() {}
+
+    #[test]
+    fn insert_test() {}
+
+    #[test]
+    fn remove_est() {}
+
+    #[test]
+    fn insert_overwrite_test() {}
+
+    #[test]
+    fn nonexistent_key_test() {}
+
+    #[test]
+    fn collision_handling_test() {}
 }

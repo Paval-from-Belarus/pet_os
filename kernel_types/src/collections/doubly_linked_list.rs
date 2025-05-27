@@ -33,7 +33,7 @@ macro_rules! collect_list {
 pub struct ListNode<T: Sized + ListNodeData> {
     next: NonNull<ListNode<T>>,
     prev: NonNull<ListNode<T>>,
-    _marker: PhantomData<T>,
+    _marker: PhantomData<*mut T>,
 }
 
 impl<T: Sized + ListNodeData> core::fmt::Debug for ListNode<T> {
@@ -120,9 +120,7 @@ impl<T: ListNodeData> Deref for ListNode<T> {
     type Target = T::Item;
 
     fn deref(&self) -> &Self::Target {
-        unsafe {
-            ListNodeData::from_node_unchecked(NonNull::from(self)).as_ref()
-        }
+        ListNodeData::from_ref(self)
     }
 }
 
@@ -306,6 +304,10 @@ impl<'data, T: Sized + ListNodeData> LinkedList<'data, T> {
         if self.is_empty() {
             self.first = other.first;
             self.last = other.last;
+
+            other.first = ptr::null_mut();
+            other.last = ptr::null_mut();
+
             return;
         }
 
@@ -676,77 +678,51 @@ impl<'data, 'parent, T: ListNodeData> DoubleEndedIterator
 }
 
 #[macro_export]
-macro_rules! from_list_node {
-    ($target: ident, $source: ident, $field: tt) => {
-        unsafe impl $crate::collections::ListNodeData for $source {
-            type Item = $target;
+macro_rules! list_node {
+    ($ty: ident, $field: tt) => {
+        impl $ty {
+            #[allow(unused)]
+            pub fn as_node(&mut self) -> &mut ListNode<$ty> {
+                &mut self.$field
+            }
+        }
+
+        unsafe impl $crate::collections::ListNodeData for $ty {
+            type Item = $ty;
             fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item {
                 let pointer = node as *mut ListNode<Self>;
-                let field_offset = core::mem::offset_of!($target, $field);
+                let field_offset = core::mem::offset_of!($ty, $field);
                 let struct_offset =
                     unsafe { (pointer as *mut u8).sub(field_offset) };
                 let value = unsafe {
-                    core::mem::transmute::<*mut u8, *mut $target>(struct_offset)
+                    core::mem::transmute::<*mut u8, *mut $ty>(struct_offset)
                 };
                 unsafe { &mut *value }
             }
-        }
-    };
-}
 
-#[macro_export]
-macro_rules! pivots_field {
-    ($vis: vis, $type: ident, $field: tt,  $field_type: ident) => {
-        paste::paste! {
-            impl $type {
-                $vis unsafe fn [<as_ $field>](&self) -> core::ptr::NonNull<ListNode<$field_type>> {
-                    core::ptr::NonNull::from(&self.$field)
-                }
-                // $vis fn [<as_ $field>] (&self) -> &ListNode<$field_type> {
-                //     self.$field
-                // }
-                // $vis fn [<as_ $field _mut>](&mut self) -> &mut ListNode<$field_type> {
-                //     self.$field
-                // }
+            fn from_ref(node: &ListNode<Self>) -> &Self::Item {
+                let pointer = node as *const ListNode<Self>;
+                let field_offset = core::mem::offset_of!($ty, $field);
+                let struct_offset =
+                    unsafe { (pointer as *const u8).sub(field_offset) };
+                let value = struct_offset as *const $ty;
+                unsafe { &*value }
             }
         }
     };
 }
-///The general idea of list_node macro is to allow implements several ListNode types from single structure (by corresponding fields in derived struct)
-#[macro_export]
-macro_rules! list_node {
-    ($vis: vis $target: ident $( ($self_field:tt))? $(;)? $( $name: ident  ($field: tt) $(: $( $marker: ident )* )? );* $(;)?) => {
-        $(
-            $crate::pivots_field!($vis, $target, $self_field, $target);
-            $crate::from_list_node!($target, $target, $self_field);
-        )?
-        $(
-            $vis struct $name();
-            $crate::pivots_field!($vis, $target, $field, $name);
-            $crate::from_list_node!($target, $name, $field);
-            $(
-                $(
-                    impl $crate::collections::$marker for $name {}
-                )*
-            )?
 
-        )*
-    };
-}
 #[cfg(test)]
 mod tests {
     extern crate alloc;
     extern crate std;
 
-    use core::ptr::NonNull;
     use std::println;
-
-    use static_assertions::const_assert_eq;
 
     use crate::collections::BorrowingLinkedList;
     use crate::collections::{LinkedList, ListNode};
 
-    fn has_data(node: Option<&ListNode<TestStruct>>, value: usize) -> bool {
+    fn has_data(node: Option<&ListNode<TestValue>>, value: usize) -> bool {
         if node.is_none() {
             return false;
         }
@@ -754,7 +730,7 @@ mod tests {
     }
 
     fn has_data_mut(
-        node: Option<&mut ListNode<TestStruct>>,
+        node: Option<&mut ListNode<TestValue>>,
         value: usize,
     ) -> bool {
         if node.is_none() {
@@ -763,135 +739,108 @@ mod tests {
         node.unwrap().value == value
     }
 
-    list_node! {
-        pub TestStruct(node);
-        AnotherStruct(one)
-    }
-    pub struct TestStruct {
-        node: ListNode<TestStruct>,
-        one: ListNode<AnotherStruct>,
-        value: usize,
-    }
-    const_assert_eq!(core::mem::offset_of!(ListNode<TestStruct>, next), 0);
-
-    impl TestStruct {
-        pub fn new(value: usize) -> Self {
-            unsafe {
-                Self {
-                    node: ListNode::empty(),
-                    one: ListNode::empty(),
-                    value,
-                }
-            }
-        }
-    }
-
     #[test]
     fn push_back_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let mut nodes = [
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-            ];
-            for node in nodes.iter_mut() {
-                list.push_back(node.as_node().as_mut());
-            }
-            let mut iter = list.iter().cyclic();
+        let mut list = LinkedList::<TestValue>::empty();
+        let mut nodes =
+            [TestValue::new(12), TestValue::new(13), TestValue::new(14)];
 
-            assert!(has_data(iter.next(), 12));
-            assert!(has_data(iter.next(), 13));
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 12));
-            assert!(has_data(iter.next(), 13));
-            println!("forward test passed");
-            assert!(has_data(iter.next_back(), 14));
-            assert!(has_data(iter.next_back(), 13));
-            assert!(has_data(iter.next_back(), 12));
-            assert!(has_data(iter.next_back(), 14));
-            assert!(has_data(iter.next_back(), 13));
-            println!("backward test passed");
+        for node in nodes.iter_mut() {
+            list.push_back(node.as_node());
         }
+        let mut iter = list.iter().cyclic();
+
+        assert!(has_data(iter.next(), 12));
+        assert!(has_data(iter.next(), 13));
+        assert!(has_data(iter.next(), 14));
+        assert!(has_data(iter.next(), 12));
+        assert!(has_data(iter.next(), 13));
+        println!("forward test passed");
+        assert!(has_data(iter.next_back(), 14));
+        assert!(has_data(iter.next_back(), 13));
+        assert!(has_data(iter.next_back(), 12));
+        assert!(has_data(iter.next_back(), 14));
+        assert!(has_data(iter.next_back(), 13));
+        println!("backward test passed");
     }
 
     #[test]
     fn push_front_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let nodes = [
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-            ];
-            for node in nodes.iter() {
-                list.push_front(node.as_node().as_mut());
-            }
-            let mut iter = list.iter().cyclic();
+        let mut list = LinkedList::<TestValue>::empty();
+        let [mut node1, mut node2, mut node3] =
+            [TestValue::new(12), TestValue::new(13), TestValue::new(14)];
 
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 13));
-            assert!(has_data(iter.next(), 12));
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 13));
-            println!("forward test passed");
-            assert!(has_data(iter.next_back(), 12));
-            assert!(has_data(iter.next_back(), 13));
-            assert!(has_data(iter.next_back(), 14));
-            assert!(has_data(iter.next_back(), 12));
-            assert!(has_data(iter.next_back(), 13));
-            println!("backward test passed");
-        }
+        list.push_front(node1.as_node());
+        list.push_front(node2.as_node());
+        list.push_front(node3.as_node());
+
+        let mut iter = list.iter().cyclic();
+
+        assert!(has_data(iter.next(), 14));
+        assert!(has_data(iter.next(), 13));
+        assert!(has_data(iter.next(), 12));
+        assert!(has_data(iter.next(), 14));
+        assert!(has_data(iter.next(), 13));
+        println!("forward test passed");
+        assert!(has_data(iter.next_back(), 12));
+        assert!(has_data(iter.next_back(), 13));
+        assert!(has_data(iter.next_back(), 14));
+        assert!(has_data(iter.next_back(), 12));
+        assert!(has_data(iter.next_back(), 13));
+        println!("backward test passed");
+    }
+
+    macro_rules! values {
+        ($($name: ident = $value: expr),* $(,)?) => {
+            $(
+                let mut $name = TestValue::new($value);
+            )*
+
+        };
     }
 
     #[test]
     fn push_back_front_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let nodes = [
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-                TestStruct::new(15),
-                TestStruct::new(16),
-            ];
-            let mut iter = nodes.iter();
-            list.push_back(iter.next().unwrap().as_node().as_mut());
-            list.push_front(iter.next().unwrap().as_node().as_mut());
-            list.push_back(iter.next().unwrap().as_node().as_mut());
-            list.push_back(iter.next().unwrap().as_node().as_mut());
-            list.push_front(iter.next().unwrap().as_node().as_mut());
-            //values: 16, 13, 12, 14, 15
-
-            let mut iter = list.iter().cyclic();
-
-            assert!(has_data(iter.next(), 16));
-            assert!(has_data(iter.next(), 13));
-            assert!(has_data(iter.next(), 12));
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 15));
-            assert!(has_data(iter.next(), 16));
-            assert!(has_data(iter.next(), 13));
-            println!("forward test passed");
-            assert!(has_data(iter.next_back(), 15));
-            assert!(has_data(iter.next_back(), 14));
-            assert!(has_data(iter.next_back(), 12));
-            assert!(has_data(iter.next_back(), 13));
-            assert!(has_data(iter.next_back(), 16));
-            assert!(has_data(iter.next_back(), 15));
-            assert!(has_data(iter.next_back(), 14));
-            println!("backward test passed");
+        let mut list = LinkedList::<TestValue>::empty();
+        values! {
+            node1 = 12, node2 = 13,
+            node3 = 14, node4 = 15,
+            node5 = 16
         }
+
+        list.push_back(node1.as_node());
+        list.push_front(node2.as_node());
+        list.push_back(node3.as_node());
+        list.push_back(node4.as_node());
+        list.push_front(node5.as_node());
+        //values: 16, 13, 12, 14, 15
+
+        let mut iter = list.iter().cyclic();
+
+        assert!(has_data(iter.next(), 16));
+        assert!(has_data(iter.next(), 13));
+        assert!(has_data(iter.next(), 12));
+        assert!(has_data(iter.next(), 14));
+        assert!(has_data(iter.next(), 15));
+        assert!(has_data(iter.next(), 16));
+        assert!(has_data(iter.next(), 13));
+        println!("forward test passed");
+        assert!(has_data(iter.next_back(), 15));
+        assert!(has_data(iter.next_back(), 14));
+        assert!(has_data(iter.next_back(), 12));
+        assert!(has_data(iter.next_back(), 13));
+        assert!(has_data(iter.next_back(), 16));
+        assert!(has_data(iter.next_back(), 15));
+        assert!(has_data(iter.next_back(), 14));
+        println!("backward test passed");
     }
 
     #[test]
     fn single_value_list() {
-        let v = TestStruct::new(12);
+        values! {v = 12 };
         let mut list = LinkedList::empty();
 
-        unsafe {
-            list.push_back(v.as_node().as_mut());
-        }
+        list.push_back(v.as_node());
 
         let mut iter = list.iter_mut();
 
@@ -903,101 +852,146 @@ mod tests {
         assert!(iter.next().is_none());
     }
 
+    pub struct TestValue {
+        node: ListNode<TestValue>,
+        value: usize,
+    }
+
+    impl TestValue {
+        pub fn new(value: usize) -> Self {
+            Self {
+                node: ListNode::empty(),
+                value,
+            }
+        }
+        // pub fn as_node(&mut self) -> &mut ListNode<TestValue> {
+        //     &mut self.node
+        // }
+    }
+
+    list_node!(TestValue, node);
+
+    // unsafe impl ListNodeData for TestValue {
+    //     type Item = TestValue;
+    //
+    //     fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item {
+    //         let pointer = node as *mut ListNode<Self>;
+    //         let field_offset = core::mem::offset_of!(TestValue, node);
+    //         let struct_offset =
+    //             unsafe { (pointer as *mut u8).sub(field_offset) };
+    //         let value = unsafe {
+    //             core::mem::transmute::<*mut u8, *mut TestValue>(struct_offset)
+    //         };
+    //         unsafe { &mut *value }
+    //     }
+    //
+    //     fn from_ref(node: &ListNode<Self>) -> &Self::Item {
+    //         let pointer = node as *const ListNode<Self>;
+    //         let field_offset = core::mem::offset_of!(TestValue, node);
+    //         let struct_offset =
+    //             unsafe { (pointer as *mut u8).sub(field_offset) };
+    //         let value = unsafe {
+    //             core::mem::transmute::<*const u8, *const TestValue>(
+    //                 struct_offset,
+    //             )
+    //         };
+    //         unsafe { &*value }
+    //     }
+    // }
+
+    fn list_to_vec(list: &LinkedList<TestValue>) -> std::vec::Vec<usize> {
+        let mut result = std::vec![];
+        // Assuming LinkedList has an iterator yielding &Test
+        for test in list.iter() {
+            result.push(test.value);
+        }
+        result
+    }
+
     #[test]
     fn splice_test() {
-        let list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let mut nodes = [
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-                TestStruct::new(15),
-            ];
-            //each node should support next/prevent invariant; list_node! macro to such stuff
-            nodes
-                .iter_mut()
-                .for_each(|node| node.as_node().as_mut().self_link());
-            let mut first = NonNull::from(nodes.get_mut(0).unwrap());
-            let mut last = NonNull::from(nodes.get_mut(2).unwrap());
-            let mut any = NonNull::from(nodes.get_mut(1).unwrap());
+        let mut test1 = TestValue::new(1);
+        let mut test2 = TestValue::new(2);
+        let mut test3 = TestValue::new(3);
+        let mut list = LinkedList::empty();
+        let mut other = LinkedList::empty();
 
-            // list.splice(first.as_mut().as_head());
-            // assert!(!list.is_empty() && list.first.eq(&list.last));
-            // list.push_front(last.as_mut());
-            // let any_list = any.as_mut().as_head();
-            // list.splice(any_list);
-            // assert!(any.as_mut().next.as_mut().data().eq(&14) && any.as_mut().prev.as_mut().data().eq(&12));
-            // let mut forth = NonNull::from(nodes.get_mut(3).unwrap());
-            // let other_list = forth.as_mut().as_head();
-            // first.as_mut().as_head().splice(other_list);
-            // assert!(first.as_mut().next.as_mut().data().eq(&15) && last.as_mut().prev.as_mut().data().eq(&15));
-        }
+        let test_ptr = test3.as_node() as *mut _;
+
+        list.push_back(test1.as_node());
+        list.push_back(test2.as_node());
+        other.push_back(test3.as_node());
+        list.splice(&mut other);
+
+        assert_eq!(list_to_vec(&list), std::vec![3, 1, 2]);
+        assert!(other.is_empty());
+
+        let maybe_test = list.remove_first();
+
+        assert!(maybe_test.is_some());
+        assert!(core::ptr::eq(maybe_test.unwrap(), test_ptr));
+
+        other.splice(&mut list);
+
+        assert_eq!(list_to_vec(&other), std::vec![1, 2]);
+        assert!(list.is_empty());
     }
 
     #[test]
     fn mutability_iter_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let nodes = [
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-            ];
+        let mut list = LinkedList::<TestValue>::empty();
 
-            for node in nodes.iter() {
-                list.push_back(node.as_node().as_mut());
-            }
+        values! {
+            node1 = 12, node2 = 13, node3 = 14
+        };
 
-            let mut iter = list.iter_mut();
-            assert!(iter.unlink_watched().is_none());
+        list.push_back(node1.as_node());
+        list.push_back(node2.as_node());
+        list.push_back(node3.as_node());
 
-            let node_value = iter.next().unwrap();
-            let node_option = iter.unlink_watched();
+        let mut iter = list.iter_mut();
+        assert!(iter.unlink_watched().is_none());
 
-            assert!(node_option.is_some());
-            assert_eq!(node_value.value, node_option.unwrap().value);
-            assert!(iter.unlink_watched().is_none());
-        }
+        let node_value = iter.next().unwrap();
+        let node_option = iter.unlink_watched();
+
+        assert!(node_option.is_some());
+        assert_eq!(node_value.value, node_option.unwrap().value);
+        assert!(iter.unlink_watched().is_none());
     }
 
     #[test]
     fn removing_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let nodes = [TestStruct::new(12), TestStruct::new(13)];
+        let mut list = LinkedList::<TestValue>::empty();
+        values! {
+            node1 = 12, node2 = 13
+        };
 
-            for node in nodes.iter() {
-                list.push_back(node.as_node().as_mut());
-            }
+        list.push_back(node1.as_node());
+        list.push_back(node2.as_node());
 
-            assert_eq!(12, list.remove_first().unwrap().value);
-            assert_eq!(13, list.remove_first().unwrap().value);
+        assert_eq!(12, list.remove_first().unwrap().value);
+        assert_eq!(13, list.remove_first().unwrap().value);
 
-            assert!(list.remove_first().is_none());
-        }
+        assert!(list.remove_first().is_none());
         let _ = list.iter();
     }
 
     #[test]
     fn limit_test() {
-        let nodes = [
-            TestStruct::new(12),
-            TestStruct::new(13),
-            TestStruct::new(14),
-            TestStruct::new(15),
-            TestStruct::new(16),
-        ];
-        let mut iter = nodes.iter();
-
-        let mut list = LinkedList::<TestStruct>::empty();
-
-        unsafe {
-            list.push_back(iter.next().unwrap().as_node().as_mut());
-            list.push_front(iter.next().unwrap().as_node().as_mut());
-            list.push_back(iter.next().unwrap().as_node().as_mut());
-            list.push_back(iter.next().unwrap().as_node().as_mut());
-            list.push_front(iter.next().unwrap().as_node().as_mut());
+        values! {
+            node1 = 12, node2 = 13,
+            node3 = 14, node4 = 15,
+            node5 = 16
         }
+
+        let mut list = LinkedList::<TestValue>::empty();
+
+        list.push_back(node1.as_node());
+        list.push_front(node2.as_node());
+        list.push_back(node3.as_node());
+        list.push_back(node4.as_node());
+        list.push_front(node5.as_node());
         //values: 16, 13, 12, 14, 15
 
         let mut iter = list.iter();
@@ -1020,12 +1014,5 @@ mod tests {
         assert!(has_data_mut(iter.unlink_watched(), 15));
 
         assert_eq!(list.len(), 3);
-    }
-
-    #[test]
-    fn conversation_test() {
-
-        // let node = ListNode::new(data);
-        // TinyListNode::from(node);
     }
 }
