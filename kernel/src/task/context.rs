@@ -7,6 +7,8 @@ use static_assertions::const_assert_eq;
 
 use crate::{current_task, memory::VirtualAddress, task::SCHEDULER};
 
+use super::TASK_STACK_SIZE;
+
 ///The
 #[repr(C)]
 pub struct SysContext {
@@ -80,6 +82,10 @@ impl TaskContext {
     pub fn copy_to(&self, context: &mut TaskContext) {
         let context_size = self.size();
 
+        if context_size == mem::size_of::<TaskContext>() {
+            log::debug!("User space context");
+        }
+
         unsafe {
             let source = self as *const TaskContext as *const u8;
             let target = context as *mut TaskContext as *mut u8;
@@ -110,32 +116,3 @@ impl TaskContext {
 extern "C" {
     pub fn switch_context();
 }
-
-// #[inline(never)]
-// pub unsafe fn switch_context(
-//     old: &mut *mut TaskContext,
-//     new: *mut TaskContext,
-// ) {
-//     core::arch::asm! {
-//         "push gs",
-//         "push fs",
-//         "push es",
-//         "push ds",
-//
-//         "pusha",
-//
-//
-//         "mov [eax], esp",
-//         "mov esp, edx",
-//
-//         "pop ebp",
-//         "pop edi",
-//         "pop esi",
-//         "pop ebx",
-//
-//         in("eax") old,
-//         in("edx") new,
-//
-//         options(nostack)
-//     }
-// }

@@ -83,10 +83,15 @@ pub extern "x86-interrupt" fn syscall(_frame: InterruptStackFrame) {
         let raw_string: *const MutString = unsafe { get_edx!() };
         let string = unsafe { &*raw_string };
 
-        log_unchecked!("printks says: {string}");
+        log::debug!("printks says: {string}");
     }
 
     unsafe { set_eax!(INVALID) };
+}
+
+#[no_mangle]
+pub extern "x86-interrupt" fn terminate_process(_frame: InterruptStackFrame) {
+    log::info!("Proccess will be terminated");
 }
 
 pub extern "x86-interrupt" fn division_by_zero(_from: InterruptStackFrame) {

@@ -129,4 +129,20 @@ impl Task {
     pub fn set_process(&mut self, process: Process) {
         self.process = process.into();
     }
+
+    pub fn stack_size(&self) -> usize {
+        let stack: VirtualAddress;
+
+        unsafe {
+            core::arch::asm! {
+                "mov eax, esp",
+                out("eax") stack
+            }
+        }
+
+        let red_zone_size = self.context().size() * 2;
+        let stack_red_zone = self.kernel_stack_bottom + red_zone_size;
+
+        stack.saturating_sub(stack_red_zone)
+    }
 }

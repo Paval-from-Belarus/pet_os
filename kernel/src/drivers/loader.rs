@@ -20,13 +20,14 @@ use kernel_types::{
 use crate::{
     current_task,
     error::KernelError,
-    io,
+    io, log_unchecked,
     memory::{
         self, virtual_alloc, virtual_dealloc, MemoryMappingRegion,
         MemoryRegion, MemoryRegionFlag, Page, PageMarker, Process, ProcessId,
         SegmentSelector, VirtualAddress,
     },
-    task, user,
+    task::{self, TASK_STACK_SIZE},
+    user,
 };
 
 #[derive(Debug, thiserror_no_std::Error)]
@@ -379,15 +380,16 @@ impl<'a> Loader<'a> {
     }
 }
 
-#[allow(unused)]
-#[no_mangle]
-#[inline(never)]
-extern "C" fn breakpoint() {
-    log::info!("Breakpoint");
+extern "C" {
+    pub fn breakpoint();
 }
 
 #[no_mangle]
 pub extern "C" fn run_process() {
+    unsafe { io::disable() }; //disable interrupts to configure kernel task
+
+    log::debug!("Process stack size = {}", current_task!().stack_size());
+
     let (entry_point, stack_end) = {
         let process = current_task!().process.as_ref().unwrap().clone();
 
@@ -396,23 +398,33 @@ pub extern "C" fn run_process() {
         (state.entry_point, state.stack.end)
     };
 
-    log::debug!("Running proccess");
+    log::debug!("Running process");
+
+    log::debug!("EAX ptr: {:X?}", &raw const current_task!().context().eax);
+
+    unsafe { breakpoint() };
+
+    let stack_bottom = current_task!().kernel_stack_bottom;
+
+    current_task!().context_mut().esp =
+        (stack_bottom + TASK_STACK_SIZE - 1) as u32;
+
+    log::debug!("Stack size: {}", current_task!().stack_size());
+
+    unsafe { memory::switch_to_task(current_task!()) };
 
     unsafe {
         core::arch::asm! {
             "shl edx, 16",
             "mov dx, cx",
             "mov ecx, eax",
+            "mov eax, ebx",
+            "jmp start_process",
             in("eax") stack_end,
+            in("ebx") entry_point,
             in("cx") *SegmentSelector::USER_DATA,
             in("dx") *SegmentSelector::USER_CODE,
-            options(nomem, nostack, preserves_flags)
-        }
-
-        core::arch::asm! {
-            "jmp start_process",
-            in("eax") entry_point,
-            options(nomem, nostack, preserves_flags)
+            options(nomem, nostack, preserves_flags, noreturn)
         }
     }
 }

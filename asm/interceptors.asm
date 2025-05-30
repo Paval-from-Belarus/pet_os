@@ -91,6 +91,10 @@ public start_process
 ;ecx -> esp to switch
 ;
 start_process:
+    call @F
+    int 81h
+
+@@:
     mov es, dx
     mov ds, dx
     mov fs, dx
@@ -108,3 +112,11 @@ start_process:
 
     iret
 
+
+public breakpoint
+
+breakpoint:
+    push eax
+    mov eax, 42
+    pop eax
+    ret

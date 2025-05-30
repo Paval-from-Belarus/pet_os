@@ -80,7 +80,13 @@ extern "C" fn init() -> i32 {
     kernel_lib::logging::init().unwrap();
 
     loop {
-        log::info!("From ata driver");
+        unsafe {
+            core::arch::asm! {
+                "",
+                in("eax") 42
+            };
+        }
+        // log::info!("From ata driver");
     }
 }
 

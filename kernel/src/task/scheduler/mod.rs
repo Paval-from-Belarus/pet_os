@@ -137,17 +137,13 @@ impl TaskScheduler {
             }
         }
 
-        log::debug!("On tick");
+        log::debug!("On tick. Task = {}", self.current.id);
 
         self.current.metrics.elapsed += ticks_size!();
 
         if let Some(candidate) = self.running.probe_next() {
             assert!(
                 candidate.metrics.elapsed <= candidate.metrics.base_duration,
-                "elapsed = {}, base = {}, id = {}",
-                candidate.metrics.elapsed,
-                candidate.metrics.base_duration,
-                candidate.id
             );
 
             if candidate.priority > self.current.priority {
@@ -169,6 +165,7 @@ impl TaskScheduler {
                     task.metrics.elapsed = 0;
                     self.idle_tasks.push_back(task);
                 } else if task.metrics.elapsed >= task.metrics.base_duration {
+                    task.metrics.elapsed = 0;
                     self.delayed.push(task);
                 } else {
                     self.running.push(task);
@@ -198,7 +195,7 @@ impl TaskScheduler {
             }
         }
 
-        log::debug!("On tick end");
+        log::debug!("On tick end. Task = {}", self.current.id);
     }
 
     /// terminate the current task by

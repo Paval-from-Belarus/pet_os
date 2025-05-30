@@ -197,6 +197,7 @@ pub fn new_task(
     context.gs = *SegmentSelector::USER_DATA;
 
     context.esp = (kernel_stack + TASK_STACK_SIZE - 1) as u32;
+
     context.eflags = 0x200; //enable interrupts for each task
 
     log::debug!("Kernel Stack={:X}", kernel_stack);
@@ -280,9 +281,13 @@ fn on_timer(
         log::debug!("Interrupt switching");
 
         unsafe {
-            log::debug!("IRET Frame Before: {:?}", *frame);
+            log::debug!("IRET Frame Before: {:?}", &**frame);
 
             log::debug!("Old context: {:?}", &*old_context);
+            {
+                let frame: &TaskContext = &**frame;
+                log::debug!("Current context: {:?}", frame);
+            }
             log::debug!("New context: {:?}", &*new_context);
 
             (**frame).copy_to(&mut *old_context);

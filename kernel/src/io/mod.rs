@@ -12,9 +12,11 @@ use crate::memory::{
     self, slab_alloc, InterruptGate, PrivilegeLevel, SegmentSelector, Slab,
     SlabBox, SystemType, VirtualAddress,
 };
-use crate::object;
 use crate::task::TaskContext;
+use crate::{current_task, object};
 use crate::{get_eax, get_edx, io, set_eax};
+
+pub use lock::InterruptableLazyCell;
 
 mod block;
 mod char;
@@ -258,6 +260,11 @@ pub fn init() {
         InterruptGate::syscall(system::syscall),
     );
 
+    table.set(
+        IDTable::PROCCESS_EXIT,
+        InterruptGate::syscall(system::terminate_process),
+    );
+
     unsafe {
         pic::remap(
             IrqLine::IRQ_MASTER_OFFSET as u8,
@@ -296,6 +303,17 @@ static INTERCEPTORS: spin::Mutex<
     Option<[&'static IrqChain; pic::LINES_COUNT]>,
 > = spin::Mutex::new(None);
 
+#[inline(never)]
+pub unsafe fn validate_stack() {
+    let stack_size = current_task!().stack_size();
+
+    log::debug!("IRQ stack size: {stack_size}");
+
+    if stack_size == 0 {
+        panic!("Red Zone violated");
+    }
+}
+
 ///the interceptor_stub is invoked by corresponding asm stub for certain interrupt
 ///The following invarians are supported:
 /// - All registers can be modified (pusha saves all)
@@ -308,6 +326,8 @@ pub unsafe extern "C" fn interceptor_stub() {
     let mut frame_ptr: *mut TaskContext = get_edx!();
 
     io::disable();
+
+    validate_stack();
 
     asm! {
         "mov ds, ax",
@@ -462,6 +482,7 @@ impl IDTable {
         ALIGNMENT_CHECK = 0x11, "alignment check, with error";
         //all others don't have error code
         SYSTEM_CALL = 0x80, "system call";
+        PROCCESS_EXIT = 0x81, "proccess exit";
         //other reserved
         TRAP_COUNT = 32, "The average count of exception reserved by Intel";
     );

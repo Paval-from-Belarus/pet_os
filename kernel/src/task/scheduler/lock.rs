@@ -34,7 +34,14 @@ impl<'a> Drop for SchedulerGuard<'a> {
         if self.allow_task_switching
             && !ptr::eq(self.old_context, self.current.context_ptr())
         {
-            log::debug!("Switching task");
+            {
+                log::debug!("Task switching");
+                let frame: &TaskContext = unsafe { &*self.old_context };
+                log::debug!("Old context: {:?}", frame);
+                let frame: &TaskContext = self.current.context();
+                log::debug!("New context: {:?}", frame);
+            }
+
             unsafe { self.lock.switch(self.old_context, self.current) }
         }
 

@@ -3,15 +3,15 @@ use core::fmt::Write;
 use kernel_types::declare_constants;
 
 use crate::common::io;
+use crate::io::InterruptableLazyCell;
 
 #[macro_export]
 macro_rules! log {
 	( $($arg:tt)* ) => ({
 		use core::fmt::Write;
 
-                if let Some(logger) = &mut $crate::common::logging::LOGGER_LOCK.try_lock().as_mut() {
-	            let _ = write!(logger, $($arg)*);
-                }
+                let mut logger = $crate::common::logging::LOGGER_LOCK.get();
+                let _ = write!(logger, $($arg)*);
 	})
 }
 
@@ -20,8 +20,8 @@ macro_rules! log_unchecked {
     ( $($arg:tt)* ) => ({
 	use core::fmt::Write;
 
-        let mut logger = $crate::common::logging::Logger;
-        let _ = write!(&mut logger, $($arg)*);
+        let mut logger = $crate::common::logging::LOGGER_LOCK.get();
+        let _ = write!(logger, $($arg)*);
     })
 }
 
@@ -47,7 +47,9 @@ pub unsafe fn put_byte_in_serial(byte: u8) {
     io::outb(BOCHS_HACK_PORT, byte);
 }
 
-pub static LOGGER_LOCK: spin::Mutex<Logger> = spin::Mutex::new(Logger);
+pub static LOGGER_LOCK: crate::io::InterruptableLazyCell<Logger> =
+    InterruptableLazyCell::new(Logger);
+
 pub static LOGGER_INSTANCE: Logger = Logger;
 
 #[derive(Clone)]
@@ -63,7 +65,6 @@ impl log::Log for Logger {
         if !self.enabled(record.metadata()) {
             return;
         }
-
 
         log!(
             "[{}][{}] {}\n",

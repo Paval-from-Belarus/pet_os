@@ -20,6 +20,13 @@ impl<T> InterruptableLazyCell<T> {
             cell: UnsafeCell::new(None),
         }
     }
+
+    pub const fn new(value: T) -> Self {
+        Self {
+            cell: UnsafeCell::new(Some(value)),
+        }
+    }
+
     pub fn set(&self, value: T) {
         let cell = unsafe { &mut *self.cell.get() };
         if cell.is_none() {
@@ -28,6 +35,7 @@ impl<T> InterruptableLazyCell<T> {
             unreachable!("Attempt to init second time");
         }
     }
+
     pub fn get(&self) -> InterruptableLock<T> {
         let cell = unsafe { &mut *self.cell.get() };
         if let Some(data) = cell {
@@ -40,13 +48,18 @@ impl<T> InterruptableLazyCell<T> {
 
 pub struct InterruptableLock<'a, T> {
     data: NonNull<T>,
+    should_restore: bool,
     _marker: PhantomData<&'a mut T>,
 }
 
 impl<'a, T> InterruptableLock<'a, T> {
     fn new(data: &'a mut T) -> Self {
+        let should_restore = unsafe { io::status() };
+
         unsafe { io::disable() };
+
         Self {
+            should_restore,
             data: NonNull::from(data),
             _marker: PhantomData,
         }
@@ -69,6 +82,8 @@ impl<'a, T> DerefMut for InterruptableLock<'a, T> {
 
 impl<'a, T> Drop for InterruptableLock<'a, T> {
     fn drop(&mut self) {
-        unsafe { io::enable() }
+        if self.should_restore {
+            unsafe { io::enable() }
+        }
     }
 }
