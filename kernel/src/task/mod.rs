@@ -275,8 +275,6 @@ fn on_timer(
 
     SCHEDULER.access_lock().on_tick();
 
-    log::debug!("FRAME PTR: {frame:?}");
-
     let new_context = current_task!().context_ptr();
 
     if !ptr::eq(old_context, new_context) {

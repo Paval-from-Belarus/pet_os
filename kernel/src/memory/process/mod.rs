@@ -13,8 +13,7 @@ use kernel_types::collections::LinkedList;
 use crate::{error::KernelError, memory};
 
 use super::{
-    paging::PageMarker, AllocError, MemoryRegion, MemoryRegionFlag, Page,
-    VirtualAddress,
+    paging::PageMarker, AllocError, MemoryRegion, Page, VirtualAddress,
 };
 
 pub type ProcessId = usize;
@@ -37,6 +36,7 @@ pub fn new_proccess_id() -> Option<ProcessId> {
 #[derive(Clone)]
 #[repr(C)]
 pub struct Process {
+    pub id: ProcessId,
     pub state: Arc<spin::Mutex<ProcessState>>,
 }
 
@@ -48,7 +48,6 @@ impl Process {
 
 ///Alternative to linux mm_struct
 pub struct ProcessState {
-    pub id: ProcessId,
     pub entry_point: VirtualAddress,
     ///offset of data segment
     ///It's redundant to store any information about last page ― it's can be easily calculated from heap_offset as:<br>
@@ -66,8 +65,6 @@ pub struct ProcessState {
     pub stack: Range<VirtualAddress>,
 
     pub regions: LinkedList<'static, MemoryRegion>,
-
-    pub pages: LinkedList<'static, Page>,
     // last_touched_region: Option<&'static MemoryRegion>,
 }
 
@@ -172,30 +169,18 @@ impl ProcessState {
     //     })
     // }
 
-    pub fn find_region(
+    pub fn find_region_mut(
         &mut self,
         address: VirtualAddress,
-    ) -> Option<&MemoryRegion> {
+    ) -> Option<&mut MemoryRegion> {
         self.regions
-            .iter()
+            .iter_mut()
             .find(|region| region.range.contains(&address))
-            .map(|region| region as &MemoryRegion)
+            .map(|region| region as &mut MemoryRegion)
     }
 
-    pub fn find_unmapped_region(
-        &mut self,
-        _offset: VirtualAddress,
-        _length: usize,
-        _flags: MemoryRegionFlag,
-    ) -> Option<VirtualAddress> {
-        None
-    }
-
-    pub fn add_region(
-        &mut self,
-        _region: &'static mut MemoryRegion,
-    ) -> Result<(), ()> {
-        Ok(())
+    pub fn add_region(&mut self, region: &'static mut MemoryRegion) {
+        self.regions.push_back(region.as_node());
     }
 
     pub fn find_prev_region(
@@ -219,7 +204,7 @@ impl ProcessState {
         &mut self,
         range: Range<VirtualAddress>,
     ) -> Option<&MemoryRegion> {
-        let option_region = self.find_region(range.start);
+        let option_region = self.find_region_mut(range.start);
         if let Some(region) = option_region
             && region.range.end < range.end
         {

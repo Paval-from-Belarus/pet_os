@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use kernel_types::drivers::DriverId;
 
 use crate::{
-    common::{io, SystemCall},
+    common::io,
     memory::{PhysicalAddress, VirtualAddress},
 };
 
@@ -24,10 +24,6 @@ impl<'a> Operation<'a> {
     }
 
     pub fn new_write(_data: &'a mut [u8], _target: Target) -> Option<Self> {
-        todo!()
-    }
-
-    pub fn as_sys_call(&self) -> SystemCall {
         todo!()
     }
 }

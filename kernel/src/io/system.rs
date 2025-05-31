@@ -1,4 +1,3 @@
-use kernel_types::string::MutString;
 use kernel_types::{declare_constants, syscall};
 
 use crate::io::irq::IrqChain;
@@ -7,8 +6,8 @@ use crate::io::{
 };
 use crate::memory::{SlabBox, VirtualAddress};
 use crate::{
-    current_task, error_trap, get_eax, get_edx, log_unchecked, memory,
-    naked_trap, set_eax, task,
+    current_task, error_trap, get_eax, log_module, memory, naked_trap, set_eax,
+    set_edx, task, user,
 };
 
 //the common handlers
@@ -70,23 +69,31 @@ declare_constants!(
     CHECK_CODE = 42;
 );
 
-#[no_mangle]
-pub extern "x86-interrupt" fn syscall(_frame: InterruptStackFrame) {
-    let id: u32 = unsafe { get_eax!() };
-    if id == syscall::RESERVED {
-        unsafe { set_eax!(CHECK_CODE) };
+extern "x86-interrupt" {
+    pub fn syscall(frame: InterruptStackFrame);
+}
 
+#[no_mangle]
+pub extern "C" fn handle_syscall() {
+    let id: u32 = unsafe { get_eax!() };
+
+    if id == syscall::RESERVED {
+        unsafe { set_edx!(CHECK_CODE) };
+        unsafe { set_eax!(OK_CODE) };
         return;
     }
 
-    if id == syscall::PRINTK {
-        let raw_string: *const MutString = unsafe { get_edx!() };
-        let string = unsafe { &*raw_string };
+    let Ok(request) = syscall::Request::try_from(id) else {
+        unsafe { set_eax!(syscall::SyscallError::NotSupported as u32) };
+        return;
+    };
 
-        log::debug!("printks says: {string}");
-    }
+    let code = match user::syscall::handle(request) {
+        Ok(()) => 0,
+        Err(cause) => cause as u32,
+    };
 
-    unsafe { set_eax!(INVALID) };
+    unsafe { set_eax!(code) }
 }
 
 #[no_mangle]
@@ -95,33 +102,33 @@ pub extern "x86-interrupt" fn terminate_process(_frame: InterruptStackFrame) {
 }
 
 pub extern "x86-interrupt" fn division_by_zero(_from: InterruptStackFrame) {
-    log_unchecked!("division by zero");
+    log_module!("division by zero");
 }
 
 pub extern "x86-interrupt" fn debug(frame: InterruptStackFrame) {
-    log_unchecked!("debug int: {frame:?}");
+    log_module!("debug int: {frame:?}");
 }
 
 pub extern "x86-interrupt" fn nonmaskable(_frame: InterruptStackFrame) {
-    log_unchecked!("nmi int");
+    log_module!("nmi int");
 }
 
 pub extern "x86-interrupt" fn breakpoint(_frame: InterruptStackFrame) {
-    log_unchecked!("breakpoint");
+    log_module!("breakpoint");
 }
 
 pub extern "x86-interrupt" fn overflow(_frame: InterruptStackFrame) {
-    log_unchecked!("overflow");
+    log_module!("overflow");
 }
 
 pub extern "x86-interrupt" fn bound_check(_frame: InterruptStackFrame) {
-    log_unchecked!("bound check failed");
+    log_module!("bound check failed");
 }
 
 pub extern "x86-interrupt" fn invalid_opcode(frame: InterruptStackFrame) {
     let op_code: u8 = unsafe { (frame.ip as *const u8).read() };
 
-    log_unchecked!(
+    log_module!(
         "Invalid Opcode {op_code:X}. EIP = {:X}, CS = {:X}",
         frame.ip,
         frame.cs
@@ -131,7 +138,7 @@ pub extern "x86-interrupt" fn invalid_opcode(frame: InterruptStackFrame) {
 pub extern "x86-interrupt" fn device_not_available(
     _frame: InterruptStackFrame,
 ) {
-    log_unchecked!("device not available");
+    log_module!("device not available");
 }
 
 //we can do nothing
@@ -146,21 +153,21 @@ pub extern "x86-interrupt" fn invalid_tss(
     _frame: InterruptStackFrame,
     code: usize,
 ) {
-    log_unchecked!("Invalid tss code={}", code);
+    log_module!("Invalid tss code={}", code);
 }
 
 pub extern "x86-interrupt" fn invalid_segment(
     _frame: InterruptStackFrame,
     _code: usize,
 ) {
-    log_unchecked!("invalid segment");
+    log_module!("invalid segment");
 }
 
 pub extern "x86-interrupt" fn stack_fault(
     _frame: InterruptStackFrame,
     _code: usize,
 ) {
-    log_unchecked!("stack fault");
+    log_module!("stack fault");
 }
 
 pub extern "x86-interrupt" fn general_protection(
@@ -169,7 +176,7 @@ pub extern "x86-interrupt" fn general_protection(
 ) {
     let should_enable = unsafe { io::status() };
     unsafe { io::disable() };
-    log_unchecked!("\ngeneral protection fault({code:X}). Frame: {frame:?}\n",);
+    log_module!("\ngeneral protection fault({code:X}). Frame: {frame:?}\n",);
 
     if should_enable {
         unsafe { io::enable() };
@@ -192,7 +199,7 @@ pub extern "x86-interrupt" fn page_fault(
 
     let code = PageFaultError(code as u32);
 
-    log_unchecked! {
+    log_module! {
         "Page Fault ({access_address:X}): {code:?} at IP={:X} CS={:X}\n",
         frame.ip,
         frame.cs
@@ -206,7 +213,7 @@ pub extern "x86-interrupt" fn page_fault(
             .marker
             .lookup_physical(access_address);
 
-        log_unchecked!("Lookuped value: {lookuped:?}");
+        log_module!("Lookuped value: {lookuped:?}");
     }
 }
 
@@ -214,10 +221,10 @@ pub extern "x86-interrupt" fn alignment_check(
     _frame: InterruptStackFrame,
     _code: usize,
 ) {
-    log_unchecked!("alignment check failed");
+    log_module!("alignment check failed");
 }
 
 ///By default, unknown trap is handled by this function. Even if real error code present on stack
 pub extern "x86-interrupt" fn unknown_trap(_frame: InterruptStackFrame) {
-    log_unchecked!("Unknown trap is caught!")
+    log_module!("Unknown trap is caught!")
 }

@@ -16,7 +16,7 @@ use kernel_types::collections::{
 use queue::TaskQueue;
 
 use crate::task::{switch_context, RunningTask, TaskContext, TaskStatus};
-use crate::{io, log_unchecked, memory, ticks_size};
+use crate::{io, log_module, memory, ticks_size};
 use crate::{object, ticks_now};
 
 use super::{BlockedTask, RunningTaskBox, Task, TaskPriority};

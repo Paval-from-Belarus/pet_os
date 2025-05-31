@@ -17,7 +17,7 @@ pub struct Page {
 }
 
 bitflags::bitflags! {
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct PageFlag: usize {
         /// The page is in use
@@ -29,6 +29,7 @@ bitflags::bitflags! {
         /// Cannot be swapped
         const LOCKED = 0x08;
         const UNUSED = 0x10;
+        const DMA = 0x20;
     }
 }
 

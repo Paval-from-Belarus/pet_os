@@ -1,9 +1,9 @@
 pub mod channel;
-pub mod queue;
 mod exchange;
+pub mod queue;
+pub mod syscall;
 
 #[allow(unused)]
 pub fn exec<PATH: AsRef<str>>(_path: PATH) -> Result<(), ()> {
     Ok(())
 }
-

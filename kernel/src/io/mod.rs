@@ -38,6 +38,7 @@ pub struct InterruptStackFrame {
 }
 
 pub type NakedExceptionHandler = extern "x86-interrupt" fn(InterruptStackFrame);
+pub type SyscallHandler = unsafe extern "x86-interrupt" fn(InterruptStackFrame);
 pub type ErrorExceptionHandler =
     extern "x86-interrupt" fn(InterruptStackFrame, usize);
 ///the interrupt callback that return true if interrupt was handle (and no more handling is required)
@@ -225,7 +226,7 @@ impl InterruptGate {
         instance
     }
 
-    pub fn syscall(handler: NakedExceptionHandler) -> Self {
+    pub fn syscall(handler: SyscallHandler) -> Self {
         let offset = handler as *const NakedExceptionHandler as VirtualAddress;
         let mut gate =
             InterruptGate::new(offset, SegmentSelector::KERNEL_CODE, INTERRUPT);
@@ -285,12 +286,20 @@ pub fn init() {
     }
 
     unsafe {
-        syscall!(syscall::RESERVED);
+        let status = syscall!(syscall::RESERVED);
 
-        let code: usize = get_eax!();
-        if code == system::INVALID {
-            panic!("failed to init interrupts");
+        log::debug!("syscall: {status:?}");
+
+        if syscall!(syscall::RESERVED).is_ok() {
+            let code: usize = get_edx!();
+            log::debug!("check code: {code}");
+
+            if code == system::CHECK_CODE {
+                return;
+            }
         }
+
+        panic!("failed to init interrupts");
     };
 }
 

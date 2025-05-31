@@ -7,8 +7,7 @@ use allocators::SlabAlloc;
 
 pub use allocators::{Alignment, AllocContext, PhysicalAllocator};
 pub use arch::*;
-use kernel_macro::ListNode;
-use kernel_types::collections::{LinkedList, ListNode};
+use kernel_types::collections::LinkedList;
 use kernel_types::declare_constants;
 use paging::PageDirectoryEntries;
 pub use paging::PagingProperties;
@@ -21,11 +20,13 @@ use crate::task::{Task, TaskState};
 
 mod allocators;
 mod arch;
+mod mapping;
 mod page;
 mod paging;
 mod process;
 mod region;
 
+pub use mapping::*;
 pub use page::*;
 pub use process::*;
 pub use region::*;
@@ -47,8 +48,14 @@ pub enum ZoneType {
 
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum AllocError {
+    #[error("Requested page is not available")]
+    PageInUse,
     #[error("NoMemory")]
     NoMemory, //no memory to accomplish request
+    #[error("Failed to mark page: {0}")]
+    PageMappingFailed(#[from] PageMarkerError),
+    #[error("Invalid alignment. Requested: {0:?}")]
+    InvalidAlignment(Alignment),
 }
 
 pub trait ToPhysicalAddress {
@@ -69,12 +76,6 @@ extern "C" {
     static KERNEL_VIRTUAL_OFFSET: usize;
     static KERNEL_STACK_SIZE: usize;
 }
-
-// #[repr(transparent)]
-// pub struct PhysicalAddress(usize);
-//
-// #[repr(transparent)]
-// pub struct VirtualAddress(usize);
 
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
@@ -154,63 +155,20 @@ fn first_dealloc_handler(offset: PhysicalAddress) {
     PHYSICAL_ALLOCATOR.get().dealloc_page(page);
 }
 
-fn alloc_physical_pages(_page_count: usize) -> Option<PhysicalAddress> {
-    // PHYSICAL_ALLOCATOR
-    //     .get()
-    //     .alloc_continuous_pages(page_count)
-    //     .inspect_err(|cause| {
-    //         log::error!("Failed to alloc physical pages: {cause}");
-    //     })
-    //     .ok()
-    todo!()
+fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
+    let mut allocation = physical_alloc(Page::SIZE * page_count).ok()?;
+
+    let mut pages = LinkedList::empty();
+
+    pages.splice(&mut allocation);
+
+    pages.first().unwrap().as_physical().into()
 }
 
 fn dealloc_physical_page(offset: PhysicalAddress) {
     let allocator = PHYSICAL_ALLOCATOR.get();
     let page = unsafe { Page::take_unchecked(offset) };
     allocator.dealloc_page(page);
-}
-
-bitflags::bitflags! {
-    //something info about range???
-    #[derive(Debug, Clone, Copy)]
-    pub struct MemoryMappingFlag: usize {
-        const KERNEL_LAYOUT = Self::WRITABLE.bits() | Self::PRESENT.bits();
-        const USER_LAYOUT = Self::NO_PRIVILEGE.bits() | Self::PRESENT.bits();
-        const USER_CODE = Self::NO_PRIVILEGE.bits() | Self::PRESENT.bits();
-
-        const USER_DATA = Self::WRITABLE.bits() | Self::PRESENT.bits() | Self::NO_PRIVILEGE.bits();
-
-        const CACHE_DISABLED = 0b10_000;
-        const WRITE_THROUGH = 0b1000;
-        const NO_PRIVILEGE = 0b100;
-        const WRITABLE = 0b10;
-        const PRESENT = 0b1;
-        const EMPTY = 0b0;
-    }
-}
-
-impl From<MemoryRegionFlag> for MemoryMappingFlag {
-    fn from(value: MemoryRegionFlag) -> Self {
-        let mut flags = MemoryMappingFlag::USER_LAYOUT;
-
-        if value.contains(MemoryRegionFlag::WRITE) {
-            flags |= Self::WRITABLE;
-        }
-
-        flags
-    }
-}
-
-//always present
-impl MemoryMappingFlag {
-    pub fn as_table_flag(&self) -> TableEntryFlag {
-        unsafe { TableEntryFlag::wrap(self.bits() | TableEntryFlag::PRESENT) }
-    }
-
-    pub fn as_directory_flag(&self) -> DirEntryFlag {
-        unsafe { DirEntryFlag::wrap(self.bits() | DirEntryFlag::PRESENT) }
-    }
 }
 
 pub fn kernel_binary_size() -> usize {
@@ -252,31 +210,6 @@ pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
 pub type DeallocHandler = fn(PhysicalAddress);
 
 pub type TaskRoutine = extern "C" fn();
-
-#[derive(ListNode)]
-#[repr(C)]
-///the one represent meor
-pub struct MemoryMappingRegion {
-    #[list_pivots]
-    pub node: ListNode<MemoryMappingRegion>,
-    pub flags: MemoryMappingFlag,
-    //used to copy
-    pub virtual_offset: VirtualAddress,
-    pub physical_offset: PhysicalAddress,
-    pub page_count: usize,
-}
-
-impl Default for MemoryMappingRegion {
-    fn default() -> Self {
-        Self {
-            node: ListNode::empty(),
-            flags: MemoryMappingFlag::empty(),
-            page_count: 0,
-            virtual_offset: 0,
-            physical_offset: 0,
-        }
-    }
-}
 
 pub enum AllocationStrategy {
     #[doc = "Allocation for Kernel space when page cannot be swapped"]
@@ -355,7 +288,6 @@ pub fn into_boxed<T: Slab>(data: NonNull<T>) -> SlabBox<T> {
 ///Allocate virtual memory regardless of physical layout
 ///The each virtual page, probably, will be separate
 ///The current implementation is simple slab allocation (it will fail with too huge memory size)
-#[must_use]
 pub fn virtual_alloc(
     size: usize,
     _flags: MemoryRegionFlag,
@@ -443,6 +375,44 @@ impl From<LinkedList<'static, Page>> for PhysicalAllocation {
     fn from(pages: LinkedList<'static, Page>) -> Self {
         Self { pages }
     }
+}
+
+pub fn remap(
+    process: &Process,
+    map_region: MemoryMappingRegion,
+) -> Result<(), AllocError> {
+    assert_eq!(map_region.virtual_offset % Page::SIZE, 0);
+    assert_eq!(map_region.physical_offset % Page::SIZE, 0);
+
+    let pages = PHYSICAL_ALLOCATOR
+        .get()
+        .reserve_pages(map_region.physical_offset, map_region.page_count)?;
+
+    let mut state = process.state.try_lock().unwrap();
+
+    state.marker.map_user_range(&map_region)?;
+
+    let Some(mem_region) = state.find_region_mut(map_region.virtual_offset)
+    else {
+        let mem_region = MemoryRegion::new_allocated(
+            map_region,
+            MemoryRegionFlag::READ_WRITE,
+            pages,
+        )?;
+
+        state.add_region(mem_region.into_node());
+
+        return Ok(());
+    };
+
+    let mem_region_above =
+        mem_region.split_on(map_region.virtual_offset, pages)?;
+
+    if let Some(mem_region) = mem_region_above {
+        state.add_region(mem_region.into_node());
+    }
+
+    Ok(())
 }
 
 /// allocate physical memory

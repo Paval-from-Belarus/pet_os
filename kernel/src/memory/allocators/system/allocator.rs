@@ -249,11 +249,11 @@ fn commit(
     count: usize,
 ) -> *mut u8 {
     let region = MemoryMappingRegion {
-        node: ListNode::empty(),
         flags: memory::MemoryMappingFlag::KERNEL_LAYOUT,
         virtual_offset: heap_offset,
         physical_offset: memory_offset,
         page_count: count,
+        ..Default::default()
     };
 
     log::debug!("Region will be commited for heap (at {:0X})", heap_offset);

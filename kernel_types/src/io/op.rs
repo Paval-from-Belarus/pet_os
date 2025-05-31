@@ -1,3 +1,5 @@
+use crate::syscall::SyscallError;
+
 pub enum MemoryOperation {
     Write {},
 }
@@ -156,7 +158,7 @@ pub enum Error {
     #[error("Not Supported Operation")]
     NotSupported,
     #[error("Syscall is failed")]
-    SyscallFailed,
+    SyscallFailed(#[from] SyscallError),
 }
 
 impl IoTransaction<Write> {

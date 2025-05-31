@@ -20,7 +20,7 @@ use kernel_types::{
 use crate::{
     current_task,
     error::KernelError,
-    io, log_unchecked,
+    io, log_module,
     memory::{
         self, virtual_alloc, virtual_dealloc, MemoryMappingRegion,
         MemoryRegion, MemoryRegionFlag, Page, PageMarker, Process, ProcessId,
