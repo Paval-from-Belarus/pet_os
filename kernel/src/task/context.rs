@@ -82,10 +82,7 @@ impl TaskContext {
     pub fn copy_to(&self, context: &mut TaskContext) {
         let context_size = self.size();
 
-        if context_size == mem::size_of::<TaskContext>() {
-            log::debug!("User space context");
-        }
-
+        
         unsafe {
             let source = self as *const TaskContext as *const u8;
             let target = context as *mut TaskContext as *mut u8;

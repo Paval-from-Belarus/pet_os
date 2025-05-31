@@ -400,18 +400,9 @@ pub extern "C" fn run_process() {
 
     log::debug!("Running process");
 
-    log::debug!("EAX ptr: {:X?}", &raw const current_task!().context().eax);
-
-    unsafe { breakpoint() };
-
     let stack_bottom = current_task!().kernel_stack_bottom;
 
-    current_task!().context_mut().esp =
-        (stack_bottom + TASK_STACK_SIZE - 1) as u32;
-
     log::debug!("Stack size: {}", current_task!().stack_size());
-
-    unsafe { memory::switch_to_task(current_task!()) };
 
     unsafe {
         core::arch::asm! {

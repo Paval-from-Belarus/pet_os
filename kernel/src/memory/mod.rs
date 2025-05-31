@@ -474,9 +474,10 @@ pub fn physical_dealloc(mut pages: LinkedList<'static, Page>) {
 /// Set ss:esp in TSS
 /// This stack will be used during
 /// user-space to kernel-space switching
+/// for kernel-space switching no tss is used
 #[no_mangle]
 pub unsafe fn switch_to_task(task: &mut Task) {
-    let stack = task.context().esp as VirtualAddress;
+    let stack = task.stack_start();
 
     let task_state = &raw mut TASK_STATE;
     unsafe { (*task_state).set_kernel_stack(stack) };

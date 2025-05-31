@@ -130,6 +130,20 @@ impl Task {
         self.process = process.into();
     }
 
+    pub fn stack_start(&self) -> VirtualAddress {
+        let esp = self.context().esp as VirtualAddress;
+
+        let saved_upper_context_size = if self.context().is_user_space_context()
+        {
+            4 * 4 + //segments
+            20 //iret with user space segments
+        } else {
+            4 * 4 + 16 //without ss:esp
+        };
+
+        esp + saved_upper_context_size
+    }
+
     pub fn stack_size(&self) -> usize {
         let stack: VirtualAddress;
 
