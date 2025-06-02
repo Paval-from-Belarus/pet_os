@@ -1,7 +1,6 @@
-use core::arch::asm;
+use core::{arch::asm, ops::Range};
 
 use crate::{
-    log,
     memory::{
         AllocHandler, DeallocHandler, MemoryMappingFlag, MemoryMappingRegion,
         Page, PhysicalAddress, VirtualAddress,
@@ -10,11 +9,11 @@ use crate::{
 };
 
 use super::{
-    table::RefTableEntry, PageDirectory, PageMarkerError, UnmapParamsFlag,
-    TABLE_PAGES_COUNT,
+    table::RefTableEntry, PageDirectory, PageMarkerError, TABLE_PAGES_COUNT,
 };
 
 /// The struct is simply used to transfer physical layout for page allcoator
+#[derive(Debug)]
 pub struct PageMarker<'a> {
     // directory: &'a mut [DirEntry<'a>; DIRECTORY_ENTRIES_COUNT],
     directory: PageDirectory<'a, 'a>,
@@ -131,6 +130,7 @@ impl<'a> PageMarker<'a> {
         }
     }
 
+    #[inline(never)]
     pub fn map_user_range(
         &mut self,
         map_region: &MemoryMappingRegion,
@@ -183,10 +183,10 @@ impl<'a> PageMarker<'a> {
 
             let page_table = dir_entry.page_table_mut().unwrap();
 
-            let table_entry = &mut page_table[entry_index];
+            let page_entry = &mut page_table[entry_index];
 
-            table_entry.set_page_offset(memory_offset);
-            table_entry.set_flags(flags.as_table_flag());
+            page_entry.set_page_offset(memory_offset);
+            page_entry.set_flags(flags.as_table_flag());
 
             addressable_offset += Page::SIZE;
             memory_offset += Page::SIZE;
@@ -196,51 +196,46 @@ impl<'a> PageMarker<'a> {
     }
 
     pub fn unmap_range(
-        &'a mut self,
-        virtual_offset: VirtualAddress,
-        pages_count: usize,
-        params: UnmapParamsFlag,
+        &mut self,
+        range: Range<VirtualAddress>,
+        unmap_all: bool,
     ) {
-        let mut addressable_offset = virtual_offset;
+        let mut page_offset = range.start;
         let deallocator = self.dealloc_handler;
 
-        for _ in 0..pages_count {
-            let table_index = table_index!(addressable_offset);
-            let entry_index = page_index!(addressable_offset);
+        while page_offset < range.end {
+            let table_index = table_index!(page_offset);
+            let page_index = page_index!(page_offset);
 
             let dir_entry = &mut self.directory.entries[table_index];
 
             if let Some(page_table) = dir_entry.page_table_mut() {
-                let table_entry = &mut page_table[entry_index];
+                let table_entry = &mut page_table[page_index];
 
                 if table_entry.has_page() {
                     deallocator(table_entry.page_offset());
                     table_entry.clear();
-                } else {
-                    log!("Unmapping not existing page table");
                 }
-            } else {
-                log!("Unmapping not existing dir table");
             }
 
-            addressable_offset += Page::SIZE;
+            page_offset += Page::SIZE;
         }
 
-        if !params.test_with(UnmapParamsFlag::TABLES) {
-            //no needs to unmap page tables
+        if !unmap_all {
             return;
         }
 
-        addressable_offset = virtual_offset;
-        for _ in 0..pages_count {
-            let table_index = table_index!(addressable_offset);
+        let mut page_offset = range.start;
+        while page_offset < range.end {
+            let table_index = table_index!(page_offset);
             let dir_entry = &mut self.directory.entries[table_index];
 
             if dir_entry.has_page_table() {
-                let page_offset = dir_entry.table_offset();
+                deallocator(dir_entry.table_offset());
                 dir_entry.clear();
-                deallocator(page_offset);
             }
+
+            page_offset += Page::SIZE;
         }
     }
 }

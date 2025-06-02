@@ -14,7 +14,7 @@ use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
 use crate::io::{pic, CallbackInfo};
 use crate::memory::{
-    MemoryRegionFlag, Page, SegmentSelector, TaskRoutine, VirtualAddress,
+    MemoryAllocationFlag, Page, SegmentSelector, TaskRoutine, VirtualAddress,
 };
 use crate::task::scheduler::SchedulerLock;
 use crate::{get_eax, memory, object};
@@ -175,7 +175,9 @@ pub fn new_task(
 ) -> Result<&'static mut RunningTask, KernelError> {
     let kernel_stack = memory::virtual_alloc(
         TASK_STACK_SIZE,
-        MemoryRegionFlag::WRITE | MemoryRegionFlag::READ,
+        MemoryAllocationFlag::ZEROED
+            | MemoryAllocationFlag::ZEROED
+            | MemoryAllocationFlag::READ_WRITE 
     )?;
 
     let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);

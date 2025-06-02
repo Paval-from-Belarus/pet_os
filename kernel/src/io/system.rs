@@ -70,7 +70,7 @@ declare_constants!(
 );
 
 extern "x86-interrupt" {
-    pub fn syscall(frame: InterruptStackFrame);
+    pub fn _syscall(frame: InterruptStackFrame);
 }
 
 #[no_mangle]

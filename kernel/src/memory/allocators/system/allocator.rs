@@ -13,7 +13,9 @@ use crate::memory::{
     ToPhysicalAddress, VirtualAddress,
 };
 
-use super::{slab_entry::SlabEntry, slab_head::SlabHead, SlabAlloc};
+use super::{
+    slab_entry::SlabEntry, slab_head::SlabHead, MemoryAllocationFlag, SlabAlloc,
+};
 
 #[derive(ListNode)]
 pub struct HeapSnapshot {
@@ -65,6 +67,7 @@ impl SlabAllocator {
     pub fn virtual_alloc(
         &mut self,
         pages_count: usize,
+        _flags: MemoryAllocationFlag,
     ) -> Result<*mut u8, AllocError> {
         assert!(pages_count > 0);
 
@@ -253,7 +256,6 @@ fn commit(
         virtual_offset: heap_offset,
         physical_offset: memory_offset,
         page_count: count,
-        ..Default::default()
     };
 
     log::debug!("Region will be commited for heap (at {:0X})", heap_offset);

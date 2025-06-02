@@ -28,6 +28,7 @@ fn main() {
                 }},
                 "#,
             );
+
             entries.push(entry);
         }
 

@@ -37,6 +37,18 @@ struct MemBounds {
 #[derive(Copy, Clone)]
 pub struct SlabSize(u16);
 
+bitflags::bitflags! {
+    #[derive(Default, Clone, Copy)]
+    pub struct MemoryAllocationFlag: u8 {
+        const ZEROED = 0x01;
+        const CONTINOUS = 0x02;
+        /// all memory regions are read by default
+        const WRITE = 0x04;
+        const READ = 0x08;
+        const READ_WRITE = Self::WRITE.bits() | Self::READ.bits();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SlabAlloc {
     pub name: &'static str,
@@ -123,6 +135,7 @@ impl SystemAllocator {
     pub fn virtual_alloc(
         &'static self,
         bytes: usize,
+        flags: MemoryAllocationFlag,
     ) -> Result<*mut u8, AllocError> {
         log::debug!("Virtual alloc: {bytes}");
 
@@ -130,7 +143,7 @@ impl SystemAllocator {
 
         let mut allocator = self.allocator.try_lock().unwrap();
 
-        allocator.virtual_alloc(pages_count)
+        allocator.virtual_alloc(pages_count, flags)
     }
 
     pub fn virtual_dealloc(

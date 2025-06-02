@@ -1,4 +1,4 @@
-use core::mem;
+use core::mem::{self, MaybeUninit};
 use core::{fmt::Debug, marker::PhantomData};
 
 use bitfield::Bit;
@@ -333,7 +333,7 @@ impl TaskGate {
 pub struct InterruptGate {
     lower_offset: u16,
     pub selector: SegmentSelector,
-    reserved: Zeroed<u8>,
+    reserved: MaybeUninit<u8>,
     pub flags: DescriptorFlags<SystemType>,
     upper_offset: u16,
 }
@@ -347,13 +347,13 @@ impl InterruptGate {
         handler_offset: VirtualAddress,
         selector: SegmentSelector,
         flags: SystemType,
-    ) -> InterruptGate {
+    ) -> Self {
         // let physical_offset = handler_offset.as_physical();
         let lower_offset = (handler_offset & 0xFFFF) as u16;
         let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
         let ring = PrivilegeLevel::KERNEL;
 
-        InterruptGate {
+        Self {
             lower_offset,
             selector,
             flags: DescriptorFlags::new(false, ring, flags),
@@ -361,6 +361,7 @@ impl InterruptGate {
             ..InterruptGate::null()
         }
     }
+
     pub const fn null() -> Self {
         unsafe { mem::MaybeUninit::<InterruptGate>::zeroed().assume_init() } //because the present bit is set to zero
     }

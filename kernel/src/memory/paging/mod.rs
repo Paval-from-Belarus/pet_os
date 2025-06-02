@@ -4,7 +4,7 @@ use core::ptr::NonNull;
 
 use static_assertions::assert_eq_size;
 
-use kernel_types::{bitflags, declare_constants, Zeroed};
+use kernel_types::{declare_constants, Zeroed};
 
 use crate::memory::paging::table::DirEntry;
 use crate::memory::{
@@ -60,6 +60,7 @@ pub struct PagingProperties {
     captures_cnt: usize,
 }
 
+#[derive(Clone)]
 #[repr(C)]
 pub struct GDTTable {
     null: Zeroed<MemoryDescriptor>,
@@ -73,7 +74,7 @@ pub struct GDTTable {
 assert_eq_size!(GDTTable, [usize; 2 * 6]);
 
 impl GDTTable {
-    pub const fn null() {
+    pub const fn null() -> Self {
         unsafe { MaybeUninit::zeroed().assume_init() }
     }
 
@@ -101,7 +102,29 @@ pub struct GDTEntry {
 #[repr(C, packed)]
 pub struct GDTHandle {
     table_size: u16,
-    table: PhysicalAddress,
+    table: VirtualAddress,
+}
+
+impl GDTHandle {
+    pub const fn null() -> Self {
+        unsafe { MaybeUninit::zeroed().assume_init() }
+    }
+
+    pub fn new(table: *const GDTTable) -> Self {
+        Self {
+            table: table as VirtualAddress,
+            table_size: core::mem::size_of::<GDTTable>() as u16,
+        }
+    }
+
+    pub fn load(&self) {
+        unsafe {
+            asm! {
+                "lgdt [{0}]",
+                in(reg) self
+            }
+        }
+    }
 }
 
 ///The common information about physical memory region
@@ -267,13 +290,6 @@ macro_rules! page_index {
         ($argument >> 12) & 0x3FF
     };
 }
-
-bitflags!(
-  pub UnmapParamsFlag(usize),
-    PAGES = 0b1,
-    TABLES = 0b10
-
-);
 
 #[cfg(test)]
 mod tests {

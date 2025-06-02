@@ -258,7 +258,7 @@ pub fn init() {
 
     table.set(
         IDTable::SYSTEM_CALL,
-        InterruptGate::syscall(system::syscall),
+        InterruptGate::syscall(system::_syscall),
     );
 
     table.set(
@@ -286,14 +286,8 @@ pub fn init() {
     }
 
     unsafe {
-        let status = syscall!(syscall::RESERVED);
-
-        log::debug!("syscall: {status:?}");
-
         if syscall!(syscall::RESERVED).is_ok() {
             let code: usize = get_edx!();
-            log::debug!("check code: {code}");
-
             if code == system::CHECK_CODE {
                 return;
             }
@@ -316,7 +310,7 @@ static INTERCEPTORS: spin::Mutex<
 pub unsafe fn validate_stack() {
     let stack_size = current_task!().stack_size();
 
-    log::debug!("IRQ stack size: {stack_size}");
+    log::debug!("task#{} IRQ stack size: {stack_size}", current_task!().id);
 
     if stack_size == 0 {
         panic!("Red Zone violated");

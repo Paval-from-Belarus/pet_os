@@ -5,16 +5,18 @@ use core::{mem, ptr};
 use alloc::boxed::Box;
 use allocators::SlabAlloc;
 
-pub use allocators::{Alignment, AllocContext, PhysicalAllocator};
+pub use allocators::{
+    Alignment, AllocContext, MemoryAllocationFlag, PhysicalAllocator,
+};
 pub use arch::*;
 use kernel_types::collections::LinkedList;
 use kernel_types::declare_constants;
-use paging::PageDirectoryEntries;
 pub use paging::PagingProperties;
+use paging::{GDTHandle, PageDirectoryEntries};
 
 use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
 use crate::memory::allocators::SystemAllocator;
-use crate::memory::paging::{BootAllocator, GDTTable};
+use crate::memory::paging::GDTTable;
 
 use crate::task::{Task, TaskState};
 
@@ -96,39 +98,45 @@ impl ToVirtualAddress for PhysicalAddress {
 
 ///Return crucial structures for kernel
 ///Without them, it's impossible
+#[allow(static_mut_refs)]
 #[no_mangle]
-pub fn init_kernel_space(
-    allocator: BootAllocator,
-    directory: PageDirectory<'static, 'static>,
-    heap_offset: VirtualAddress,
-) {
-    //page directory is comming without any reference
-    let _ = unsafe { directory.share_entries() };
+pub fn init_kernel_space(boot_config: &mut PagingProperties) {
+    unsafe {
+        GDT = boot_config.gdt().as_ref().clone();
+        GDT_HANDLE = GDTHandle::new(&raw const GDT);
+        GDT_HANDLE.load();
 
-    let marker =
-        PageMarker::new(directory, alloc_physical_pages, first_dealloc_handler);
+        //page directory is comming without any reference
+        let _ = boot_config.page_directory().share_entries();
+    }
+
+    let marker = PageMarker::new(
+        boot_config.page_directory(),
+        alloc_physical_pages,
+        dealloc_physical_page,
+    );
 
     KERNEL_MARKER.set(marker);
-    let allocator = PhysicalAllocator::from_boot(allocator);
+    let allocator = PhysicalAllocator::from_boot(boot_config.boot_allocator());
     PHYSICAL_ALLOCATOR.set(allocator);
 
     log::info!("Physical allocator is ready");
 
-    // let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
-    // let unmap_flags = UnmapParamsFlag::from(UnmapParamsFlag::TABLES | UnmapParamsFlag::PAGES);
-    //the higher addresses are fully mapped by the kernel
-    // KERNEL_MARKER.get().unmap_range(VirtualAddress::NULL, boot_mapping_pages, unmap_flags);
     KERNEL_MARKER
         .get()
-        .set_dealloc_handler(dealloc_physical_page);
+        .unmap_range(0..kernel_virtual_offset(), true);
 
-    let slab_allocator = SystemAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
-        .expect("Failed to initialize slab allocator");
+    KERNEL_MARKER.get().load();
+
+    let slab_allocator =
+        SystemAllocator::new(&PHYSICAL_ALLOCATOR, boot_config.heap_offset())
+            .expect("Failed to initialize slab allocator");
 
     SYSTEM_ALLOCATOR.set(slab_allocator);
 }
 
-pub fn enable_task_switching(table: &mut GDTTable) {
+#[allow(static_mut_refs)]
+pub fn enable_task_switching() {
     let mut state = TaskState::null();
     state.set_io_map(0xFFFF);
     state.set_stack_selector(SegmentSelector::KERNEL_DATA);
@@ -143,20 +151,19 @@ pub fn enable_task_switching(table: &mut GDTTable) {
 
     log::debug!("Task state: {task:?}");
 
-    table.load_task(task);
-}
-
-///this method is conventional way to free page acquired by asm stub
-fn first_dealloc_handler(offset: PhysicalAddress) {
-    let page = unsafe { Page::take_unchecked(offset) };
-
-    page.acquire();
-
-    PHYSICAL_ALLOCATOR.get().dealloc_page(page);
+    unsafe { GDT.load_task(task) };
 }
 
 fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
-    let mut allocation = physical_alloc(Page::SIZE * page_count).ok()?;
+    // let pages = virtual_alloc(
+    //     Page::SIZE * page_count,
+    //     MemoryAllocationFlag::CONTINOUS
+    //         | MemoryAllocationFlag::ZEROED
+    //         | MemoryAllocationFlag::READ_WRITE,
+    // )
+    // .ok()?;
+
+    let mut allocation = physical_alloc(page_count * Page::SIZE).ok()?;
 
     let mut pages = LinkedList::empty();
 
@@ -166,6 +173,8 @@ fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
 }
 
 fn dealloc_physical_page(offset: PhysicalAddress) {
+    log::debug!("Deallocaion page: {offset:X}");
+
     let allocator = PHYSICAL_ALLOCATOR.get();
     let page = unsafe { Page::take_unchecked(offset) };
     allocator.dealloc_page(page);
@@ -290,11 +299,11 @@ pub fn into_boxed<T: Slab>(data: NonNull<T>) -> SlabBox<T> {
 ///The current implementation is simple slab allocation (it will fail with too huge memory size)
 pub fn virtual_alloc(
     size: usize,
-    _flags: MemoryRegionFlag,
+    flags: MemoryAllocationFlag,
 ) -> Result<VirtualAddress, AllocError> {
     SYSTEM_ALLOCATOR
         .get()
-        .virtual_alloc(size)
+        .virtual_alloc(size, flags)
         .map(|ptr| ptr as VirtualAddress)
 }
 
@@ -310,7 +319,12 @@ pub fn new_page_marker() -> Result<PageMarker<'static>, AllocError> {
 
     let raw_entries = SYSTEM_ALLOCATOR
         .get()
-        .virtual_alloc(Page::SIZE)?
+        .virtual_alloc(
+            Page::SIZE,
+            MemoryAllocationFlag::CONTINOUS
+                | MemoryAllocationFlag::ZEROED
+                | MemoryAllocationFlag::READ_WRITE,
+        )?
         .cast::<PageDirectoryEntries<'static>>();
 
     let entries = unsafe { &mut *raw_entries };
@@ -452,8 +466,12 @@ pub unsafe fn switch_to_task(task: &mut Task) {
     let task_state = &raw mut TASK_STATE;
     unsafe { (*task_state).set_kernel_stack(stack) };
 
+    log::debug!("KERNEL Marker {:?}", *KERNEL_MARKER.get());
+
     if let Some(process) = task.process.as_ref() {
         let state = process.state.try_lock().unwrap();
+
+        log::debug!("Process Marker {:?}", state.marker);
         state.marker.load();
     } else {
         KERNEL_MARKER.get().load();
@@ -517,6 +535,8 @@ extern "C" {
 }
 
 static mut TASK_STATE: TaskState = TaskState::null();
+static mut GDT: GDTTable = GDTTable::null();
+static mut GDT_HANDLE: GDTHandle = GDTHandle::null();
 
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> =
     UnsafeLazyCell::empty();
@@ -547,7 +567,7 @@ unsafe impl GlobalAlloc for VirtualAllocator {
         //huge allocation performed via virtual_alloc
         virtual_alloc(
             layout.size(),
-            MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
+            MemoryAllocationFlag::CONTINOUS | MemoryAllocationFlag::READ_WRITE,
         )
         .map(|offset| offset as *mut u8)
         .unwrap_or(ptr::null_mut())

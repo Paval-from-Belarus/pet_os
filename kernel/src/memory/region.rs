@@ -4,8 +4,8 @@ use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, LinkedList, ListNode};
 
 use super::{
-    physical_dealloc, slab_alloc, AllocError, MemoryMappingRegion, Page, Slab,
-    SlabBox, VirtualAddress,
+    physical_dealloc, slab_alloc, AllocError, MemoryAllocationFlag,
+    MemoryMappingRegion, Page, Slab, SlabBox, VirtualAddress,
 };
 
 pub struct MemoryRegionBox {
@@ -43,6 +43,26 @@ bitflags::bitflags! {
     }
 }
 
+impl From<MemoryRegionFlag> for MemoryAllocationFlag {
+    fn from(value: MemoryRegionFlag) -> Self {
+        let mut flags = MemoryAllocationFlag::ZEROED;
+
+        if value.contains(MemoryRegionFlag::READ) {
+            flags |= MemoryAllocationFlag::READ;
+        }
+
+        if value.contains(MemoryRegionFlag::WRITE) {
+            flags |= MemoryAllocationFlag::WRITE;
+        }
+
+        if value.contains(MemoryRegionFlag::SEQ_READ) {
+            flags |= MemoryAllocationFlag::CONTINOUS;
+        }
+
+        flags
+    }
+}
+
 impl MemoryRegion {
     /// Create new region with no underlying physical memory
     pub unsafe fn empty(
@@ -50,7 +70,7 @@ impl MemoryRegion {
         flag: MemoryRegionFlag,
     ) -> Result<MemoryRegionBox, AllocError> {
         if range.start % Page::SIZE != 0 {
-            return Err(AllocError::InvalidAlignment(super::Alignment::Page));
+            // return Err(AllocError::InvalidAlignment(super::Alignment::Page));
         }
 
         let region = slab_alloc(Self {

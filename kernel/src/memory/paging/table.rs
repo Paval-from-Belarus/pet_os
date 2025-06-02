@@ -36,7 +36,7 @@ bitflags!(
 );
 
 #[repr(transparent)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct DirEntry<'a> {
     entry: usize,
     _marker: PhantomData<&'a mut u8>,

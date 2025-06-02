@@ -120,3 +120,11 @@ breakpoint:
     mov eax, 42
     pop eax
     ret
+
+
+public _syscall
+extrn handle_syscall
+
+_syscall:
+    call handle_syscall
+    iret

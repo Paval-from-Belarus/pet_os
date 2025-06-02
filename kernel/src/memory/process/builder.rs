@@ -71,6 +71,8 @@ impl ProcessBuilder<ProcessSpace> {
         let mut offset = start_offset - offset_in_page;
 
         for page in pages.iter() {
+            assert_eq!(page.use_count(), 1);
+
             self.marker.map_user_range(&MemoryMappingRegion {
                 flags: flags.into(),
                 virtual_offset: offset,
@@ -95,7 +97,7 @@ impl ProcessBuilder<ProcessSpace> {
         let stack_region = self.alloc_region(
             0xB_000_000,
             0x2000,
-            MemoryRegionFlag::READ_WRITE,
+            MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
         )?;
 
         let stack = stack_region.range.clone();

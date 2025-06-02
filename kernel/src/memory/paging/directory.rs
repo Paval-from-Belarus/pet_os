@@ -2,6 +2,7 @@ use crate::memory::{Page, PhysicalAddress};
 
 use super::{table::DirEntry, PageDirectoryEntries, DIRECTORY_ENTRIES_COUNT};
 
+#[derive(Debug)]
 pub struct PageDirectory<'page_dir, 'page_table> {
     pub entries:
         &'page_dir mut [DirEntry<'page_table>; DIRECTORY_ENTRIES_COUNT],

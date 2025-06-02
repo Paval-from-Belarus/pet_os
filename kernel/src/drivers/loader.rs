@@ -348,8 +348,6 @@ impl<'a> Loader<'a> {
                 let region =
                     builder.alloc_region(virt_addr, mem_size, region_flags)?;
 
-                log::debug!("Allocated region: {region:?}");
-
                 let region_data = self.elf_file.segment_data(&header)?;
 
                 region.copy_from(region_data);
@@ -357,6 +355,7 @@ impl<'a> Loader<'a> {
         }
 
         let entry_point = self.elf_file.ehdr.e_entry as VirtualAddress;
+
         assert!(entry_point != 0);
         let process = builder.build(entry_point)?;
 
@@ -398,9 +397,7 @@ pub extern "C" fn run_process() {
         (state.entry_point, state.stack.end)
     };
 
-    log::debug!("Running process");
-
-    let stack_bottom = current_task!().kernel_stack_bottom;
+    log::debug!("Running process",);
 
     log::debug!("Stack size: {}", current_task!().stack_size());
 
