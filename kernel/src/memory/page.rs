@@ -58,18 +58,33 @@ impl Page {
         }
     }
 
-    pub unsafe fn take(offset: PhysicalAddress) -> &'static Page {
-        let page = Self::take_unchecked(offset);
+    pub fn take(offset: PhysicalAddress) -> &'static Page {
+        let page = unsafe { &*Self::take_unchecked(offset) };
 
         page.acquire();
 
         page
     }
 
-    pub unsafe fn take_unchecked(offset: PhysicalAddress) -> &'static mut Page {
+    pub fn take_mut(offset: PhysicalAddress) -> Option<&'static mut Page> {
+        let page_ptr = Self::take_unchecked(offset);
+
+        let is_used = unsafe { &*page_ptr }.is_used();
+
+        if is_used {
+            return None;
+        }
+
+        let page = unsafe { &mut *page_ptr };
+
+        page.acquire();
+
+        page.into()
+    }
+
+    pub fn take_unchecked(offset: PhysicalAddress) -> *mut Page {
         let page_index: usize = offset >> Page::SHIFT;
-        let page_offset = unsafe { mem_map_offset().add(page_index) };
-        unsafe { &mut *page_offset }
+        unsafe { mem_map_offset().add(page_index) }
     }
 
     ///increment reference counter in page
@@ -95,10 +110,12 @@ impl Page {
             .contains(PageFlag::VIRTUAL_MAPPED)
             .then_some(self.virtual_offset);
 
-        self.virtual_offset = offset.into();
+        self.virtual_offset = offset;
+        self.flags |= PageFlag::VIRTUAL_MAPPED;
 
         old_offset
     }
+
     pub unsafe fn set_virtual_unchecked(&mut self, offset: VirtualAddress) {
         assert!(!self.flags.contains(PageFlag::VIRTUAL_MAPPED));
 
@@ -142,11 +159,24 @@ impl Page {
         core::slice::from_raw_parts_mut(self, count)
     }
 
-    /// Page index in global MEMORY_MAP
-    pub unsafe fn index(&self) -> usize {
-        let offset = (self as *const Page as VirtualAddress)
-            - (mem_map_offset() as VirtualAddress);
+    pub fn as_physical(&self) -> PhysicalAddress {
+        self.index() << Page::SHIFT
+    }
 
-        offset / core::mem::size_of::<Page>()
+    pub fn as_virtual(&self) -> Option<VirtualAddress> {
+        self.flags
+            .contains(PageFlag::VIRTUAL_MAPPED)
+            .then_some(self.virtual_offset)
+    }
+
+    /// Page index in global MEMORY_MAP
+    pub fn index(&self) -> usize {
+        let page_offset = core::ptr::from_ref(self);
+
+        unsafe { page_offset.offset_from_unsigned(mem_map_offset()) }
+        // let offset = (self as *const Page as VirtualAddress)
+        //     - (mem_map_offset() as VirtualAddress);
+        //
+        // offset / core::mem::size_of::<Page>()
     }
 }

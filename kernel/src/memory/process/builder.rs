@@ -7,8 +7,7 @@ use crate::{
     error::KernelError,
     memory::{
         self, new_proccess_id, physical_alloc, AllocError, MemoryMappingRegion,
-        MemoryRegion, MemoryRegionFlag, Page, PageMarker, ToPhysicalAddress,
-        VirtualAddress,
+        MemoryRegion, MemoryRegionFlag, Page, PageMarker, VirtualAddress,
     },
 };
 
@@ -23,7 +22,7 @@ impl AddressSpace for ProcessSpace {}
 impl AddressSpace for KernelSpace {}
 
 pub struct ProcessBuilder<T: AddressSpace> {
-    marker: PageMarker<'static>,
+    marker: PageMarker,
     regions: LinkedList<'static, MemoryRegion>,
     _space: PhantomData<T>,
 }

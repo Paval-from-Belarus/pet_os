@@ -157,21 +157,4 @@ impl SystemAllocator {
 
         allocator.virtual_dealloc(offset, pages_count);
     }
-
-    pub fn map_pages(
-        &'static self,
-        pages: &[Page],
-    ) -> Result<*mut u8, AllocError> {
-        let mut allocator = self.allocator.try_lock().unwrap();
-
-        allocator.map_page(pages)
-    }
-
-    pub fn unmap_pages(&'static self, ptr: *mut u8, size: usize) {
-        let pages_count = Page::upper_bound(size);
-
-        let mut allocator = self.allocator.try_lock().unwrap();
-
-        allocator.unmap_page(ptr, pages_count);
-    }
 }

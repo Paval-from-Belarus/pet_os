@@ -3,11 +3,10 @@ use core::mem;
 use kernel_types::bitflags;
 
 use crate::memory::paging::TABLE_ENTRIES_COUNT;
-use crate::memory::{PhysicalAddress, ToPhysicalAddress, ToVirtualAddress};
+use crate::memory::{Page, PhysicalAddress};
 
 pub trait RefTableEntry {
     fn empty() -> Self;
-    fn clear(&mut self);
 }
 
 bitflags!(
@@ -52,25 +51,18 @@ pub struct TableEntry<'a> {
 impl<'a> RefTableEntry for DirEntry<'a> {
     fn empty() -> Self {
         DirEntry {
-            entry: PhysicalAddress::NULL | DirEntryFlag::EMPTY,
+            entry: 0,
             _marker: PhantomData,
         }
-    }
-
-    fn clear(&mut self) {
-        self.entry = (PhysicalAddress::NULL) | DirEntryFlag::EMPTY;
     }
 }
 
 impl<'a> RefTableEntry for TableEntry<'a> {
     fn empty() -> Self {
         TableEntry {
-            entry: PhysicalAddress::NULL | TableEntryFlag::EMPTY,
+            entry: 0,
             _marker: PhantomData,
         }
-    }
-    fn clear(&mut self) {
-        self.entry = PhysicalAddress::NULL | TableEntryFlag::EMPTY;
     }
 }
 
@@ -85,10 +77,10 @@ impl<'a> DirEntry<'a> {
     const BYTE_SIZE: usize = mem::size_of::<usize>();
 
     pub fn new(
-        table_offset: PhysicalAddress,
+        ph_offset: PhysicalAddress,
         flags: DirEntryFlag,
     ) -> DirEntry<'a> {
-        let entry: usize = table_offset | flags.bits();
+        let entry: usize = ph_offset | flags.bits();
 
         DirEntry {
             entry,
@@ -109,42 +101,54 @@ impl<'a> DirEntry<'a> {
         self.page_table().is_some()
     }
 
-    pub fn set_table_offset(&mut self, table_offset: PhysicalAddress) {
+    pub fn clear(&mut self) -> Option<PhysicalAddress> {
+        let offset = self.entry & DirEntry::ADDRESS_MASK;
+
+        let ph_offset = (offset != 0).then_some(offset);
+
+        self.entry = 0;
+
+        ph_offset
+    }
+
+    pub fn set_ph_offset(&mut self, ph_offset: PhysicalAddress) {
+        assert!(ph_offset != 0);
+
         let flags = self.flags();
-        self.entry = (table_offset & DirEntry::ADDRESS_MASK) | flags.bits();
+
+        self.entry = (ph_offset & DirEntry::ADDRESS_MASK) | flags.bits();
     }
 
-    pub fn table_offset(&self) -> PhysicalAddress {
-        self.entry & DirEntry::ADDRESS_MASK
+    pub fn ph_offset(&self) -> Option<PhysicalAddress> {
+        let offset = self.entry & DirEntry::ADDRESS_MASK;
+
+        (offset != 0).then_some(offset)
     }
 
-    pub fn page_table(&self) -> Option<&[TableEntry]> {
-        let offset = self.table_offset();
+    pub fn page_table(&self) -> Option<&[TableEntry<'a>]> {
+        let ph_offset = self.ph_offset()?;
 
-        if offset == PhysicalAddress::NULL {
-            return None;
-        }
+        let offset = Page::take(ph_offset).as_virtual()?;
 
         let page_table = unsafe {
             core::slice::from_raw_parts(
-                offset.as_virtual() as *const TableEntry,
+                offset as *const TableEntry,
                 TABLE_ENTRIES_COUNT,
             )
         };
 
-        Some(page_table)
+        page_table.into()
     }
 
-    pub fn page_table_mut(&mut self) -> Option<&mut [TableEntry]> {
-        let offset = self.table_offset();
+    pub fn page_table_mut(&mut self) -> Option<&mut [TableEntry<'a>]> {
+        let ph_offset = self.ph_offset()?;
 
-        if offset == PhysicalAddress::NULL {
-            return None;
-        }
+        let virt_offset = Page::take(ph_offset).as_virtual()?;
+
 
         let page_table = unsafe {
             core::slice::from_raw_parts_mut(
-                offset.as_virtual() as *mut TableEntry,
+                virt_offset as *mut TableEntry,
                 TABLE_ENTRIES_COUNT,
             )
         };
@@ -174,16 +178,29 @@ impl<'a> TableEntry<'a> {
         self.entry = (self.entry & TableEntry::ADDRESS_MASK) | flags.bits();
     }
 
-    pub fn set_page_offset(&mut self, offset: PhysicalAddress) {
-        self.entry = (offset & TableEntry::ADDRESS_MASK) | self.flags().bits();
+    pub fn set_page_offset(&mut self, ph_offset: PhysicalAddress) {
+        self.entry =
+            (ph_offset & TableEntry::ADDRESS_MASK) | self.flags().bits();
     }
 
     pub fn flags(&self) -> TableEntryFlag {
         TableEntryFlag(self.entry & !TableEntry::ADDRESS_MASK)
     }
 
-    pub fn page_offset(&self) -> PhysicalAddress {
-        self.entry & TableEntry::ADDRESS_MASK
+    pub fn clear(&mut self) -> Option<PhysicalAddress> {
+        let offset = self.entry & TableEntry::ADDRESS_MASK;
+
+        let ph_offset = (offset != 0).then(|| offset);
+
+        self.entry = 0;
+
+        ph_offset
+    }
+
+    pub fn ph_offset(&self) -> Option<PhysicalAddress> {
+        let offset = self.entry & TableEntry::ADDRESS_MASK;
+
+        (offset != 0).then_some(offset)
     }
 
     pub fn has_page(&self) -> bool {
@@ -191,14 +208,13 @@ impl<'a> TableEntry<'a> {
     }
 
     pub fn as_bytes(&self) -> Option<&'a [u8]> {
-        let offset = self.page_offset();
-        if offset == PhysicalAddress::NULL {
-            return None;
-        }
+        let ph_offset = self.ph_offset()?;
+
+        let virt_offset = Page::take(ph_offset).as_virtual()?;
 
         let bytes = unsafe {
             core::slice::from_raw_parts(
-                offset.as_virtual() as *const u8,
+                virt_offset as *const u8,
                 TABLE_ENTRIES_COUNT,
             )
         };
@@ -207,14 +223,13 @@ impl<'a> TableEntry<'a> {
     }
 
     pub fn as_bytes_mut(&mut self) -> Option<&'a mut [u8]> {
-        let offset = self.page_offset();
-        if offset == PhysicalAddress::NULL {
-            return None;
-        }
+        let ph_offset = self.ph_offset()?;
+
+        let virt_offset = Page::take(ph_offset).as_virtual()?;
 
         let bytes = unsafe {
             core::slice::from_raw_parts_mut(
-                offset.as_virtual() as *mut u8,
+                virt_offset as *mut u8,
                 TABLE_ENTRIES_COUNT,
             )
         };

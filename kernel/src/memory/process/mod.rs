@@ -10,11 +10,9 @@ use alloc::sync::Arc;
 use builder::{KernelSpace, ProcessBuilder};
 use kernel_types::collections::LinkedList;
 
-use crate::{error::KernelError, memory};
+use crate::error::KernelError;
 
-use super::{
-    paging::PageMarker, AllocError, MemoryRegion, Page, VirtualAddress,
-};
+use super::{paging::PageMarker, MemoryRegion, Page, VirtualAddress};
 
 pub type ProcessId = usize;
 
@@ -57,7 +55,7 @@ pub struct ProcessState {
     //offset of stack memory -> used for erasing stack memory
     // last_page_index: usize,
     //Write | NoPrivilege
-    pub marker: PageMarker<'static>,
+    pub marker: PageMarker,
 
     // pub code: Range<VirtualAddress>,
     // pub data: Range<VirtualAddress>,
@@ -219,35 +217,35 @@ pub struct AddressSpace {
     dirty_pages: LinkedList<'static, Page>,
     locked_pages: LinkedList<'static, Page>,
     total_pages_count: usize,
-    marker: PageMarker<'static>,
+    marker: PageMarker,
 }
 
-fn copy_physically(
-    data: &[u8],
-    pages: &LinkedList<'_, Page>,
-) -> Result<(), AllocError> {
-    assert_eq!(Page::upper_bound(data.len()), pages.len() * Page::SIZE);
-
-    let mut data_offset = 0;
-
-    for page in pages.iter() {
-        assert!(data_offset < data.len());
-
-        let code_ptr = unsafe { memory::kernel_map(page.as_slice(1)).unwrap() };
-
-        let copied_size = usize::min(Page::SIZE, data.len() - data_offset);
-
-        let source = &data[data_offset..(data_offset + copied_size)];
-
-        let target =
-            unsafe { core::slice::from_raw_parts_mut(code_ptr, source.len()) };
-
-        target.copy_from_slice(source);
-
-        unsafe { memory::kernel_unmap(page.as_slice(1), code_ptr) }
-
-        data_offset += copied_size;
-    }
-
-    Ok(())
-}
+// fn copy_physically(
+//     data: &[u8],
+//     pages: &LinkedList<'_, Page>,
+// ) -> Result<(), AllocError> {
+//     assert_eq!(Page::upper_bound(data.len()), pages.len() * Page::SIZE);
+//
+//     let mut data_offset = 0;
+//
+//     for page in pages.iter() {
+//         assert!(data_offset < data.len());
+//
+//         let code_ptr = unsafe { memory::kernel_map(page.as_slice(1)).unwrap() };
+//
+//         let copied_size = usize::min(Page::SIZE, data.len() - data_offset);
+//
+//         let source = &data[data_offset..(data_offset + copied_size)];
+//
+//         let target =
+//             unsafe { core::slice::from_raw_parts_mut(code_ptr, source.len()) };
+//
+//         target.copy_from_slice(source);
+//
+//         unsafe { memory::kernel_unmap(page.as_slice(1), code_ptr) }
+//
+//         data_offset += copied_size;
+//     }
+//
+//     Ok(())
+// }

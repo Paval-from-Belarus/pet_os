@@ -8,8 +8,8 @@ use kernel_types::{declare_constants, Zeroed};
 
 use crate::memory::paging::table::DirEntry;
 use crate::memory::{
-    MemoryDescriptor, Page, PhysicalAddress, SegmentSelector,
-    TaskStateDescriptor, ToVirtualAddress, VirtualAddress,
+    MemoryDescriptor, Page, SegmentSelector, TaskStateDescriptor,
+    VirtualAddress,
 };
 
 mod directory;
@@ -19,7 +19,7 @@ pub(crate) mod table;
 pub use directory::*;
 pub use marker::*;
 
-use super::ToPhysicalAddress;
+use super::{kernel_virtual_offset, PhysicalAddress};
 
 declare_constants!(
     pub usize,
@@ -38,8 +38,8 @@ pub enum CommonError {
 
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum PageMarkerError {
-    #[error("Empty Page Directory Entry")]
-    EmptyDirEntry,
+    #[error("Empty Page Directory Entry for  {0:X?}")]
+    EmptyDirEntry(*mut u8),
     #[error("Empty Page Table Entry")]
     EmptyTableEntry,
     #[error("Invalid Table Address")]
@@ -137,7 +137,7 @@ pub struct CaptureMemRec {
     ///The common count of pages in region
     page_count: usize,
     ///The start physical offset of region
-    memory_offset: PhysicalAddress,
+    memory_offset: usize,
 }
 
 #[derive(
@@ -171,9 +171,12 @@ impl PagingProperties {
     pub fn page_directory(&self) -> PageDirectory<'static, 'static> {
         let entries = unsafe { core::mem::transmute(self.directory) };
 
+        let ph_offset =
+            (self.directory as VirtualAddress) - kernel_virtual_offset();
+
         PageDirectory {
             entries,
-            physical_offset: (self.directory as VirtualAddress).as_physical(),
+            physical_offset: ph_offset,
         }
     }
 
@@ -194,8 +197,8 @@ impl PagingProperties {
     pub fn gdt(&self) -> NonNull<GDTTable> {
         unsafe {
             // ptr::read_unaligned(&self.(
-            let table_offset = (*self.handle).table;
-            let raw_table = table_offset.as_virtual() as *mut GDTTable;
+            let table_offset = (*self.handle).table + kernel_virtual_offset();
+            let raw_table = table_offset as *mut GDTTable;
             NonNull::new_unchecked(raw_table)
         }
     }

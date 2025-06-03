@@ -12,8 +12,8 @@ use crate::memory::allocators::physical::page::BuddyPage;
 use crate::memory::paging::{BootAllocator, MemoryKind, PageMarkerError};
 use crate::memory::AllocError::NoMemory;
 use crate::memory::{
-    AllocError, Page, PageFlag, PhysicalAddress, ToPhysicalAddress,
-    VirtualAddress, MEMORY_MAP_SIZE,
+    AllocError, Page, PageFlag, PhysicalAddress, VirtualAddress,
+    MEMORY_MAP_SIZE,
 };
 
 pub use buddy::*;
@@ -55,13 +55,13 @@ pub enum AllocationType {
 }
 
 fn is_even_in_memory_map(page: &Page) -> bool {
-    unsafe { page.index() % 2 == 0 }
+    page.index() % 2 == 0
 }
 
 #[no_mangle]
 unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
     unsafe fn reset_pages(offset: VirtualAddress, count: usize) {
-        let page = Page::take_unchecked(offset);
+        let page = &mut *Page::take_unchecked(offset);
         let pages = page.as_slice_mut(count);
 
         for page in pages.iter_mut() {
@@ -123,7 +123,7 @@ unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
         reset_pages(mem_offset, pivot.free_pages_count());
 
         while mem_offset < max_offset {
-            let page = unsafe { Page::take_unchecked(mem_offset) };
+            let page = unsafe { &mut *Page::take_unchecked(mem_offset) };
 
             let node_index = page.index();
 
@@ -213,7 +213,7 @@ impl PhysicalAllocator {
 
         let page_slice_size = 2usize.pow(power as u32) * mem::size_of::<Page>();
 
-        let mut buddy_offset = VirtualAddress::NULL;
+        let mut buddy_offset = 0;
 
         if is_even_in_memory_map(page) {
             if usize::MAX - page_offset > page_slice_size {
@@ -223,7 +223,7 @@ impl PhysicalAllocator {
             buddy_offset = page_offset - page_slice_size;
         }
 
-        if buddy_offset == VirtualAddress::NULL {
+        if buddy_offset == 0 {
             return None;
         }
 
@@ -262,13 +262,16 @@ impl PhysicalAllocator {
     /// Remove requested pages from allocation proccess
     pub fn reserve_pages(
         &self,
-        offset: PhysicalAddress,
+        ph_offset: PhysicalAddress,
         pages_count: usize,
     ) -> Result<LinkedList<'static, Page>, AllocError> {
         let mut pages = LinkedList::empty();
 
         let unchecked_pages = unsafe {
-            let head = Page::take_unchecked(offset);
+            let Some(head) = Page::take_mut(ph_offset) else {
+                return Err(AllocError::PageInUse);
+            };
+
             head.as_slice_mut(pages_count)
         };
 
@@ -367,12 +370,12 @@ impl PhysicalAllocator {
         assert!(count > 0);
 
         let mut lock = self.buddies.lock();
-        let last_head = lock.last_mut().unwrap();
+        let mut last_head = lock.last_mut().unwrap();
         let mut longest = 0; //the current longest count of pages in same sequence
 
         let mut start_offset = Option::<PhysicalAddress>::None;
 
-        for page in last_head.iter() {
+        for page in last_head.iter_mut() {
             if longest == count {
                 break;
             }

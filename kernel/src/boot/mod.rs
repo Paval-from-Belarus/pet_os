@@ -8,8 +8,7 @@ use properties::KernelProperties;
 use crate::{
     get_eax,
     memory::{
-        self, CaptureMemRec, DirEntry, DirEntryFlag, PhysicalAddress,
-        TableEntry, TableEntryFlag, ToPhysicalAddress, DIRECTORY_ENTRIES_COUNT,
+        self, CaptureMemRec, DirEntry, TableEntry, DIRECTORY_ENTRIES_COUNT,
         DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT,
     },
     set_eax,
@@ -124,15 +123,15 @@ unsafe fn enable_paging() {
 
     for (dir_entry, page_entries) in directory.iter_mut().zip(tables.iter_mut())
     {
-        *dir_entry = DirEntry::new(
-            page_entries as *mut TableEntry as PhysicalAddress,
-            DirEntryFlag(DirEntryFlag::PRESENT),
-        );
-
-        page_entries.fill(TableEntry::new(
-            PhysicalAddress::NULL,
-            TableEntryFlag(TableEntryFlag::EMPTY),
-        ));
+        // *dir_entry = DirEntry::new(
+        //     page_entries as *mut TableEntry as PhysicalAddress,
+        //     DirEntryFlag(DirEntryFlag::PRESENT),
+        // );
+        //
+        // page_entries.fill(TableEntry::new(
+        //     PhysicalAddress::NULL,
+        //     TableEntryFlag(TableEntryFlag::EMPTY),
+        // ));
     }
 
     // mark_region(DirEntryFlag(DirEntryFlag::), table_flag, dir, p_o, v_o, pages_count)

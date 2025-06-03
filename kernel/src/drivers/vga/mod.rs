@@ -5,10 +5,7 @@ use core::arch::asm;
 use rtc::{read_rtc_time, RtcTime};
 use volatile::Volatile;
 
-use crate::{
-    common::io,
-    memory::{PhysicalAddress, ToVirtualAddress},
-};
+use crate::{common::io, memory::PhysicalAddress};
 
 const VGA_WIDTH: usize = 80;
 const VGA_HEIGHT: usize = 25;
@@ -32,7 +29,7 @@ impl VgaBuffer {
     fn write_char(&mut self, x: usize, y: usize, c: char, color: u8) {
         let index = y * VGA_WIDTH + x;
 
-        let ptr = (VGA_BUFFER as PhysicalAddress).as_virtual() as *mut u16;
+        let ptr = (VGA_BUFFER as PhysicalAddress) as *mut u16;
 
         unsafe {
             VGA_BUFFER

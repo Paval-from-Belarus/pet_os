@@ -51,7 +51,7 @@ script = '''
 '''
 
 [tasks.kernel_bin.env]
-STATIC_DRIVERS = "ata"
+STATIC_DRIVERS = "vga"
 DRIVERS_OUT = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/drivers"
 
 [tasks.kernel_bin]
@@ -69,7 +69,7 @@ args = [
 ]
 
 [tasks.drivers.env]
-DRIVERS = "ata fat"
+DRIVERS = "ata fat vga"
 DRIVERS_OUT = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/drivers"
 DRIVERS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/drivers"
 

@@ -3,7 +3,7 @@ use core::{mem::MaybeUninit, ptr};
 use bitvec::{order::Lsb0, view::BitView};
 use kernel_macro::ListNode;
 use kernel_types::{
-    collections::{BorrowingLinkedList, LinkedList, ListNode},
+    collections::{LinkedList, ListNode},
     declare_constants,
 };
 use static_assertions::const_assert;
@@ -133,7 +133,7 @@ impl SlabEntry {
         &mut self,
         object_size: u16,
         offset: *mut u8,
-        pages: &'static mut [Page],
+        pages: LinkedList<'static, Page>,
     ) {
         self.base_offset = offset;
         self.object_size = object_size;
@@ -144,14 +144,8 @@ impl SlabEntry {
 
         assert!(capacity <= MAX_SLAB_CAPACITY);
 
-        let mut pages_list = LinkedList::empty();
-
-        for page in pages.iter_mut() {
-            pages_list.push_front(page.as_node());
-        }
-
         self.capacity = capacity as u16;
-        self.pages = pages_list;
+        self.pages = pages;
     }
 
     pub fn available(&self) -> usize {
