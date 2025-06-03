@@ -50,6 +50,17 @@ script = '''
     ${ASM_COMPILER} ${ASM_SOURCE_PATH}/ata_disk.asm ${OBJECTS_PATH}/ata_disk.o
 '''
 
+[tasks.check]
+command = "cargo"
+args = [
+    "check",
+    "-Z",
+    "build-std=core,alloc,compiler_builtins",
+    "-Z",
+    "build-std-features=compiler-builtins-mem",
+    "--target=${TARGET_SPEC}",
+]
+
 [tasks.kernel_bin.env]
 STATIC_DRIVERS = "vga ata"
 DRIVERS_OUT = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/drivers"

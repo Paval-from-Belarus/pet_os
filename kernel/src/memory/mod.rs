@@ -60,11 +60,6 @@ pub enum AllocError {
     InvalidAlignment(Alignment),
 }
 
-// pub trait ToPhysicalAddress {
-//     const NULL: usize = 0;
-//     fn as_physical(&self) -> PhysicalAddress;
-// }
-
 extern "C" {
     //Physical address where kernel is stored
     static KERNEL_PHYSICAL_START: usize;
@@ -76,64 +71,7 @@ extern "C" {
 }
 
 pub type PhysicalAddress = usize;
-// pub type PhysicalAddress = usize;
-// #[derive(Debug)]
-// pub struct PhysicalOffset<'a> {
-//     ph_offset: PhysicalOffset,
-//     _marker: PhantomData<&'a mut Page>,
-// }
-
-// impl<'a> PhysicalOffset<'a> {
-//     pub const unsafe fn invalid() -> Self {
-//         Self {
-//             ph_offset: 0,
-//             _marker: PhantomData,
-//         }
-//     }
-//
-//     pub fn new(ph_offset: usize) -> Self {
-//         Self {
-//             ph_offset,
-//             _marker: PhantomData,
-//         }
-//     }
-//
-//     pub fn page(&self) -> &Page {
-//         Page::take(self.ph_offset)
-//     }
-//
-//     pub fn page_mut(&mut self) -> Option<&mut Page> {
-//         Page::take_mut(self.ph_offset)
-//     }
-//
-//     pub fn into_page(self) -> Option<&'a mut Page> {
-//         Page::take_mut(self.ph_offset)
-//     }
-// }
-
-// impl core::ops::Deref for PhysicalOffset<'_> {
-//     type Target = usize;
-//
-//     fn deref(&self) -> &Self::Target {
-//         &self.ph_offset
-//     }
-// }
-
 pub type VirtualAddress = usize;
-
-//This trait is available for stucture on fixed
-//memory place
-// impl ToPhysicalAddress for VirtualAddress {
-//     fn as_physical(&self) -> PhysicalAddress {
-//         self - kernel_virtual_offset()
-//     }
-// }
-
-// impl ToVirtualAddress for PhysicalAddress {
-//     fn as_virtual(&self) -> VirtualAddress {
-//         self + kernel_virtual_offset()
-//     }
-// }
 
 ///Return crucial structures for kernel
 ///Without them, it's impossible
@@ -588,10 +526,10 @@ fn mem_map_offset() -> *mut Page {
 
 ///commit kernel memory
 pub fn kernel_commit(
-    mut region: MemoryMappingRegion,
+    region: MemoryMappingRegion,
 ) -> Result<(), PageMarkerError> {
     let mut marker = KERNEL_MARKER.get();
-    marker.map_kernel_range(&mut region)
+    marker.map_kernel_range(&region)
 }
 
 extern "C" {
