@@ -2,16 +2,22 @@
 #![feature(fn_ptr_trait)]
 #![feature(tuple_trait)]
 #![feature(let_chains)]
-#![feature(offset_of)]
 #![feature(unboxed_closures)]
-#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(hasher_prefixfree_extras)]
+#![feature(allocator_api)]
 
 use thiserror_no_std::Error;
 
 pub mod collections;
 pub mod drivers;
+pub mod fs;
+pub mod io;
+pub mod object;
 pub mod string;
+pub mod syscall;
+
+extern crate alloc;
 
 #[macro_export]
 macro_rules! declare_types {
@@ -41,7 +47,7 @@ pub struct BitflagFormatError<T: Sized>(pub T);
 #[macro_export]
 macro_rules! bitflags {
     ($vis:vis $s:ident($t:ty), $($name:ident = $value:expr),* $(,)?) => {
-        #[derive(Clone, Copy, PartialEq, Eq)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(transparent)]
         $vis struct $s($vis $t);
         impl TryFrom<$t> for $s {
@@ -63,23 +69,35 @@ macro_rules! bitflags {
          $(
             $vis const $name: $t = $value;
         )*
-            const BITS_COUNT: usize = core::mem::size_of::<$t>() * 8;
             pub const unsafe fn wrap(value: $t) -> Self {
                 Self(value)
          }
             pub const fn bits(&self) -> $t {
               self.0
             }
+
             pub const fn contains_with_mask(&self, mask: $t, flag: $t) -> bool {
              self.0 & mask == flag
             }
+
             pub const fn test_with(&self, bit: $t) -> bool {
              self.0 & bit == bit
             }
+
         }
+
+            impl core::ops::BitOr for $s {
+                type Output = $s;
+
+            fn bitor(self, rhs: Self) -> Self::Output {
+               Self(self.0 | rhs.0)
+            }
+        }
+
     };
 }
-#[derive(Default, Clone, Copy)]
+
+#[derive(Debug, Default, Clone, Copy)]
 #[repr(transparent)]
 pub struct Zeroed<T: Sized> {
     _value: T,
@@ -150,6 +168,15 @@ pub trait ReferableResource {
     fn is_free(&self) -> bool {
         !self.is_used()
     }
+}
+
+#[macro_export]
+macro_rules! container_of {
+    ($ptr: expr, $ty: ty, $field: ident) => {{
+        let field_offset = core::mem::offset_of!($ty, $field);
+        let struct_offset = unsafe { ($ptr as *mut u8).sub(field_offset) };
+        unsafe { core::mem::transmute::<*mut u8, *mut $ty>(struct_offset) }
+    }};
 }
 
 #[cfg(test)]

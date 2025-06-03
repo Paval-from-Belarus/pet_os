@@ -69,6 +69,11 @@ pub fn export_symbolic(attr: TokenStream, item: TokenStream) -> TokenStream {
     output.into()
 }
 
+#[proc_macro_derive(ObjectOwner, attributes(object))]
+pub fn object_container(_input: TokenStream) -> TokenStream {
+    todo!()
+}
+
 #[proc_macro_derive(ListNode, attributes(list_pivots, list_pivot))]
 pub fn list_node(input: TokenStream) -> TokenStream {
     let struct_ast = parse_macro_input!(input as DeriveInput);
@@ -193,6 +198,10 @@ fn define_node_data_marker(
     marker_type: &Ident,
 ) -> proc_macro2::TokenStream {
     let method_name = Ident::new(&format!("from_{}", field), Span::call_site());
+
+    let field_access_method =
+        Ident::new(&format!("as_{}", field), Span::call_site());
+
     quote! {
         unsafe impl kernel_types::collections::ListNodeData for #marker_type {
 
@@ -204,12 +213,26 @@ fn define_node_data_marker(
                 let value = unsafe { core::mem::transmute::<*mut u8, *mut #target>(struct_offset) };
                 unsafe { &mut *value }
             }
+
+            fn from_ref(node: &kernel_types::collections::ListNode<Self>) -> &Self::Item {
+                let pointer = node as *const kernel_types::collections::ListNode<Self>;
+                let field_offset = core::mem::offset_of!(#target, #field);
+                let struct_offset = unsafe { (pointer as *const u8).sub(field_offset) };
+                let value = unsafe { core::mem::transmute::<*const u8, *const #target>(struct_offset) };
+                unsafe { &*value }
+            }
         }
         impl #target {
             #[doc = "Prefer explicit type casting"]
             #[deprecated]
             pub fn #method_name(node: &mut kernel_types::collections::ListNode<#marker_type>) -> &mut Self {
                 kernel_types::collections::ListNodeData::from_node(node)
+            }
+        }
+
+        impl<'a> From<&'a mut #target> for &'a mut kernel_types::collections::ListNode<#marker_type> {
+            fn from(value: &'a mut #target) -> Self {
+                value.#field_access_method()
             }
         }
     }

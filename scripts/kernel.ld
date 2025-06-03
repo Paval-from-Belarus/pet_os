@@ -6,7 +6,7 @@ KERNEL_PHYSICAL_END = 0; /* Replaced at the end of file */
 
 KERNEL_VIRTUAL_OFFSET = 0xC0000000;
 
-KERNEL_STACK_SIZE = 4096;
+KERNEL_STACK_SIZE = 0x2000;
 KERNEL_STACK_TOP = 0;
 
 PAGE_SIZE = 0x1000;
@@ -14,7 +14,7 @@ PAGE_SIZE = 0x1000;
 MAX_PHYSICAL_MEMORY_SIZE = 32 * 1024 * 1024;
 
 /* Size of structure in MemoryMap */
-PAGE_REC_SIZE = 16;
+PAGE_REC_SIZE = 20;
 
 /*fixme: memory map size should be determined at runtime*/
 MEMORY_MAP_SIZE = MAX_PHYSICAL_MEMORY_SIZE / PAGE_SIZE * PAGE_REC_SIZE;

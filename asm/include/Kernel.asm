@@ -13,6 +13,7 @@ ends
 ;@Declare{struct=CaptureRangeRec}
 struct CaptureRangeRec 
 {
+	.dMemoryKind dd ? ;memory kind
 	.dNextPage dd ? ;index of next page
 	.dPageCnt dd ? ;count of pages in current memory range
 	.dMemOffset dd ? ;physical memory offset
@@ -59,5 +60,39 @@ struct LoaderProperties
 {
 	.bBootDevice db ?
 	.rangeList RangeRecList ;exactly in data segment => by another way, it's easy to forget about stack
+}
+ends
+
+;@Declare{struct=TaskContext}
+struct TaskContext 
+{
+.baseRegisters:
+	.edi dd ?
+	.esi dd ?
+	.ebp dd ?
+	.esp dd ?
+	.ebx dd ?
+	.edx dd ?
+	.ecx dd ?
+	.eax dd ?
+
+
+.dataSegments:
+    .gs dw ?
+	.reserved_1 dw ?
+    .fs dw ?
+    .reserved_2 dw ?
+    .es dw ?
+    .reserved_3 dw ?
+
+    .ds dw ?
+    .reserved_4 dw ?
+
+
+    .eip dd ?
+
+    .cs dw ?
+    .reserved_5 dw ?
+    .eflags dd ?
 }
 ends

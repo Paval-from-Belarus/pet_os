@@ -1,125 +1,146 @@
 #![no_std]
+#![no_main]
 #![crate_name = "kernel"]
-#![feature(slice_ptr_get)]
 #![feature(let_chains)]
 #![feature(const_trait_impl)]
-#![feature(core_intrinsics)]
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
-#![feature(ptr_from_ref)]
-#![feature(pointer_byte_offsets)]
-#![feature(ptr_sub_ptr)]
-#![feature(offset_of)]
 #![feature(ascii_char)]
 // really raw features
-#![feature(maybe_uninit_uninit_array)]
-#![feature(const_maybe_uninit_zeroed)]
+#![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(hasher_prefixfree_extras)]
+#![feature(naked_functions)]
 
 extern crate alloc;
 extern crate fallible_collections;
 extern crate num_enum;
+extern crate spin;
 extern crate static_assertions;
 
 extern crate multiboot2;
 
-use core::arch::asm;
-use core::ptr;
-
-use fallible_collections::FallibleVec;
-
+use common::logging;
 use memory::PagingProperties;
-use multiboot2::BootInformation;
-use utils::logging;
 
-use crate::process::TaskPriority;
+use crate::task::TaskPriority;
 
-#[cfg(any(not(target_arch = "x86")))]
+#[cfg(not(target_arch = "x86"))]
 compile_error!("Operation system is suitable for x86 CPU only");
 
 mod boot;
 mod drivers;
 #[allow(dead_code)]
-mod file_system;
+mod fs;
 #[allow(dead_code)]
-mod interrupts;
+mod io;
 #[allow(dead_code)]
 mod memory;
-mod process;
+
 #[allow(dead_code)]
-mod utils;
+mod common;
+pub mod error;
+mod object;
+mod task;
+mod user;
 
 #[cfg(not(test))]
 #[panic_handler]
 pub fn panic(info: &core::panic::PanicInfo) -> ! {
-    log!("kernel panics={}", info);
-    unsafe { asm!("hlt", options(noreturn)) }
+    unsafe { io::disable() };
+    log::error!("kernel panics={}", info);
+    unsafe { core::arch::asm!("hlt", options(noreturn)) }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn main() {
-    let properties: *mut PagingProperties;
-    asm!(
-    "",
-    out("eax") properties,
-    options(nostack)
-    );
-    unsafe { rust_main(&mut *properties) };
-}
+pub fn main() {
+    let properties: &mut PagingProperties = unsafe {
+        let raw_properies: *mut PagingProperties = get_eax!();
+        &mut *raw_properies
+    };
 
-// pub extern "C" fn start(magic: u32, lp_header: *const u32) {
-//     logging::init();
-//
-//     if magic != multiboot2::MAGIC {
-//         log!("Invalid grub2 magic");
-//         return;
-//     }
-//
-//     let mbi_ptr = lp_header.cast();
-//     let mbi =
-//         unsafe { BootInformation::load(mbi_ptr).expect("Failed to load mbi") };
-//
-//     log!("Working");
-// }
-
-pub fn rust_main(properties: &mut PagingProperties) {
     logging::init();
 
-    let dir_table = properties.page_directory();
-    let heap_offset = properties.heap_offset();
+    unsafe {
+        io::disable();
+    }
 
-    let allocator = properties.boot_allocator();
+    // drivers::vga::init();
 
-    memory::init_kernel_space(allocator, dir_table, heap_offset);
+    memory::init_kernel_space(properties);
+    log::info!("memory is initialized");
 
-    interrupts::init();
+    io::init();
+    log::info!("interrupts are initialized");
 
-    let gdt = unsafe { properties.gdt().as_mut() };
-    memory::enable_task_switching(gdt);
+    fs::init();
+
+    drivers::init();
+
+    memory::enable_task_switching();
+
+    log::info!("Task switching is enabled");
 
     let thread_1 =
-        process::new_task(task1, ptr::null_mut(), TaskPriority::HIGH);
-    let thread_2 = process::new_task(task2, ptr::null_mut(), TaskPriority::LOW);
+        task::new_task(task1, 51 as *mut (), TaskPriority::Module(0)).unwrap();
 
-    process::submit_task(thread_1);
-    process::submit_task(thread_2);
-    process::run();
+    let thread_2 =
+        task::new_task(task2, 52 as *mut (), TaskPriority::Kernel).unwrap();
+
+    let thread_3 =
+        task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(10))
+            .unwrap();
+
+    let thread_4 =
+        task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(5))
+            .unwrap();
+
+    task::submit_task(thread_1);
+    task::submit_task(thread_2);
+    task::submit_task(thread_3);
+    task::submit_task(thread_4);
+    //
+    // user::exec("/usr/sbin/init");
+    task::run();
 }
 
-fn task1(_context: *mut ()) {
-    log!("task 1 started");
+#[allow(unused)]
+extern "C" fn task3() {
+    log::info!("task 3 started");
+
+    let task_id = current_task!().id;
     loop {
-        process::sleep(300);
-        log!("task 1 awaken");
+        for i in 0..100 {
+            log::info!("Task {task_id} #{i}");
+        }
+
+        // task::sleep(10);
     }
 }
 
-fn task2(_context: *mut ()) {
-    log!("task 2 started");
+extern "C" fn task1() {
+    let id = current_task!().id;
+
+    log::info!("task {id} started");
+
+    log::info!("Task {id} priority: {}", current_task!().priority);
+
     loop {
-        process::sleep(400);
-        log!("task 2 awaken");
+        task::sleep(300);
+        log::info!("task {id} awaken");
+    }
+}
+
+extern "C" fn task2() {
+    let id = current_task!().id;
+
+    log::info!("task {id} started");
+
+    log::info!("Task {id} priority: {}", current_task!().priority);
+
+    loop {
+        task::sleep(400);
+        log::info!("task {id} awaken");
     }
 }
 

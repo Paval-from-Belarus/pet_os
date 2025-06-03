@@ -1,50 +1,62 @@
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+use core::ptr;
 use core::ptr::NonNull;
-use core::{mem, ptr};
 
-use crate::collections::{
-    BorrowingLinkedList, DanglingData, ListNodeData, UnlinkableListGuard,
-};
+use crate::collections::{BorrowingLinkedList, ListNodeData};
+
+#[macro_export]
+macro_rules! collect_list {
+    ($($source: expr $(,)?)+) => {{
+        let mut list = $crate::collections::LinkedList::empty();
+
+        $(
+            let mut source = $source;
+            let mut iter = source.iter_mut();
+
+            loop {
+                if iter.next().is_none() {
+                    break;
+                }
+
+                let node = iter.unlink_watched().unwrap();
+                list.push_back(node);
+            }
+
+        )+
+
+        list
+    }};
+}
 
 #[repr(C)]
 pub struct ListNode<T: Sized + ListNodeData> {
     next: NonNull<ListNode<T>>,
     prev: NonNull<ListNode<T>>,
-    _marker: PhantomData<T>,
+    _marker: PhantomData<*mut T>,
+}
+
+impl<T: Sized + ListNodeData> core::fmt::Debug for ListNode<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "ListNode (next: {:?}, prev: {:?} )",
+            self.next.as_ptr(),
+            self.prev.as_ptr()
+        )
+    }
 }
 
 impl<T: ListNodeData + Sized> ListNode<T> {
-    pub const unsafe fn empty() -> Self {
+    /// Createing new ListNode is absolutely safe
+    /// as pivots cannot be accessed outside
+    /// the LinkedList
+    pub const fn empty() -> Self {
         Self {
             next: NonNull::dangling(),
             prev: NonNull::dangling(),
             _marker: PhantomData,
         }
-    }
-    pub fn new(next: &mut ListNode<T>, prev: &mut ListNode<T>) -> Self {
-        let next = NonNull::from(next);
-        let prev = NonNull::from(prev);
-        Self {
-            next,
-            prev,
-            _marker: PhantomData,
-        }
-    }
-    pub fn next(&self) -> &ListNode<T> {
-        unsafe { self.next.as_ref() }
-    }
-
-    pub fn prev(&self) -> &ListNode<T> {
-        unsafe { self.prev.as_ref() }
-    }
-
-    fn next_mut(&mut self) -> &mut ListNode<T> {
-        unsafe { self.next.as_mut() }
-    }
-
-    fn prev_mut(&mut self) -> &mut ListNode<T> {
-        unsafe { self.prev.as_mut() }
     }
 
     fn set_next(&mut self, next: &mut ListNode<T>) {
@@ -63,8 +75,10 @@ impl<T: ListNodeData + Sized> ListNode<T> {
             old_next.set_prev(self.prev.as_mut());
             old_prev.set_next(self.next.as_mut());
         }
+
         //self-link because node cannot be in illegal state
-        unsafe { self.self_link() };
+        self.self_link();
+
         //link new
         if let Some(new_next) = new_next_option {
             unsafe {
@@ -79,6 +93,7 @@ impl<T: ListNodeData + Sized> ListNode<T> {
     }
 
     //link next in circular list
+    #[allow(unused)]
     fn link_next(&mut self, new_next: &mut ListNode<T>) {
         let mut raw_self = NonNull::from(self);
         unsafe {
@@ -88,30 +103,14 @@ impl<T: ListNodeData + Sized> ListNode<T> {
         }
     }
 
-    pub fn as_ptr(&self) -> *const ListNode<T> {
-        self as *const ListNode<T>
-    }
-
-    pub unsafe fn as_mut_ptr(&mut self) -> *mut ListNode<T> {
-        self as *mut ListNode<T>
-    }
     //unsafe because can lead to memory leaks
-    pub unsafe fn self_link(&mut self) {
-        unsafe {
-            self.next = NonNull::new_unchecked(self);
-            self.prev = NonNull::new_unchecked(self);
-        }
+    fn self_link(&mut self) {
+        self.next = self.into();
+        self.prev = self.into();
     }
 }
 
-impl<T: Sized + ListNodeData + DanglingData> ListNode<T> {
-    ///Wrap existing valid node to new list
-    ///The node should be dangling. That is no other way to access node list besides wrapping to temporary list
-    pub unsafe fn wrap(&mut self) -> LinkedList<T> {
-        LinkedList::wrap(self)
-    }
-}
-
+#[allow(unused)]
 pub fn is_self_linked<T: ListNodeData>(node: &ListNode<T>) -> bool {
     ptr::eq(node.next.as_ptr(), node.prev.as_ptr())
         && ptr::eq(node.next.as_ptr(), node)
@@ -121,9 +120,7 @@ impl<T: ListNodeData> Deref for ListNode<T> {
     type Target = T::Item;
 
     fn deref(&self) -> &Self::Target {
-        unsafe {
-            ListNodeData::from_node_unchecked(NonNull::from(self)).as_ref()
-        }
+        ListNodeData::from_ref(self)
     }
 }
 
@@ -135,263 +132,297 @@ impl<T: ListNodeData> DerefMut for ListNode<T> {
 
 ///The list lifetime is not about lifetime of list. But about lifetime of storing data
 #[repr(C)]
-#[derive(Clone, Copy)]
-pub struct LinkedList<'a, T: Sized + ListNodeData> {
-    first: Option<NonNull<ListNode<T>>>,
-    last: Option<NonNull<ListNode<T>>>,
-    _marker: PhantomData<&'a mut T>,
+#[derive(Debug)]
+pub struct LinkedList<'data, T: Sized + ListNodeData> {
+    first: *mut ListNode<T>,
+    last: *mut ListNode<T>,
+    _marker: PhantomData<&'data mut T>,
 }
 
-impl<'a, T: Sized + ListNodeData> Default for LinkedList<'a, T> {
+impl<T: Sized + ListNodeData> Default for LinkedList<'_, T> {
     fn default() -> Self {
         LinkedList::empty()
     }
 }
 
-pub struct UnlinkableGuard<'a, T: ListNodeData> {
-    parent: NonNull<LinkedList<'a, T>>,
-}
-
-impl<'a, T: ListNodeData> UnlinkableGuard<'a, T> {}
-
-impl<'a, T: ListNodeData> UnlinkableListGuard<'a, LinkedList<'a, T>>
-    for UnlinkableGuard<'a, T>
+impl<'data, T: ListNodeData> BorrowingLinkedList<'data>
+    for LinkedList<'data, T>
 {
-    fn parent(&self) -> NonNull<LinkedList<'a, T>> {
-        self.parent
-    }
-}
-
-impl<'a, T: ListNodeData> BorrowingLinkedList<'a> for LinkedList<'a, T> {
     type Item = ListNode<T>;
 
     fn empty() -> Self {
-        Self {
-            first: None,
-            last: None,
-            _marker: PhantomData,
-        }
+        Self::empty()
     }
-    fn push_back(&mut self, node: &'a mut ListNode<T>) {
+
+    fn push_back<K: Into<&'data mut ListNode<T>>>(&mut self, node: K) {
+        self.push_back(node);
+    }
+
+    fn push_front(&mut self, node: &'data mut ListNode<T>) {
         let raw_node = NonNull::from(node);
+
         unsafe {
             if self.is_empty() {
                 self.first_link(raw_node);
                 return;
             }
+
             self.insert_after_last(raw_node);
         }
-        self.last = Some(raw_node); //we already changed last in list
+
+        self.first = raw_node.as_ptr();
     }
-    fn push_front(&mut self, node: &'a mut ListNode<T>) {
-        let raw_node = NonNull::from(node);
-        unsafe {
-            if self.is_empty() {
-                self.first_link(raw_node);
-                return;
-            }
-            self.insert_after_last(raw_node);
-        }
-        self.first = Some(raw_node);
-    }
-    fn remove(&mut self, node: &'a mut ListNode<T>) {
+
+    fn remove(&mut self, node: &'data mut ListNode<T>) {
         assert!(!self.is_empty());
-        let mut raw_node = NonNull::from(node);
+
         unsafe {
-            self.unlink_node(raw_node);
-            raw_node.as_mut().relink(None);
+            self.unlink_node(node);
+            node.relink(None);
         }
     }
 
     fn is_empty(&self) -> bool {
-        assert!(
-            self.last.is_some() && self.first.is_some()
-                || self.last.is_none() && self.first.is_none()
-        );
-        self.first.is_none()
+        self.is_empty()
     }
 }
 
-impl<'a, T: Sized + ListNodeData> LinkedList<'a, T> {
-    //this method remove links from node
-    pub unsafe fn with_node(node: &'a mut ListNode<T>) -> LinkedList<'a, T> {
-        node.self_link();
-        Self::wrap(node)
-    }
-    fn wrap(node: &'a mut ListNode<T>) -> LinkedList<'a, T> {
-        let raw_node = NonNull::from(node);
+impl<'data, T: Sized + ListNodeData> LinkedList<'data, T> {
+    pub const fn empty() -> Self {
         Self {
-            first: Some(raw_node),
-            last: Some(raw_node),
+            first: ptr::null_mut(),
+            last: ptr::null_mut(),
             _marker: PhantomData,
         }
     }
 
-    /// Returns the clear of this [`LinkedList<T>`].
+    pub fn push_back<K: Into<&'data mut ListNode<T>>>(&mut self, node: K) {
+        let raw_node = NonNull::from(node.into());
+
+        unsafe {
+            if self.is_empty() {
+                self.first_link(raw_node);
+                return;
+            }
+
+            self.insert_after_last(raw_node);
+        }
+
+        self.last = raw_node.as_ptr();
+    }
+    /// .
     ///
     /// # Safety
     ///
     /// .
-    pub unsafe fn clear(&mut self) {
-        self.first = None;
-        self.last = None;
+    //this method remove links from node
+    pub unsafe fn with_node(
+        node: &'data mut ListNode<T>,
+    ) -> LinkedList<'data, T> {
+        node.self_link();
+        Self::wrap(node)
     }
-    pub fn iter(&self) -> ListIterator<'a, T> {
+
+    fn wrap(node: &'data mut ListNode<T>) -> LinkedList<'data, T> {
+        let raw_node = NonNull::from(node);
+
+        Self {
+            first: raw_node.as_ptr(),
+            last: raw_node.as_ptr(),
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn remove_by<F: FnOnce(&ListNode<T>) -> bool + Copy>(
+        &mut self,
+        predicate: F,
+    ) -> Option<&'data mut ListNode<T>> {
+        let mut iter = self.iter_mut();
+
+        loop {
+            let Some(node) = iter.next() else {
+                break None;
+            };
+
+            if predicate(node) {
+                let node = iter.unlink_watched().unwrap();
+                break Some(node);
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        todo!()
+    }
+
+    pub fn len(&self) -> usize {
+        self.iter().count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        let is_empty = self.first.is_null();
+
+        if is_empty {
+            assert!(self.last.is_null());
+        } else {
+            assert!(!self.first.is_null() && !self.last.is_null());
+        }
+
+        is_empty
+    }
+
+    pub fn cyclic_iter(&self) -> ListIterator<'data, T> {
         ListIterator::new(self)
     }
 
-    pub fn limit_iter(&self) -> LimitedIterator<'a, ListIterator<'a, T>> {
-        LimitedIterator::new(self.iter())
+    pub fn iter(
+        &self,
+    ) -> LimitedIterator<'_, ListIterator<'data, T>, ListNode<T>> {
+        LimitedIterator::new(self.cyclic_iter())
     }
 
-    pub fn iter_mut<'b>(&'b mut self) -> MutListIterator<'a, 'b, T> {
+    pub fn cyclic_iter_mut<'parent>(
+        &'parent mut self,
+    ) -> MutListIterator<'data, 'parent, T> {
         MutListIterator::new(self)
     }
 
-    pub fn limit_iter_mut<'b>(
-        &'b mut self,
-    ) -> LimitedIterator<'a, MutListIterator<'a, 'b, T>> {
-        LimitedIterator::new(self.iter_mut())
+    pub fn iter_mut<'parent>(
+        &'parent mut self,
+    ) -> LimitedIterator<'parent, MutListIterator<'data, 'parent, T>, ListNode<T>>
+    {
+        LimitedIterator::new(self.cyclic_iter_mut())
     }
 
-    pub fn splice(&mut self, other: LinkedList<'a, T>) {
-        if let Some(first) = other.first
-            && let Some(last) = other.last
-        {
-            if self.is_empty() {
-                self.first = Some(first);
-                self.last = Some(last);
-                return;
-            }
-            unsafe { self.splice_bounds(first, last) };
-        } else {
-            assert!(other.is_empty());
+    pub fn splice(&mut self, other: &mut LinkedList<'data, T>) {
+        if other.is_empty() {
+            return;
         }
+
+        assert!(!other.first.is_null() && !other.last.is_null());
+
+        if self.is_empty() {
+            self.first = other.first;
+            self.last = other.last;
+
+            other.first = ptr::null_mut();
+            other.last = ptr::null_mut();
+
+            return;
+        }
+
+        unsafe {
+            self.splice_bounds(other.first, other.last);
+        }
+
+        other.first = ptr::null_mut();
+        other.last = ptr::null_mut();
     }
     //this function assumes the current list is not empty
     unsafe fn splice_bounds(
         &mut self,
-        mut other_first: NonNull<ListNode<T>>,
-        mut other_last: NonNull<ListNode<T>>,
+        other_first: *mut ListNode<T>,
+        other_last: *mut ListNode<T>,
     ) {
         assert!(!self.is_empty());
-        if let Some(mut first) = self.first
-            && let Some(mut last) = self.last
-        {
-            let first = first.as_mut();
-            let last = last.as_mut();
-            let other_first = other_first.as_mut();
-            let other_last = other_last.as_mut();
-            first.set_prev(other_last);
-            last.set_next(other_first);
-            other_first.set_prev(last);
-            other_last.set_next(first);
-            self.first = Some(other_first.into());
-        } else {
-            unreachable!("Splice with empty list!");
+
+        (*self.first).prev = NonNull::new(other_last).unwrap();
+        (*self.last).next = NonNull::new(other_first).unwrap();
+
+        (*other_first).prev = NonNull::new(self.last).unwrap();
+        (*other_last).next = NonNull::new(self.first).unwrap();
+
+        self.first = other_first;
+    }
+
+    pub fn first(&self) -> Option<&ListNode<T>> {
+        if self.first.is_null() {
+            return None;
+        }
+
+        unsafe { &*self.first }.into()
+    }
+
+    pub fn first_mut(&mut self) -> Option<&mut ListNode<T>> {
+        if self.first.is_null() {
+            return None;
+        }
+
+        unsafe { &mut *self.first }.into()
+    }
+
+    pub fn last(&self) -> Option<&ListNode<T>> {
+        if self.is_empty() {
+            return None;
+        }
+
+        unsafe { &*self.last }.into()
+    }
+
+    pub fn last_mut(&mut self) -> Option<&mut ListNode<T>> {
+        if self.is_empty() {
+            return None;
+        }
+
+        unsafe { &mut *self.last }.into()
+    }
+
+    pub fn remove_first(&mut self) -> Option<&'data mut ListNode<T>> {
+        if self.first.is_null() {
+            return None;
+        }
+
+        let first = self.first;
+
+        unsafe {
+            self.remove(&mut *first);
+
+            Some(&mut *first)
         }
     }
-    unsafe fn same_as_first(&self, node: NonNull<ListNode<T>>) -> bool {
-        if let Some(head) = self.first
-            && let Some(_) = self.last
-        {
-            node.eq(&head)
-        } else {
-            unreachable!("The head is empty");
-        }
-    }
-    ///this method check the given node is same as node
-    ///Method failed with empty list
-    unsafe fn same_as_last(&self, node: NonNull<ListNode<T>>) -> bool {
-        if let Some(_) = self.first
-            && let Some(tail) = self.last
-        {
-            node.eq(&tail)
-        } else {
-            unreachable!("The tail is empty");
-        }
-    }
-    pub fn remove_first(&mut self) -> Option<&'a mut ListNode<T>> {
-        match self.first {
-            Some(mut first) => unsafe {
-                self.remove(first.as_mut());
-                Some(first.as_mut())
-            },
-            None => None,
-        }
-    }
-    //the only way to modify the current collection with external iterator
-    pub unsafe fn link_guard<'b>(&'b self) -> UnlinkableGuard<'a, T> {
-        // let parent = unsafe {
-        //     let mut raw_ref = NonNull::from(self);
-        //     UnsafeCell::new(raw_ref.as_mut())
-        // };
-        UnlinkableGuard {
-            parent: NonNull::from(self),
-        }
-    }
-    //cause data leaks with node
+
     unsafe fn insert_after_last(&mut self, mut raw_node: NonNull<ListNode<T>>) {
-        if let Some(mut raw_first) = self.first
-            && let Some(mut raw_last) = self.last
-        {
-            let first = raw_first.as_mut();
-            let last = raw_last.as_mut();
-            let node = raw_node.as_mut();
-            node.set_prev(last);
-            node.set_next(first);
-            last.set_next(node);
-            first.set_prev(node);
-        } else {
-            unreachable!("Should be invoked on empty list");
-        }
+        assert!(!self.first.is_null() && !self.last.is_null());
+
+        raw_node.as_mut().next = NonNull::new(self.first).unwrap();
+        raw_node.as_mut().prev = NonNull::new(self.last).unwrap();
+
+        (*self.last).next = raw_node;
+        (*self.first).prev = raw_node;
     }
     //can cause data leaks with inappropriate using
     unsafe fn first_link(&mut self, mut raw_node: NonNull<ListNode<T>>) {
-        self.first = Some(raw_node);
-        self.last = Some(raw_node);
+        self.first = raw_node.as_ptr();
+        self.last = raw_node.as_ptr();
+
         raw_node.as_mut().self_link();
     }
 
     ///the method is used by iterator to unlinked element
     ///The method simply remove link in header element
-    unsafe fn unlink_node(&mut self, mut raw_node: NonNull<ListNode<T>>) {
-        if let Some(first) = self.first
-            && let Some(last) = self.last
-        {
-            if first.eq(&last) && first.eq(&raw_node) {
-                self.first = None;
-                self.last = None;
-                return;
-            }
-            //relink header, because node by self has no relation with header
-            //it's legal to use other values from node,
-            // because list holds not single element
-            //in case of non single element, no node is self-linked
-            if first.eq(&raw_node) {
-                unsafe {
-                    self.first = Some(raw_node.as_mut().next);
-                }
-            }
-            if last.eq(&raw_node) {
-                unsafe {
-                    self.last = Some(raw_node.as_mut().prev);
-                }
-            }
-        } else {
-            unreachable!("Impossible to unlink from empty list");
+    /// The pointer of raw_node can be changed
+    unsafe fn unlink_node(&mut self, node: &ListNode<T>) {
+        assert!(!self.is_empty(), "Failed to unlink from empty");
+
+        if ptr::eq(self.first, self.last) {
+            assert!(ptr::eq(self.first, node), "Unlinking not existing node");
+
+            self.first = ptr::null_mut();
+            self.last = ptr::null_mut();
+
+            return;
         }
-    }
-}
+        //last and first are different nodes
 
-//it's really not desirable to use such trait
-//because InfiniteLinkedList is supposed to be essential part of kernel
-impl<'a, T: ListNodeData> IntoIterator for &'a mut LinkedList<'a, T> {
-    type Item = &'a ListNode<T>;
-    type IntoIter = ListIterator<'a, T>;
+        if ptr::eq(self.first, node) {
+            self.first = node.next.as_ptr();
+            (*self.last).next = NonNull::new(self.first).unwrap();
+        }
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+        if ptr::eq(self.last, node) {
+            self.last = node.prev.as_ptr();
+            (*self.first).prev = NonNull::new(self.last).unwrap();
+        }
     }
 }
 
@@ -405,44 +436,47 @@ pub struct ListIterator<'a, T: ListNodeData> {
 
 impl<'a, T: ListNodeData> ListIterator<'a, T> {
     fn new(list: &LinkedList<T>) -> Self {
-        if let Some(first) = list.first
-            && let Some(last) = list.last
-        {
-            ListIterator {
-                next: first,
-                prev: last,
-                is_empty: false,
-                _marker: PhantomData,
-            }
-        } else {
+        if list.is_empty() {
             ListIterator {
                 next: NonNull::dangling(),
                 prev: NonNull::dangling(),
                 is_empty: true,
                 _marker: PhantomData,
             }
+        } else {
+            ListIterator {
+                next: NonNull::new(list.first).unwrap(),
+                prev: NonNull::new(list.last).unwrap(),
+                is_empty: false,
+                _marker: PhantomData,
+            }
         }
     }
-    pub fn limit(self) -> LimitedIterator<'a, ListIterator<'a, T>> {
+
+    pub fn limit(
+        self,
+    ) -> LimitedIterator<'a, ListIterator<'a, T>, ListNode<T>> {
         LimitedIterator::new(self)
     }
 }
 
 //attention that iterator never stops
-impl<'a, T: ListNodeData> Iterator for ListIterator<'a, T> {
-    type Item = &'a ListNode<T>;
-    #[inline]
+impl<'data, T: ListNodeData> Iterator for ListIterator<'data, T> {
+    type Item = &'data ListNode<T>;
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_empty {
             return None;
         }
+
         let current = unsafe { self.next.as_ref() };
         self.next = current.next;
+
         Some(current)
     }
 }
 
-impl<'a, T: ListNodeData> DoubleEndedIterator for ListIterator<'a, T> {
+impl<T: ListNodeData> DoubleEndedIterator for ListIterator<'_, T> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.is_empty {
@@ -456,48 +490,61 @@ impl<'a, T: ListNodeData> DoubleEndedIterator for ListIterator<'a, T> {
 
 //this iterator always acquire control under the collection
 //please, consider doesn't keep such iterator alive
-pub struct MutListIterator<'a, 'b, T: ListNodeData> {
+#[derive(Debug)]
+pub struct MutListIterator<'data, 'parent, T: ListNodeData> {
     next: Option<NonNull<ListNode<T>>>,
     prev: Option<NonNull<ListNode<T>>>,
     watched: Option<NonNull<ListNode<T>>>,
-    parent: &'b mut LinkedList<'a, T>,
+    parent: &'parent mut LinkedList<'data, T>,
     //the iterator acquire ownership under list
-    _marker: PhantomData<&'a mut T>,
+    _marker: PhantomData<&'data mut T>,
 }
 
-impl<'a, 'b, T: ListNodeData> MutListIterator<'a, 'b, T> {
-    fn new(parent: &'b mut LinkedList<'a, T>) -> Self {
+impl<'data, 'parent, T: ListNodeData> MutListIterator<'data, 'parent, T> {
+    fn new(parent: &'parent mut LinkedList<'data, T>) -> Self {
         MutListIterator {
-            next: parent.first,
-            prev: parent.last,
+            next: NonNull::new(parent.first),
+            prev: NonNull::new(parent.last),
             watched: None,
             parent,
             _marker: PhantomData,
         }
     }
-    pub fn limit(self) -> LimitedIterator<'a, MutListIterator<'a, 'b, T>> {
+
+    pub fn limit(
+        self,
+    ) -> LimitedIterator<'data, MutListIterator<'data, 'parent, T>, ListNode<T>>
+    {
         LimitedIterator::new(self)
     }
+
     ///Such as iterator is lazy primitive, this method unlink previously watched element
-    pub fn unlink_watched(&mut self) -> Option<&'a mut ListNode<T>> {
+    pub fn unlink_watched(&mut self) -> Option<&'data mut ListNode<T>> {
         let unlinked = match self.watched {
             None => None, //last watched mean that parent is empty or no next/back_next method is invoked
             Some(mut watched) => unsafe {
+                let prev = watched.as_ref().prev;
+
                 self.parent.remove(watched.as_mut());
+
                 if self.parent.is_empty() {
                     self.next = None;
                     self.prev = None;
-                    // free_node.self_link() the node is immutable item for caller
+                } else {
+                    self.prev = prev.into();
                 }
+
                 Some(watched.as_mut())
             },
         };
+
         self.watched = None;
+
         unlinked
     }
 }
 
-impl<'a, 'b, T: ListNodeData> Iterator for MutListIterator<'a, 'b, T> {
+impl<'a, T: ListNodeData> Iterator for MutListIterator<'a, '_, T> {
     type Item = &'a mut ListNode<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -505,17 +552,18 @@ impl<'a, 'b, T: ListNodeData> Iterator for MutListIterator<'a, 'b, T> {
             None => None,
             Some(mut current) => {
                 self.watched = Some(current);
+
                 let current_ref = unsafe { current.as_mut() };
+
                 self.next = Some(current_ref.next);
+
                 Some(current_ref)
             }
         }
     }
 }
 
-impl<'a, 'b, T: ListNodeData> DoubleEndedIterator
-    for MutListIterator<'a, 'b, T>
-{
+impl<T: ListNodeData> DoubleEndedIterator for MutListIterator<'_, '_, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         match self.prev {
             None => None,
@@ -530,46 +578,99 @@ impl<'a, 'b, T: ListNodeData> DoubleEndedIterator
 }
 
 ///to allow the iterator be binary compatible with each iterator, the first field is exactly iterator
+#[derive(Debug)]
 #[repr(C)]
-pub struct LimitedIterator<'a, I> {
+pub struct LimitedIterator<'a, I, T> {
     iter: I,
-    first: Option<NonNull<u8>>,
+    pub known_first: *const T,
     _marker: PhantomData<&'a mut I>,
 }
 
-impl<'a, I> LimitedIterator<'a, I> {
+impl<I, T> LimitedIterator<'_, I, T>
+where
+    I: Iterator,
+{
     fn new(iter: I) -> Self {
         Self {
             iter,
-            first: None,
+            known_first: ptr::null_mut(),
             _marker: PhantomData,
         }
     }
 
-    fn can_proceed<T>(&mut self, next: &T) -> bool {
-        let raw_next = unsafe {
-            let ref_next = mem::transmute::<&T, &u8>(next);
-            NonNull::from(ref_next)
-        };
-        if let Some(raw_first) = self.first {
-            !raw_next.eq(&raw_first)
-        } else {
-            self.first = Some(raw_next);
+    fn can_proceed(&mut self, next: &T) -> bool {
+        if self.known_first.is_null() {
+            self.known_first = next;
             true
+        } else {
+            self.known_first != next
         }
     }
 }
 
-impl<'a, I: Iterator> Iterator for LimitedIterator<'a, I> {
-    type Item = I::Item;
+impl<'data, T> LimitedIterator<'_, ListIterator<'data, T>, ListNode<T>>
+where
+    T: ListNodeData,
+{
+    pub fn cyclic(self) -> ListIterator<'data, T> {
+        self.iter
+    }
+}
+
+impl<'parent, 'data, T>
+    LimitedIterator<'_, MutListIterator<'data, 'parent, T>, ListNode<T>>
+where
+    T: ListNodeData,
+{
+    pub fn unlink_watched(&mut self) -> Option<&'data mut ListNode<T>> {
+        let unlinked = self.iter.unlink_watched();
+
+        if let Some(node) = unlinked.as_ref() {
+            if self.known_first == *node {
+                assert!(!self.known_first.is_null());
+
+                self.known_first = ptr::null_mut();
+            }
+        }
+
+        unlinked
+    }
+
+    pub fn cyclic(self) -> MutListIterator<'data, 'parent, T> {
+        self.iter
+    }
+}
+
+impl<'data, T: ListNodeData> Iterator
+    for LimitedIterator<'_, ListIterator<'data, T>, ListNode<T>>
+{
+    type Item = &'data ListNode<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().filter(|next| self.can_proceed(next))
     }
 }
 
-impl<'a, I: DoubleEndedIterator> DoubleEndedIterator
-    for LimitedIterator<'a, I>
+impl<'data, T: ListNodeData> DoubleEndedIterator
+    for LimitedIterator<'data, ListIterator<'data, T>, ListNode<T>>
+{
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back().filter(|prev| self.can_proceed(prev))
+    }
+}
+
+impl<'data, 'parent, T: ListNodeData> Iterator
+    for LimitedIterator<'_, MutListIterator<'data, 'parent, T>, ListNode<T>>
+{
+    type Item = &'data mut ListNode<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().filter(|next| self.can_proceed(next))
+    }
+}
+
+impl<'data, 'parent, T: ListNodeData> DoubleEndedIterator
+    for LimitedIterator<'_, MutListIterator<'data, 'parent, T>, ListNode<T>>
 {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back().filter(|prev| self.can_proceed(prev))
@@ -577,310 +678,341 @@ impl<'a, I: DoubleEndedIterator> DoubleEndedIterator
 }
 
 #[macro_export]
-macro_rules! from_list_node {
-    ($target: ident, $source: ident, $field: tt) => {
-        unsafe impl $crate::collections::ListNodeData for $source {
-            type Item = $target;
+macro_rules! list_node {
+    ($ty: ident, $field: tt) => {
+        impl $ty {
+            #[allow(unused)]
+            pub fn as_node(&mut self) -> &mut ListNode<$ty> {
+                &mut self.$field
+            }
+        }
+
+        unsafe impl $crate::collections::ListNodeData for $ty {
+            type Item = $ty;
             fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item {
                 let pointer = node as *mut ListNode<Self>;
-                let field_offset = core::mem::offset_of!($target, $field);
+                let field_offset = core::mem::offset_of!($ty, $field);
                 let struct_offset =
                     unsafe { (pointer as *mut u8).sub(field_offset) };
                 let value = unsafe {
-                    core::mem::transmute::<*mut u8, *mut $target>(struct_offset)
+                    core::mem::transmute::<*mut u8, *mut $ty>(struct_offset)
                 };
                 unsafe { &mut *value }
             }
-        }
-    };
-}
-#[macro_export]
-macro_rules! pivots_field {
-    ($vis: vis, $type: ident, $field: tt,  $field_type: ident) => {
-        paste::paste! {
-            impl $type {
-                $vis unsafe fn [<as_ $field>](&self) -> core::ptr::NonNull<ListNode<$field_type>> {
-                    core::ptr::NonNull::from(&self.$field)
-                }
-                // $vis fn [<as_ $field>] (&self) -> &ListNode<$field_type> {
-                //     self.$field
-                // }
-                // $vis fn [<as_ $field _mut>](&mut self) -> &mut ListNode<$field_type> {
-                //     self.$field
-                // }
+
+            fn from_ref(node: &ListNode<Self>) -> &Self::Item {
+                let pointer = node as *const ListNode<Self>;
+                let field_offset = core::mem::offset_of!($ty, $field);
+                let struct_offset =
+                    unsafe { (pointer as *const u8).sub(field_offset) };
+                let value = struct_offset as *const $ty;
+                unsafe { &*value }
             }
         }
     };
 }
-///The general idea of list_node macro is to allow implements several ListNode types from single structure (by corresponding fields in derived struct)
-#[macro_export]
-macro_rules! list_node {
-    ($vis: vis $target: ident $( ($self_field:tt))? $(;)? $( $name: ident  ($field: tt) $(: $( $marker: ident )* )? );* $(;)?) => {
-        $(
-            $crate::pivots_field!($vis, $target, $self_field, $target);
-            $crate::from_list_node!($target, $target, $self_field);
-        )?
-        $(
-            $vis struct $name();
-            $crate::pivots_field!($vis, $target, $field, $name);
-            $crate::from_list_node!($target, $name, $field);
-            $(
-                $(
-                    impl $crate::collections::$marker for $name {}
-                )*
-            )?
 
-        )*
-    };
-}
 #[cfg(test)]
 mod tests {
     extern crate alloc;
     extern crate std;
 
-    use alloc::vec;
-    use core::ptr::NonNull;
     use std::println;
 
-    use static_assertions::const_assert_eq;
-
-    use crate::collections::{BorrowingLinkedList, UnlinkableListGuard};
+    use crate::collections::BorrowingLinkedList;
     use crate::collections::{LinkedList, ListNode};
 
-    fn has_data(node: Option<&ListNode<TestStruct>>, value: usize) -> bool {
+    fn has_data(node: Option<&ListNode<TestValue>>, value: usize) -> bool {
         if node.is_none() {
             return false;
         }
         node.unwrap().value == value
     }
 
-    list_node! {
-        pub TestStruct(node);
-        AnotherStruct(one)
-    }
-    pub struct TestStruct {
-        node: ListNode<TestStruct>,
-        one: ListNode<AnotherStruct>,
+    fn has_data_mut(
+        node: Option<&mut ListNode<TestValue>>,
         value: usize,
-    }
-    const_assert_eq!(core::mem::offset_of!(ListNode<TestStruct>, next), 0);
-
-    impl TestStruct {
-        pub fn new(value: usize) -> Self {
-            unsafe {
-                Self {
-                    node: ListNode::empty(),
-                    one: ListNode::empty(),
-                    value,
-                }
-            }
+    ) -> bool {
+        if node.is_none() {
+            return false;
         }
+        node.unwrap().value == value
     }
 
     #[test]
     fn push_back_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let mut nodes = vec![
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-            ];
-            for node in nodes.iter_mut() {
-                list.push_back(node.as_node().as_mut());
-            }
-            let mut iter = unsafe { list.iter() };
-            assert!(has_data(iter.next(), 12));
-            assert!(has_data(iter.next(), 13));
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 12));
-            assert!(has_data(iter.next(), 13));
-            println!("forward test passed");
-            assert!(has_data(iter.next_back(), 14));
-            assert!(has_data(iter.next_back(), 13));
-            assert!(has_data(iter.next_back(), 12));
-            assert!(has_data(iter.next_back(), 14));
-            assert!(has_data(iter.next_back(), 13));
-            println!("backward test passed");
+        let mut list = LinkedList::<TestValue>::empty();
+        let mut nodes =
+            [TestValue::new(12), TestValue::new(13), TestValue::new(14)];
+
+        for node in nodes.iter_mut() {
+            list.push_back(node.as_node());
         }
+        let mut iter = list.iter().cyclic();
+
+        assert!(has_data(iter.next(), 12));
+        assert!(has_data(iter.next(), 13));
+        assert!(has_data(iter.next(), 14));
+        assert!(has_data(iter.next(), 12));
+        assert!(has_data(iter.next(), 13));
+        println!("forward test passed");
+        assert!(has_data(iter.next_back(), 14));
+        assert!(has_data(iter.next_back(), 13));
+        assert!(has_data(iter.next_back(), 12));
+        assert!(has_data(iter.next_back(), 14));
+        assert!(has_data(iter.next_back(), 13));
+        println!("backward test passed");
     }
 
     #[test]
     fn push_front_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let nodes = vec![
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-            ];
-            for node in nodes.iter() {
-                list.push_front(node.as_node().as_mut());
-            }
-            let mut iter = list.iter();
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 13));
-            assert!(has_data(iter.next(), 12));
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 13));
-            println!("forward test passed");
-            assert!(has_data(iter.next_back(), 12));
-            assert!(has_data(iter.next_back(), 13));
-            assert!(has_data(iter.next_back(), 14));
-            assert!(has_data(iter.next_back(), 12));
-            assert!(has_data(iter.next_back(), 13));
-            println!("backward test passed");
-        }
-        unsafe {
-            list.clear();
-            assert!(list.is_empty());
-        }
+        let mut list = LinkedList::<TestValue>::empty();
+        let [mut node1, mut node2, mut node3] =
+            [TestValue::new(12), TestValue::new(13), TestValue::new(14)];
+
+        list.push_front(node1.as_node());
+        list.push_front(node2.as_node());
+        list.push_front(node3.as_node());
+
+        let mut iter = list.iter().cyclic();
+
+        assert!(has_data(iter.next(), 14));
+        assert!(has_data(iter.next(), 13));
+        assert!(has_data(iter.next(), 12));
+        assert!(has_data(iter.next(), 14));
+        assert!(has_data(iter.next(), 13));
+        println!("forward test passed");
+        assert!(has_data(iter.next_back(), 12));
+        assert!(has_data(iter.next_back(), 13));
+        assert!(has_data(iter.next_back(), 14));
+        assert!(has_data(iter.next_back(), 12));
+        assert!(has_data(iter.next_back(), 13));
+        println!("backward test passed");
+    }
+
+    macro_rules! values {
+        ($($name: ident = $value: expr),* $(,)?) => {
+            $(
+                let mut $name = TestValue::new($value);
+            )*
+
+        };
     }
 
     #[test]
     fn push_back_front_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let nodes = vec![
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-                TestStruct::new(15),
-                TestStruct::new(16),
-            ];
-            let mut iter = nodes.iter();
-            list.push_back(iter.next().unwrap().as_node().as_mut());
-            list.push_front(iter.next().unwrap().as_node().as_mut());
-            list.push_back(iter.next().unwrap().as_node().as_mut());
-            list.push_back(iter.next().unwrap().as_node().as_mut());
-            list.push_front(iter.next().unwrap().as_node().as_mut());
-            let mut iter = list.iter();
-            assert!(has_data(iter.next(), 16));
-            assert!(has_data(iter.next(), 13));
-            assert!(has_data(iter.next(), 12));
-            assert!(has_data(iter.next(), 14));
-            assert!(has_data(iter.next(), 15));
-            assert!(has_data(iter.next(), 16));
-            assert!(has_data(iter.next(), 13));
-            println!("forward test passed");
-            assert!(has_data(iter.next_back(), 15));
-            assert!(has_data(iter.next_back(), 14));
-            assert!(has_data(iter.next_back(), 12));
-            assert!(has_data(iter.next_back(), 13));
-            assert!(has_data(iter.next_back(), 16));
-            assert!(has_data(iter.next_back(), 15));
-            assert!(has_data(iter.next_back(), 14));
-            println!("backward test passed");
-            let guard = list.link_guard();
-            let iter = list.iter_mut().skip_while(|node| node.value > 0);
-            let another = guard.collect(iter);
+        let mut list = LinkedList::<TestValue>::empty();
+        values! {
+            node1 = 12, node2 = 13,
+            node3 = 14, node4 = 15,
+            node5 = 16
         }
-        unsafe {
-            list.clear();
-            assert!(list.is_empty());
+
+        list.push_back(node1.as_node());
+        list.push_front(node2.as_node());
+        list.push_back(node3.as_node());
+        list.push_back(node4.as_node());
+        list.push_front(node5.as_node());
+        //values: 16, 13, 12, 14, 15
+
+        let mut iter = list.iter().cyclic();
+
+        assert!(has_data(iter.next(), 16));
+        assert!(has_data(iter.next(), 13));
+        assert!(has_data(iter.next(), 12));
+        assert!(has_data(iter.next(), 14));
+        assert!(has_data(iter.next(), 15));
+        assert!(has_data(iter.next(), 16));
+        assert!(has_data(iter.next(), 13));
+        println!("forward test passed");
+        assert!(has_data(iter.next_back(), 15));
+        assert!(has_data(iter.next_back(), 14));
+        assert!(has_data(iter.next_back(), 12));
+        assert!(has_data(iter.next_back(), 13));
+        assert!(has_data(iter.next_back(), 16));
+        assert!(has_data(iter.next_back(), 15));
+        assert!(has_data(iter.next_back(), 14));
+        println!("backward test passed");
+    }
+
+    #[test]
+    fn single_value_list() {
+        values! {v = 12 };
+        let mut list = LinkedList::empty();
+
+        list.push_back(v.as_node());
+
+        let mut iter = list.iter_mut();
+
+        let k = iter.next().unwrap();
+
+        assert_eq!(k.value, 12);
+
+        assert!(iter.unlink_watched().is_some());
+        assert!(iter.next().is_none());
+    }
+
+    pub struct TestValue {
+        node: ListNode<TestValue>,
+        value: usize,
+    }
+
+    impl TestValue {
+        pub fn new(value: usize) -> Self {
+            Self {
+                node: ListNode::empty(),
+                value,
+            }
         }
+        // pub fn as_node(&mut self) -> &mut ListNode<TestValue> {
+        //     &mut self.node
+        // }
+    }
+
+    list_node!(TestValue, node);
+
+    // unsafe impl ListNodeData for TestValue {
+    //     type Item = TestValue;
+    //
+    //     fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item {
+    //         let pointer = node as *mut ListNode<Self>;
+    //         let field_offset = core::mem::offset_of!(TestValue, node);
+    //         let struct_offset =
+    //             unsafe { (pointer as *mut u8).sub(field_offset) };
+    //         let value = unsafe {
+    //             core::mem::transmute::<*mut u8, *mut TestValue>(struct_offset)
+    //         };
+    //         unsafe { &mut *value }
+    //     }
+    //
+    //     fn from_ref(node: &ListNode<Self>) -> &Self::Item {
+    //         let pointer = node as *const ListNode<Self>;
+    //         let field_offset = core::mem::offset_of!(TestValue, node);
+    //         let struct_offset =
+    //             unsafe { (pointer as *mut u8).sub(field_offset) };
+    //         let value = unsafe {
+    //             core::mem::transmute::<*const u8, *const TestValue>(
+    //                 struct_offset,
+    //             )
+    //         };
+    //         unsafe { &*value }
+    //     }
+    // }
+
+    fn list_to_vec(list: &LinkedList<TestValue>) -> std::vec::Vec<usize> {
+        let mut result = std::vec![];
+        // Assuming LinkedList has an iterator yielding &Test
+        for test in list.iter() {
+            result.push(test.value);
+        }
+        result
     }
 
     #[test]
     fn splice_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let mut nodes = vec![
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-                TestStruct::new(15),
-            ];
-            //each node should support next/prevent invariant; list_node! macro to such stuff
-            nodes
-                .iter_mut()
-                .for_each(|node| node.as_node().as_mut().self_link());
-            let mut first = NonNull::from(nodes.get_mut(0).unwrap());
-            let mut last = NonNull::from(nodes.get_mut(2).unwrap());
-            let mut any = NonNull::from(nodes.get_mut(1).unwrap());
-            // list.splice(first.as_mut().as_head());
-            // assert!(!list.is_empty() && list.first.eq(&list.last));
-            // list.push_front(last.as_mut());
-            // let any_list = any.as_mut().as_head();
-            // list.splice(any_list);
-            // assert!(any.as_mut().next.as_mut().data().eq(&14) && any.as_mut().prev.as_mut().data().eq(&12));
-            // let mut forth = NonNull::from(nodes.get_mut(3).unwrap());
-            // let other_list = forth.as_mut().as_head();
-            // first.as_mut().as_head().splice(other_list);
-            // assert!(first.as_mut().next.as_mut().data().eq(&15) && last.as_mut().prev.as_mut().data().eq(&15));
-        }
+        let mut test1 = TestValue::new(1);
+        let mut test2 = TestValue::new(2);
+        let mut test3 = TestValue::new(3);
+        let mut list = LinkedList::empty();
+        let mut other = LinkedList::empty();
+
+        let test_ptr = test3.as_node() as *mut _;
+
+        list.push_back(test1.as_node());
+        list.push_back(test2.as_node());
+        other.push_back(test3.as_node());
+        list.splice(&mut other);
+
+        assert_eq!(list_to_vec(&list), std::vec![3, 1, 2]);
+        assert!(other.is_empty());
+
+        let maybe_test = list.remove_first();
+
+        assert!(maybe_test.is_some());
+        assert!(core::ptr::eq(maybe_test.unwrap(), test_ptr));
+
+        other.splice(&mut list);
+
+        assert_eq!(list_to_vec(&other), std::vec![1, 2]);
+        assert!(list.is_empty());
     }
 
     #[test]
     fn mutability_iter_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let nodes = vec![
-                TestStruct::new(12),
-                TestStruct::new(13),
-                TestStruct::new(14),
-            ];
-            for node in nodes.iter() {
-                list.push_back(node.as_node().as_mut());
-            }
-            let mut iter = list.iter_mut();
-            assert!(iter.unlink_watched().is_none());
-            let node_value = iter.next().unwrap();
-            let node_option = iter.unlink_watched();
-            assert!(node_option.is_some());
-            assert_eq!(node_value.value, node_option.unwrap().value);
-            assert!(iter.unlink_watched().is_none());
-        }
-    }
+        let mut list = LinkedList::<TestValue>::empty();
 
-    #[test]
-    fn collection_test() {
-        unsafe {
-            let nodes = vec![
-                TestStruct::new(1),
-                TestStruct::new(2),
-                TestStruct::new(3),
-                TestStruct::new(4),
-            ];
-            let mut list = LinkedList::<TestStruct>::empty();
+        values! {
+            node1 = 12, node2 = 13, node3 = 14
+        };
 
-            for node in nodes.iter() {
-                list.push_back(node.as_node().as_mut());
-            }
-            let guard = list.link_guard();
-            let iter =
-                list.iter_mut().skip_while(|node| node.value < 3).take(1);
-            let target = guard.collect(iter);
-            let mut test_iter = target.iter().limit();
-            assert_eq!(test_iter.next().unwrap().value, 3);
-            assert!(test_iter.next().is_none());
-        }
+        list.push_back(node1.as_node());
+        list.push_back(node2.as_node());
+        list.push_back(node3.as_node());
+
+        let mut iter = list.iter_mut();
+        assert!(iter.unlink_watched().is_none());
+
+        let node_value = iter.next().unwrap();
+        let node_option = iter.unlink_watched();
+
+        assert!(node_option.is_some());
+        assert_eq!(node_value.value, node_option.unwrap().value);
+        assert!(iter.unlink_watched().is_none());
     }
 
     #[test]
     fn removing_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-        unsafe {
-            let nodes = vec![TestStruct::new(12), TestStruct::new(13)];
-            for node in nodes.iter() {
-                list.push_back(node.as_node().as_mut());
-            }
-            assert_eq!(12, list.remove_first().unwrap().value);
-            assert_eq!(13, list.remove_first().unwrap().value);
-            assert!(list.remove_first().is_none());
-        }
+        let mut list = LinkedList::<TestValue>::empty();
+        values! {
+            node1 = 12, node2 = 13
+        };
+
+        list.push_back(node1.as_node());
+        list.push_back(node2.as_node());
+
+        assert_eq!(12, list.remove_first().unwrap().value);
+        assert_eq!(13, list.remove_first().unwrap().value);
+
+        assert!(list.remove_first().is_none());
         let _ = list.iter();
     }
 
     #[test]
     fn limit_test() {
-        let mut list = LinkedList::<TestStruct>::empty();
-    }
+        values! {
+            node1 = 12, node2 = 13,
+            node3 = 14, node4 = 15,
+            node5 = 16
+        }
 
-    #[test]
-    fn conversation_test() {
+        let mut list = LinkedList::<TestValue>::empty();
 
-        // let node = ListNode::new(data);
-        // TinyListNode::from(node);
+        list.push_back(node1.as_node());
+        list.push_front(node2.as_node());
+        list.push_back(node3.as_node());
+        list.push_back(node4.as_node());
+        list.push_front(node5.as_node());
+        //values: 16, 13, 12, 14, 15
+
+        let mut iter = list.iter();
+
+        assert!(has_data(iter.next(), 16));
+        assert!(has_data(iter.next(), 13));
+        assert!(has_data(iter.next(), 12));
+        assert!(has_data(iter.next(), 14));
+        assert!(has_data(iter.next(), 15));
+        assert!(iter.next().is_none());
+
+        assert_eq!(list.len(), 5);
+
+        let mut iter = list.iter_mut();
+
+        assert!(has_data_mut(iter.next(), 16));
+        assert!(has_data_mut(iter.unlink_watched(), 16));
+
+        assert!(has_data_mut(iter.next_back(), 15));
+        assert!(has_data_mut(iter.unlink_watched(), 15));
+
+        assert_eq!(list.len(), 3);
     }
 }

@@ -66,49 +66,30 @@ pub trait HashData {
     }
 }
 
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+impl HashKey for usize {
+    fn hash_code(&self) -> HashCode {
+        *self as u32
+    }
+}
+
+impl HashKey for u32 {
+    fn hash_code(&self) -> HashCode {
+        *self
+    }
+}
+
 pub trait BorrowingLinkedList<'a> {
     type Item: 'a;
     fn empty() -> Self;
-    fn push_back(&mut self, node: &'a mut Self::Item);
-    fn push_front(&mut self, node: &'a mut Self::Item);
-    fn remove(&mut self, node: &'a mut Self::Item);
-    fn is_empty(&self) -> bool;
-}
 
-pub trait UnlinkableListGuard<'a, T: BorrowingLinkedList<'a>>: Sized {
-    fn parent(&self) -> NonNull<T>;
-    unsafe fn collect<I: IntoIterator<Item = &'a mut T::Item>>(
-        self,
-        iter: I,
-    ) -> T {
-        self.collect_map(iter, |node| node)
-    }
-    unsafe fn collect_map<
-        I: IntoIterator<Item = &'a mut T::Item>,
-        S: 'a,
-        R: BorrowingLinkedList<'a, Item = S>,
-        F,
-    >(
-        self,
-        iter: I,
-        mut map: F,
-    ) -> R
-    where
-        F: FnMut(&'a mut T::Item) -> &'a mut S,
-    {
-        let owner = self.parent().as_mut();
-        let mut target = R::empty();
-        for node in iter {
-            if owner.is_empty() {
-                break;
-            }
-            let mut raw_node = NonNull::from(node);
-            owner.remove(raw_node.as_mut());
-            let mapped_node = map(raw_node.as_mut());
-            target.push_back(mapped_node);
-        }
-        target
-    }
+    fn push_back<K: Into<&'a mut Self::Item>>(&mut self, node: K);
+
+    fn push_front(&mut self, node: &'a mut Self::Item);
+
+    fn remove(&mut self, node: &'a mut Self::Item);
+
+    fn is_empty(&self) -> bool;
 }
 
 /// Mnemonic trait that allow any kind of list node be independent (without head element of list).
@@ -121,16 +102,11 @@ pub unsafe trait DanglingData {}
 /// Conventional trait allowing any struct be list node in doubly linked list (`LinkedList`)
 /// # Safety
 /// Be careful using this trait. It violates rust memory rules while unappropriate using
-
 pub unsafe trait ListNodeData: Sized {
     type Item;
+
     fn from_node(node: &mut ListNode<Self>) -> &mut Self::Item;
-    unsafe fn from_node_unchecked(
-        mut raw_node: NonNull<ListNode<Self>>,
-    ) -> NonNull<Self::Item> {
-        let node = Self::from_node(raw_node.as_mut());
-        NonNull::from(node)
-    }
+    fn from_ref(node: &ListNode<Self>) -> &Self::Item;
 }
 
 /// As `ListNodeData` allows any struct to be list node in singly linked list (`TinyLinkedList`)
@@ -156,4 +132,10 @@ unsafe impl<T: ListNodeData> TinyListNodeData for T {
         };
         ListNodeData::from_node(pivot)
     }
+}
+
+//marker type for any type
+pub trait BoxedNode: TinyListNodeData {
+    type Target;
+    fn into_boxed(node: &mut Self::Item) -> Self::Target;
 }

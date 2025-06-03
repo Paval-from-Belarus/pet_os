@@ -390,8 +390,10 @@ macro GDTEntry.storePresentFlagBit dest*, bit*
 }
 macro GDTEntry.nullEntry
 {
-    . GDTEntry
+    local label
+    label GDTEntry
 }
+
 macro GDTEntry.valueOf Params&
 {
     local is_matched

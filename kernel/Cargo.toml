@@ -7,15 +7,6 @@ edition = "2021"
 crate-type = ["staticlib"]
 path = "src/pet_os.rs"
 
-[profile.release]
-lto = true
-panic = "abort"
-strip = "none"
-incremental = true
-codegen-units = 1
-opt-level = 's'
-debug = false
-
 [dependencies]
 thiserror-no-std = { workspace = true }
 spin = { workspace = true }
@@ -23,7 +14,6 @@ static_assertions = { workspace = true }
 
 volatile = { workspace = true }
 bitfield = { workspace = true }
-pc-keyboard = { workspace = true }
 
 paste = { workspace = true }
 num_enum = { workspace = true }
@@ -36,14 +26,20 @@ kernel-types = { workspace = true }
 
 multiboot2 = { workspace = true }
 multiboot = { workspace = true }
-log = { workspace = true } 
+heapless = { workspace = true }
+log = { workspace = true }
+elf = { version = "0.7.4", default-features = false, features = [] }
+bitflags = "2.9.0"
+bitvec = { git = "https://github.com/ferrilab/ferrilab", default-features = false, features = [
+    "atomic",
+] }
+# format_no_std = "1.2.0"
 ##generic-array = { version = "1.0.0", features = ["const-default"]}
 
 #failure = { version = "0.1", features = ["failure_derive"], default-features = false }
 #static_assertions = "1.1.0"
 #volatile = "0.2.6"
 #bitfield = "0.14.0"
-#pc-keyboard = "0.7.0"
 #paste = "1.0.14"
 #num_enum = { version = "0.7.0", default-features = false }
 #fallible_collections = { version = "0.4.9", features = ["hashbrown"] }

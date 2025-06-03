@@ -2,3 +2,7 @@
 target = ["i686-unknown-linux-gnu"]
 incremental = true
 
+# [unstable]
+# # This enables unstable features like build-std
+# build-std = ["core", "alloc", "compiler_builtins"]
+# build-std-features = ["compiler-builtins-mem"]

@@ -63,3 +63,24 @@
   multiboot2 /sys/io.sys
   boot
 ```
+
+issue list:
+1. Unhandled IRQ6 cause system be in not working state
+2. physicall alloc use too many physical pages
+3. physical dealloc works poorly (not working)
+
+4. user tasks are not tested
+5. relocation is not tested
+8. отладить исполнение задач
+10. Добавить поддержку grub command line
+11. Проверка на некорректный дескриптор объекта
+
+
+6. communication is not tested
+12. return from process should do something reasonable
+13. ref_count in Page
+14. memory deallocation
+
+Наблюдение
+ss = KERNEL_DATA
+esp = USER_STACK

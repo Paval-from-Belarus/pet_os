@@ -1,3 +1,5 @@
+.idea
+.vscode
 .idea/**/*
 .vscode/**/*
 **/target
@@ -5,3 +7,5 @@
 Cargo.lock
 *.iml
 **/*.o
+Makefile
+logs

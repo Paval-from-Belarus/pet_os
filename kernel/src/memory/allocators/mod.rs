@@ -1,7 +1,8 @@
-pub use global::RustAllocator;
 pub use physical::PhysicalAllocator;
-pub use system::{Alignment, SlabPiece, SystemAllocator};
+pub use system::{
+    classify_slab_by_size, Alignment, AllocContext, MemoryAllocationFlag, Slab,
+    SlabAlloc, SystemAllocator,
+};
 
-mod global;
 mod physical;
 mod system;

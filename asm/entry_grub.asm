@@ -123,14 +123,20 @@ Kernel.setProtectedMode:
      push ds 
      pop es
      mov ax, 0
-    ;  push ax ax
-    ;  pop fs gs ;fs ds are not used; so it' forbidden to use them
+     ; push ax ax
+     ; pop fs gs ;fs ds are not used; so it' forbidden to use them
 
      mov eax, KernelStack.top
      call Kernel.toPhysicalAddress
      mov esp, eax
 
-     jmp ConfigureKernel
+     mov eax, ConfigureKernel
+     call Kernel.toPhysicalAddress
+     
+     push 1 shl 3
+     push eax
+
+     retf 
 
 ;Input:
 ;eax -> KernelProperties
@@ -209,8 +215,13 @@ Kernel.setPaging:
     pusha
     mov ecx, edi
 
+    ; add ecx, 0x100000 / 0x1000
+
     mov esi, Kernel.start
     mov edi, Kernel.start
+
+    ; sub esi, 0x100000
+    ; sub edi, 0x100000
     call MMU.markRegion
 
     popa
@@ -362,6 +373,9 @@ GlobalDescriptorTable.start:
 
 .userCode: GDTEntry.valueOf (base: 0, limit: 0xFFFFF, type: CodeSelector.Readable, level: 11b, present: 1, attr: SEG_ATTR_32_BIT, granularity: 1b)
 .userData: GDTEntry.valueOf (base: 0, limit: 0xFFFFF, type: DataSelector.Writable, level: 11b, present: 1, attr: SEG_ATTR_32_BIT, granularity: 1b)
+
+; Task is not initialized here 
+.task: GDTEntry.nullEntry
 
 GlobalDescriptorTable.end:
 

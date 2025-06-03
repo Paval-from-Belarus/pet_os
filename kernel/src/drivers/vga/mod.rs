@@ -1,172 +1,205 @@
-use core::fmt;
+mod rtc;
 
-use kernel_types::declare_constants;
+use core::arch::asm;
+
+use rtc::{read_rtc_time, RtcTime};
 use volatile::Volatile;
 
-use crate::memory::PhysicalAddress;
+use crate::{common::io, memory::PhysicalAddress};
 
-#[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum Color {
-    Black = 0,
-    Blue = 1,
-    Green = 2,
-    Cyan = 3,
-    Red = 4,
-    Magenta = 5,
-    Brown = 6,
-    LightGray = 7,
-    DarkGray = 8,
-    LightBlue = 9,
-    LightGreen = 10,
-    LightCyan = 11,
-    LightRed = 12,
-    Pink = 13,
-    Yellow = 14,
-    White = 15,
-}
+const VGA_WIDTH: usize = 80;
+const VGA_HEIGHT: usize = 25;
+const VGA_BUFFER: *mut u16 = 0xB8000 as *mut u16;
+const VGA_COLOR_BLACK: u8 = 0;
+const VGA_COLOR_WHITE: u8 = 0xF;
+const VGA_DEFAULT_COLOR: u8 = (VGA_COLOR_WHITE | (VGA_COLOR_BLACK << 4));
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-struct ColorAttribute(u8);
-impl ColorAttribute {
-    const fn new(foreground: Color, background: Color) -> ColorAttribute {
-        ColorAttribute((background as u8) << 4 | (foreground as u8))
+// Global state for cursor position
+static mut CURSOR_X: usize = 0;
+static mut CURSOR_Y: usize = 0;
+
+// VGA buffer wrapper for safe volatile access
+struct VgaBuffer {}
+
+impl VgaBuffer {
+    fn new() -> Self {
+        Self {}
     }
-}
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(C)]
-struct ScreenChar {
-    letter: u8,
-    attribute: ColorAttribute,
-}
+    fn write_char(&mut self, x: usize, y: usize, c: char, color: u8) {
+        let index = y * VGA_WIDTH + x;
 
-const SCREEN_HEIGHT: usize = 25;
-const SCREEN_WIDTH: usize = 80;
-declare_constants!(
-    ColorAttribute,
-    DEFAULT_COLOR_ATTRIBUTE = ColorAttribute::new(Color::White, Color::Black)
-);
+        let ptr = (VGA_BUFFER as PhysicalAddress) as *mut u16;
 
-#[repr(transparent)]
-struct MemoryBuffer {
-    chars: [[Volatile<ScreenChar>; SCREEN_WIDTH]; SCREEN_HEIGHT],
-}
-
-pub struct VgaWriter {
-    screen_width: u16,
-    screen_height: u16,
-    color: ColorAttribute,
-    cursor_offset: u16,
-    mode_offset: PhysicalAddress, //the memory offset in current video mode
-}
-
-impl VgaWriter {
-    pub const fn default() -> Self {
-        VgaWriter {
-            screen_width: SCREEN_WIDTH as u16,
-            screen_height: SCREEN_HEIGHT as u16,
-            color: DEFAULT_COLOR_ATTRIBUTE,
-            cursor_offset: 0,
-            mode_offset: 0,
+        unsafe {
+            VGA_BUFFER
+                .add(index)
+                .write_volatile((c as u16) | ((color as u16) << 8))
         }
     }
-    pub fn write_byte(&mut self, _byte: u8) {}
 }
 
-pub struct Writer {
-    column: usize,
-    color_code: ColorAttribute,
-    buffer: &'static mut MemoryBuffer,
+// Clear the screen
+pub fn clear_screen() {
+    let mut vga = VgaBuffer::new();
+    for i in 0..(VGA_WIDTH * VGA_HEIGHT) {
+        vga.write_char(i % VGA_WIDTH, i / VGA_WIDTH, ' ', VGA_DEFAULT_COLOR);
+    }
+    unsafe {
+        CURSOR_X = 0;
+        CURSOR_Y = 0;
+    }
 }
-impl Writer {
-    pub fn write_byte(&mut self, byte: u8) {
-        match byte {
-            b'\n' => self.new_line(),
-            byte => {
-                if self.column >= SCREEN_WIDTH {
-                    self.new_line();
+
+// Update hardware cursor
+pub fn update_cursor() {
+    let pos = unsafe { CURSOR_Y * VGA_WIDTH + CURSOR_X };
+
+    unsafe {
+        io::outb(0x3D4, 0x0F);
+        io::outb(0x3D5, pos as u8);
+
+        io::outb(0x3D4, 0x0E);
+        io::outb(0x3D5, (pos >> 8) as u8);
+    }
+}
+
+// Print a single character
+fn putchar(c: char) {
+    let mut vga = VgaBuffer::new();
+    unsafe {
+        if c == '\n' {
+            CURSOR_X = 0;
+            CURSOR_Y += 1;
+            if CURSOR_Y >= VGA_HEIGHT {
+                CURSOR_Y = VGA_HEIGHT - 1; // No scrolling yet
+            }
+        } else {
+            vga.write_char(CURSOR_X, CURSOR_Y, c, VGA_DEFAULT_COLOR);
+            CURSOR_X += 1;
+            if CURSOR_X >= VGA_WIDTH {
+                CURSOR_X = 0;
+                CURSOR_Y += 1;
+                if CURSOR_Y >= VGA_HEIGHT {
+                    CURSOR_Y = VGA_HEIGHT - 1;
                 }
-
-                let row = SCREEN_HEIGHT - 1;
-                let col = self.column;
-
-                let color_code = self.color_code;
-                self.buffer.chars[row][col].write(ScreenChar {
-                    letter: byte,
-                    attribute: color_code,
-                });
-                self.column += 1;
             }
         }
     }
-    pub fn write_string(&mut self, s: &str) {
-        for byte in s.bytes() {
-            match byte {
-                // printable ASCII byte or newline
-                0x20..=0x7e | b'\n' => self.write_byte(byte),
-                // not part of printable ASCII range
-                _ => self.write_byte(0xfe),
-            }
-        }
-    }
-    fn clear_row(&mut self, row: usize) {
-        let blank = ScreenChar {
-            letter: b' ',
-            attribute: self.color_code,
-        };
-        for col in 0..SCREEN_WIDTH {
-            self.buffer.chars[row][col].write(blank);
-        }
-    }
-    fn new_line(&mut self) { /* TODO */
-    }
+    // update_cursor();
 }
-// #[macro_export]
-// macro_rules! print {
-//     ($($arg:tt)*) => ($crate::utils::vga::_print(format_args!($($arg)*)));
-// }
-//
-// #[macro_export]
-// macro_rules! println {
-//     () => ($crate::print!("\n"));
-//     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
-// }
-//
-// #[doc(hidden)]
-// pub fn _print(args: fmt::Arguments) {
-//     use core::fmt::Write;
-//     let _ = WRITER.lock().write_fmt(args);
-// }
-// lazy_static! {
-//     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-//         column_position: 0,
-//         color_code: ColorCode::new(Color::Yellow, Color::Black),
-//         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
-//     });
-// }
 
-impl fmt::Write for Writer {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.write_string(s);
-        Ok(())
+// Print a string
+pub fn puts(s: &str) {
+    for c in s.chars() {
+        putchar(c);
     }
 }
 
-fn print_something() {
-    // use core::fmt::Write;
-    let mut writer = Writer {
-        column: 0,
-        color_code: ColorAttribute::new(Color::Yellow, Color::Black),
-        buffer: unsafe { &mut *(0xb8000 as *mut MemoryBuffer) },
-    };
+fn u16_to_str(num: u16, buf: &mut [u8; 4]) {
+    buf[0] = b'0' + ((num / 1000) % 10) as u8;
+    buf[1] = b'0' + ((num / 100) % 10) as u8;
+    buf[2] = b'0' + ((num / 10) % 10) as u8;
+    buf[3] = b'0' + (num % 10) as u8;
+}
 
-    writer.write_byte(b'H');
-    writer.write_string("ello! ");
-    // println!("Hello World{}", "!");
-    use core::fmt::Write;
-    // let _ = write!(writer, "All is fine");
-    let _ = write!(writer, "The numbers are {} and {}", 42, 20 / 5);
+fn u8_to_str(num: u8, buf: &mut [u8; 2]) {
+    buf[0] = b'0' + (num / 10);
+    buf[1] = b'0' + (num % 10);
+}
+
+fn display_time(time: &RtcTime) {
+    let mut u8_buf = [b'0'; 2];
+    let mut u16_buf = [b'0'; 4];
+
+    u16_to_str(time.year, &mut u16_buf);
+    puts(core::str::from_utf8(&u16_buf).unwrap_or("??"));
+    putchar('-');
+
+    u8_to_str(time.month, &mut u8_buf);
+    puts(core::str::from_utf8(&u8_buf).unwrap_or("??"));
+    putchar('-');
+
+    u8_to_str(time.day, &mut u8_buf);
+    puts(core::str::from_utf8(&u8_buf).unwrap_or("??"));
+
+    putchar(' ');
+
+    // Format hours
+    u8_to_str(time.hours, &mut u8_buf);
+    puts(core::str::from_utf8(&u8_buf).unwrap_or("??"));
+
+    putchar(':');
+
+    // Format minutes
+    u8_to_str(time.minutes, &mut u8_buf);
+    puts(core::str::from_utf8(&u8_buf).unwrap_or("??"));
+
+    putchar(':');
+
+    // Format seconds
+    u8_to_str(time.seconds, &mut u8_buf);
+    puts(core::str::from_utf8(&u8_buf).unwrap_or("??"));
+}
+
+pub struct Driver {
+    pub name: &'static str,
+    pub status: &'static str,
+}
+
+pub fn init() {
+    clear_screen();
+
+    let time = unsafe { read_rtc_time() };
+
+    puts("Welcome to PetOS!\n\n");
+    puts("Login Time: ");
+    display_time(&time);
+    puts("\n\n");
+
+    puts("user$");
+    update_cursor();
+
+    let drivers = [
+        Driver {
+            name: "ata-disk",
+            status: "okay",
+        },
+        Driver {
+            name: "fat-fs",
+            status: "okay",
+        },
+        Driver {
+            name: "vga-char",
+            status: "okay",
+        },
+        Driver {
+            name: "keybrd-char",
+            status: "okay",
+        },
+    ];
+
+    puts("modinfo\n");
+
+    for driver in drivers.into_iter() {
+        puts(driver.name);
+        puts(": ");
+        puts(driver.status);
+        puts("\n");
+    }
+
+    puts("user$");
+
+    update_cursor();
+
+    let files = ["sys", "usr", "boot", "home"];
+    puts("ls\n");
+
+    for file in files.into_iter() {
+        puts(file);
+        puts(" ");
+    }
+
+    puts("\nuser$");
+    update_cursor();
 }

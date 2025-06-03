@@ -3,10 +3,11 @@ CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
 ASM_SOURCE_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/asm"
 SCRIPTS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/scripts"
 OUTPUT_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target"
+LOGS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/logs"
+DRIVERS_WORKSPACE = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/drivers"
 
 
 IMAGES_PATH = "${OUTPUT_PATH}/images"
-LOGS_PATH = "${OUTPUT_PATH}/logs"
 OBJECTS_PATH = "${OUTPUT_PATH}/shared"
 
 KERNEL_LIB = "${OUTPUT_PATH}/target/release/libkernel.a"
@@ -19,7 +20,7 @@ GRUB_CFG = "${SCRIPTS_PATH}/grub.cfg"
 # compiler accept two args: source code and output binary name
 ASM_COMPILER = "wine ${SCRIPTS_PATH}/fasm.exe"
 #fixme: conventional way to include specific macros
-INCLUDE="/home/Paval/Triggers/ASM/petOS"
+INCLUDE = "/home/Paval/Triggers/ASM/petOS"
 
 # the output image file location
 HDD_IMAGE = "${IMAGES_PATH}/petos.img"
@@ -33,29 +34,63 @@ default_to_workspace = false
 command = "mkdir"
 args = ["-p", "${IMAGES_PATH}", "${LOGS_PATH}", "${OBJECTS_PATH}"]
 
-[tasks.clean]
-condition = { files_exist = ["${OUTPUT_PATH}"] }
-command = "rm"
-args = ["-r", "${OUTPUT_PATH}"]
+[tasks.prune]
+script = '''
+    cargo clean
+    cd ${DRIVERS_WORKSPACE}
+    cargo clean
+
+'''
 
 [tasks.asm]
 script = '''
+    mkdir -p ${OBJECTS_PATH}
     ${ASM_COMPILER} ${ASM_SOURCE_PATH}/interceptors.asm ${OBJECTS_PATH}/interceptors.o
     ${ASM_COMPILER} ${ASM_SOURCE_PATH}/entry_grub.asm ${OBJECTS_PATH}/entry.o
+    ${ASM_COMPILER} ${ASM_SOURCE_PATH}/ata_disk.asm ${OBJECTS_PATH}/ata_disk.o
 '''
 
-[tasks.kernel_lib]
+[tasks.kernel_bin.env]
+STATIC_DRIVERS = "vga ata"
+DRIVERS_OUT = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/drivers"
+
+[tasks.kernel_bin]
+dependencies = ["drivers"]
 command = "cargo"
 args = [
     "build",
-    "-Z", "build-std=core,alloc,compiler_builtins",
-    "-Z", "build-std-features=compiler-builtins-mem",
+    "-Z",
+    "build-std=core,alloc,compiler_builtins",
+    "-Z",
+    "build-std-features=compiler-builtins-mem",
     "--target=${TARGET_SPEC}",
-    "--release", 
+    "--release",
     # "--target-dir", "${OBJECTS_PATH}"
 ]
+
+[tasks.drivers.env]
+DRIVERS = "ata fat vga"
+DRIVERS_OUT = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/drivers"
+DRIVERS_PATH = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/drivers"
+
+[tasks.drivers]
+script = { file = "scripts/build_drivers.sh" }
+# script = { file = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/scripts/build_drivers.sh"}
+
+[tasks.fix]
+command = "cargo"
+args = [
+    "fix",
+    "-Z",
+    "build-std=core,alloc,compiler_builtins",
+    "-Z",
+    "build-std-features=compiler-builtins-mem",
+    "--release",
+    "--target=${TARGET_SPEC}",
+]
+
 [tasks.kernel]
-dependencies = ["layout", "asm", "kernel_lib"]
+dependencies = ["layout", "asm", "kernel_bin"]
 script = '''
     ld -n \
     --as-needed \
@@ -67,6 +102,7 @@ script = '''
     -o ${KERNEL_BIN} \
     ${OBJECTS_PATH}/interceptors.o \
     ${OBJECTS_PATH}/entry.o \
+    ${OBJECTS_PATH}/ata_disk.o \
     ${KERNEL_LIB} ;
 
     strip -s ${KERNEL_BIN} ;
@@ -139,4 +175,10 @@ args = ["${OUTPUT_PATH}.lock"]
 dependencies = ["image", "unlock-image"]
 script = '''
     bochs-debugger -q -f ${SCRIPTS_PATH}/bochs-config.bxrc
+'''
+
+[tasks.run]
+dependencies = ["image", "unlock-image"]
+script = '''
+    bochs -q -f ${SCRIPTS_PATH}/bochs-config.bxrc
 '''

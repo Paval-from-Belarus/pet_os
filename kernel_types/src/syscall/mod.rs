@@ -1,0 +1,59 @@
+use crate::declare_constants;
+
+declare_constants! {
+    pub u32,
+    RESERVED = 0xFFFF_FFFF, "No function to zero can be used; this function used to test system initialization";
+}
+
+#[derive(Debug, Clone, Copy, num_enum::TryFromPrimitive)]
+#[repr(u32)]
+pub enum Request {
+    PrintK = 0x02,
+    /// map physical memory to virtual memory in driver
+    MemRemap = 0x03,
+}
+
+#[derive(Debug, num_enum::FromPrimitive, thiserror_no_std::Error)]
+#[repr(u32)]
+pub enum SyscallError {
+    NotSupported = 1,
+    InvalidData = 2,
+    /// Call to user-space operation from kernel space
+    KernelSpaceCall = 3,
+    /// Operation is not available as
+    /// target resource is busy
+    BusyResource = 4,
+
+    NoMemory = 5,
+
+    #[num_enum(default)]
+    Failed = 0x42,
+}
+
+#[macro_export]
+macro_rules! syscall {
+    ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?) => ({
+        let id = $id as u32;
+
+        core::arch::asm!(
+          "int 80h",
+           in("eax") id
+           $(,in("ecx") $ecx)?
+           $(,in("edx") $edx)?
+        );
+
+        let status: u32;
+
+        core::arch::asm!(
+            "",
+            out("eax") status
+        );
+
+        if status == 0 {
+            Ok(())
+        } else {
+            let cause = $crate::syscall::SyscallError::from(status);
+            Err(cause)
+        }
+    });
+}

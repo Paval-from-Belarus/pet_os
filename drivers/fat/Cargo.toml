@@ -1,0 +1,11 @@
+[package]
+name = "fat"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitflags = { version = "2.9.0", default-features = false }
+byteorder = { version = "1.5.0", default-features = false }
+
+kernel-lib = { workspace = true }
+log = { workspace = true }

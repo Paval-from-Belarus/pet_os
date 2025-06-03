@@ -1,56 +1,69 @@
-use core::mem::MaybeUninit;
-use core::ops::{Deref, Range, RangeBounds};
+use core::alloc::{Allocator, GlobalAlloc};
 use core::ptr::NonNull;
-use core::slice::SliceIndex;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{mem, ptr};
 
-use static_assertions::assert_eq_size;
+use alloc::boxed::Box;
+use allocators::SlabAlloc;
 
-pub use allocators::PhysicalAllocator;
+pub use allocators::{
+    Alignment, AllocContext, MemoryAllocationFlag, PhysicalAllocator,
+};
 pub use arch::*;
-use kernel_macro::ListNode;
-use kernel_types::collections::{
-    LinkedList, ListNode, TinyLinkedList, TinyListNode,
-};
-use kernel_types::{bitflags, declare_constants};
+use kernel_types::collections::LinkedList;
+use kernel_types::declare_constants;
 pub use paging::PagingProperties;
+use paging::{GDTHandle, PageDirectoryEntries};
 
-use crate::memory::allocators::{Alignment, SlabPiece, SystemAllocator};
-use crate::memory::paging::{
-    BootAllocator, GDTTable, PageMarker, PageMarkerError,
-};
-use crate::process::{TaskState, ThreadTask};
-use crate::utils::atomics::{SpinLockLazyCell, UnsafeLazyCell};
-use crate::{log, process};
+use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
+use crate::memory::allocators::SystemAllocator;
+use crate::memory::paging::GDTTable;
+
+use crate::task::{Task, TaskState};
 
 mod allocators;
 mod arch;
+mod mapping;
+mod page;
 mod paging;
+mod process;
+mod region;
 
-pub use paging::table::{
-    DirEntry, DirEntryFlag, RefTable, TableEntry, TableEntryFlag,
+pub use mapping::*;
+pub use page::*;
+pub use process::*;
+pub use region::*;
+
+pub use paging::table::{DirEntry, DirEntryFlag, TableEntry, TableEntryFlag};
+pub use paging::{
+    CaptureMemRec, PageMarker, PageMarkerError, DIRECTORY_ENTRIES_COUNT,
+    DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT,
 };
-pub use paging::{CaptureMemRec, DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT};
+
+pub use allocators::Slab;
+
+pub use self::paging::PageDirectory;
 
 pub enum ZoneType {
     Usable,
     Device,
 }
 
-#[derive(Debug)]
-pub enum OsAllocationError {
+#[derive(Debug, thiserror_no_std::Error)]
+pub enum AllocError {
+    #[error("Requested page is not available")]
+    PageInUse,
+    #[error("NoMemory")]
     NoMemory, //no memory to accomplish request
+    #[error("Failed to mark page: {0}")]
+    PageMappingFailed(#[from] PageMarkerError),
+    #[error("Invalid alignment. Requested: {0:?}")]
+    InvalidAlignment(Alignment),
 }
 
-pub trait ToPhysicalAddress {
-    const NULL: usize = 0;
-    fn as_physical(&self) -> PhysicalAddress;
-}
-
-pub trait ToVirtualAddress {
-    fn as_virtual(&self) -> VirtualAddress;
-}
+// pub trait ToPhysicalAddress {
+//     const NULL: usize = 0;
+//     fn as_physical(&self) -> PhysicalAddress;
+// }
 
 extern "C" {
     //Physical address where kernel is stored
@@ -63,115 +76,175 @@ extern "C" {
 }
 
 pub type PhysicalAddress = usize;
+// pub type PhysicalAddress = usize;
+// #[derive(Debug)]
+// pub struct PhysicalOffset<'a> {
+//     ph_offset: PhysicalOffset,
+//     _marker: PhantomData<&'a mut Page>,
+// }
+
+// impl<'a> PhysicalOffset<'a> {
+//     pub const unsafe fn invalid() -> Self {
+//         Self {
+//             ph_offset: 0,
+//             _marker: PhantomData,
+//         }
+//     }
+//
+//     pub fn new(ph_offset: usize) -> Self {
+//         Self {
+//             ph_offset,
+//             _marker: PhantomData,
+//         }
+//     }
+//
+//     pub fn page(&self) -> &Page {
+//         Page::take(self.ph_offset)
+//     }
+//
+//     pub fn page_mut(&mut self) -> Option<&mut Page> {
+//         Page::take_mut(self.ph_offset)
+//     }
+//
+//     pub fn into_page(self) -> Option<&'a mut Page> {
+//         Page::take_mut(self.ph_offset)
+//     }
+// }
+
+// impl core::ops::Deref for PhysicalOffset<'_> {
+//     type Target = usize;
+//
+//     fn deref(&self) -> &Self::Target {
+//         &self.ph_offset
+//     }
+// }
+
 pub type VirtualAddress = usize;
 
-impl ToPhysicalAddress for VirtualAddress {
-    fn as_physical(&self) -> PhysicalAddress {
-        self - kernel_virtual_offset()
-    }
-}
+//This trait is available for stucture on fixed
+//memory place
+// impl ToPhysicalAddress for VirtualAddress {
+//     fn as_physical(&self) -> PhysicalAddress {
+//         self - kernel_virtual_offset()
+//     }
+// }
 
-impl ToVirtualAddress for PhysicalAddress {
-    fn as_virtual(&self) -> VirtualAddress {
-        self + kernel_virtual_offset()
-    }
-}
+// impl ToVirtualAddress for PhysicalAddress {
+//     fn as_virtual(&self) -> VirtualAddress {
+//         self + kernel_virtual_offset()
+//     }
+// }
 
 ///Return crucial structures for kernel
 ///Without them, it's impossible
-#[inline(never)]
-pub fn init_kernel_space(
-    allocator: BootAllocator,
-    directory: RefTable<DirEntry>,
-    heap_offset: VirtualAddress,
-) {
-    let marker = PageMarker::wrap(
-        directory,
-        alloc_physical_pages,
-        first_dealloc_handler,
-    );
+#[allow(static_mut_refs)]
+#[no_mangle]
+pub fn init_kernel_space(boot_config: &mut PagingProperties) {
+    unsafe {
+        GDT = boot_config.gdt().as_ref().clone();
+        GDT_HANDLE = GDTHandle::new(&raw const GDT);
+        GDT_HANDLE.load();
+
+        //page directory is comming without any reference
+        fn init_page(ph_offset: PhysicalAddress) {
+            let page = unsafe { &mut *Page::take_unchecked(ph_offset) };
+            *page = Page::new();
+
+            page.acquire();
+            let table_offset = ph_offset + kernel_virtual_offset();
+            let _ = page.set_virtual(table_offset);
+        }
+
+        let directory = boot_config.page_directory();
+        let entries = directory.share_entries();
+
+        for table_entry in entries.iter() {
+            let Some(page_table_offset) = table_entry.ph_offset() else {
+                continue;
+            };
+
+            init_page(page_table_offset);
+
+            let page_table = table_entry.page_table().unwrap();
+
+            page_table
+                .iter()
+                .filter_map(|page_entry| page_entry.ph_offset())
+                .for_each(|ph_offset| {
+                    init_page(ph_offset);
+                });
+
+            init_page(table_entry.ph_offset().unwrap());
+        }
+
+        init_page(directory.physical_offset);
+    }
+
+    let marker = PageMarker::new(boot_config.page_directory());
+
     KERNEL_MARKER.set(marker);
-    let allocator = PhysicalAllocator::new(allocator);
+    let allocator = PhysicalAllocator::from_boot(boot_config.boot_allocator());
     PHYSICAL_ALLOCATOR.set(allocator);
 
-    // let boot_mapping_pages = kernel_virtual_offset() / Page::SIZE;
-    // let unmap_flags = UnmapParamsFlag::from(UnmapParamsFlag::TABLES | UnmapParamsFlag::PAGES);
-    //the higher addresses are fully mapped by the kernel
-    // KERNEL_MARKER.get().unmap_range(VirtualAddress::NULL, boot_mapping_pages, unmap_flags);
+    log::info!("Physical allocator is ready");
+
+    let slab_allocator =
+        SystemAllocator::new(&PHYSICAL_ALLOCATOR, boot_config.heap_offset())
+            .expect("Failed to initialize slab allocator");
+
+    SYSTEM_ALLOCATOR.set(slab_allocator);
+
     KERNEL_MARKER
         .get()
-        .set_dealloc_handler(dealloc_physical_page);
-    let slab_allocator = SystemAllocator::new(&PHYSICAL_ALLOCATOR, heap_offset)
-        .expect("Failed to initialize slab allocator");
-    SLAB_ALLOCATOR.set(slab_allocator);
-    log!("memory is initialized");
+        .unmap_range(0..kernel_virtual_offset(), true);
+
+    KERNEL_MARKER.get().load();
 }
 
-pub fn enable_task_switching(table: &mut GDTTable) {
-    let task = unsafe {
-        TASK_STATE.set_io_map(0xFFFF); //setting io_map beyond the TaskState structure -> let's forbid all io instruction in user mode
-        TASK_STATE.set_stack_selector(SegmentSelector::DATA);
-        TaskStateDescriptor::active(
-            &TASK_STATE as *const TaskState as VirtualAddress,
-            mem::size_of::<TaskState>() - 1,
-        )
-    };
-    table.load_task(task);
-}
+#[allow(static_mut_refs)]
+pub fn enable_task_switching() {
+    let mut state = TaskState::null();
+    state.set_io_map(0xFFFF);
+    state.set_stack_selector(SegmentSelector::KERNEL_DATA);
+    state.set_code_selector(SegmentSelector::KERNEL_CODE);
 
-///this method is conventional way to free page acquired by asm stub
-#[deprecated]
-fn first_dealloc_handler(offset: PhysicalAddress) {
-    let mut page = unsafe {
-        let mut node = Page::new_at_offset(offset);
-        node.as_mut()
-    };
-    page.take();
-    PHYSICAL_ALLOCATOR.get().dealloc_page(page);
+    unsafe { TASK_STATE = state };
+
+    let task = TaskStateDescriptor::active(
+        &raw const TASK_STATE as VirtualAddress,
+        mem::size_of::<TaskState>() - 1,
+    );
+
+    log::debug!("Task state: {task:?}");
+
+    unsafe { GDT.load_task(task) };
 }
 
 fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
-    todo!()
-    // PHYSICAL_ALLOCATOR.get().alloc_pages(page_count)
+    log::debug!("physical alloc for pages");
+
+    let pages = virtual_alloc(
+        Page::SIZE * page_count,
+        MemoryAllocationFlag::CONTINOUS
+            | MemoryAllocationFlag::ZEROED
+            | MemoryAllocationFlag::READ_WRITE,
+    )
+    .ok()?;
+
+    let offset = KERNEL_MARKER.get().lookup_physical(pages).unwrap();
+
+    offset.into()
 }
 
-fn dealloc_physical_page(offset: PhysicalAddress) {
-    let allocator = PHYSICAL_ALLOCATOR.get();
-    let mut page = unsafe { Page::new_at_offset(offset) };
-    unsafe {
-        allocator.dealloc_page(page.as_mut());
-    }
+fn dealloc_physical_page(page: PhysicalAddress) {
+    SYSTEM_ALLOCATOR.virtual_dealloc(page, Page::SIZE);
 }
 
-bitflags!(
-    //something info about range???
-    pub MemoryMappingFlag(usize),
-    ACCESSED = 0b100_000,
-    CACHE_DISABLED = 0b10_000,
-    WRITE_THROUGH = 0b1000,
-    NO_PRIVILEGE = 0b100,
-    WRITABLE = 0b10,
-    PRESENT = 0b1,
-    EMPTY = 0b0
-);
-bitflags!(
-    pub PageFlag(usize),
-    ACTIVE = 0x01,
-    DIRTY = 0x02,
-    ERROR = 0x04,
-    LOCKED = 0x08,
-    UNUSED = 0x10
-);
-bitflags!(
-    pub MemoryRegionFlag(usize),
-    READ = 0x01,
-    WRITE = 0x02,
-    EXEC = 0x04,
-    //todo flags
-    SHARING = 0x08,
-    SEQ_READ = 0x10,
-    RAND_READ = 0x20,
-);
+fn lookup_kernel_physical_page(
+    offset: VirtualAddress,
+) -> Option<PhysicalAddress> {
+    KERNEL_MARKER.get().lookup_physical(offset)
+}
 
 pub fn kernel_binary_size() -> usize {
     unsafe { &KERNEL_SIZE as *const usize as VirtualAddress }
@@ -193,159 +266,30 @@ pub fn stack_size() -> usize {
     unsafe { &KERNEL_STACK_SIZE as *const usize as VirtualAddress }
 }
 
-///performs mapping of physical memory of IO device to virtual space
-pub fn io_remap(offset: PhysicalAddress, size: usize) -> VirtualAddress {
-    //create new MemoryRegion and add to corresponding ProcessHandle
+pub fn kernel_regions() -> LinkedList<'static, MemoryRegion> {
     todo!()
 }
 
-pub type AllocHandler = fn(usize) -> Option<PhysicalAddress>;
-pub type DeallocHandler = fn(PhysicalAddress);
-pub type ThreadRoutine = fn(context: *mut ());
+// pub type AllocHandler = fn(usize) -> Option<LinkedList<'static, Page>>;
 
-///Alternative to linux mm_struct
-pub struct ProcessInfo {
-    ///offset of data segment
-    ///It's redundant to store any information about last page ― it's can be easily calculated from heap_offset as:<br>
-    ///<code> heap_offset % Page::SIZE </code> <br>
-    ///index of last touched page in PageLayout Table
-    //I believe that heap_offset should be aligned to Page::SIZE. Practically, space will be access
-    //offset of stack memory -> used for erasing stack memory
-    stack_offset: VirtualAddress,
-    code_range: Range<VirtualAddress>,
-    data_range: Range<VirtualAddress>,
-    heap_range: Range<VirtualAddress>,
-    last_page_index: usize,
-    //Write | NoPrivilege
-    marker: PageMarker,
-    regions: TinyLinkedList<'static, MemoryRegion>,
-    last_touched_region: Option<&'static MemoryRegion>,
+pub trait AllocHandler:
+    Fn(usize) -> Option<LinkedList<'static, Page>> + 'static
+{
 }
 
-impl ProcessInfo {
-    pub fn find_region(
-        &mut self,
-        address: VirtualAddress,
-    ) -> Option<&'static MemoryRegion> {
-        if let Some(last_region) = self.last_touched_region {
-            unsafe {
-                if last_region.range.contains(&address) {
-                    return Some(last_region);
-                }
-            }
-        }
-        self.regions
-            .iter()
-            .find(|region| region.range.contains(&address))
-            .map(|region| region as &MemoryRegion)
-    }
-    pub fn find_unmapped_region(
-        &mut self,
-        offset: VirtualAddress,
-        length: usize,
-        flags: MemoryRegionFlag,
-    ) -> Option<VirtualAddress> {
-        None
-    }
-    pub fn add_region(&mut self, region: NonNull<MemoryRegion>) {}
-    pub fn find_prev_region(
-        &mut self,
-        address: VirtualAddress,
-    ) -> Option<&'static MemoryRegion> {
-        let mut prev_region = None;
-        for region in self.regions.iter() {
-            if region.range.contains(&address) {
-                break;
-            }
-            //update prev region each time while region is not found
-            if region.range.end < address {
-                prev_region = Some(region);
-            }
-        }
-        prev_region.map(|node| node as &MemoryRegion)
-    }
-    pub fn find_intersect_region(
-        &mut self,
-        range: Range<VirtualAddress>,
-    ) -> Option<&'static MemoryRegion> {
-        let option_region = self.find_region(range.start);
-        unsafe {
-            if let Some(region) = option_region
-                && region.range.end < range.end
-            {
-                return Some(region);
-            }
-        }
-        None
-    }
+impl<T> AllocHandler for T where
+    T: Fn(usize) -> Option<LinkedList<'static, Page>> + 'static
+{
 }
 
-#[derive(ListNode)]
-#[repr(C)]
-pub struct MemoryRegion {
-    #[list_pivot]
-    node: TinyListNode<MemoryRegion>,
-    parent: NonNull<ProcessInfo>,
-    range: Range<VirtualAddress>,
-    permissions: MemoryRegionFlag,
-    //mapped_file: MemoryMappedFile,
-    //file_offset: usize
-}
+pub trait DeallocHandler: Fn(&'static mut Page) + 'static {}
 
-impl MemoryRegion {
-    pub const fn new() -> Self {
-        todo!()
-    }
-    ///invoked when MemoryRegion is removed from address space
-    pub fn close() {}
-    //it's simple callback to find page during page_fault_exception
-    pub fn no_page(&mut self) -> NonNull<Page> {
-        todo!()
-    }
-    pub fn populate(&mut self) -> usize {
-        0
-    }
-    pub fn expand(&mut self) {
-        todo!()
-    }
-}
+impl<T> DeallocHandler for T where T: Fn(&'static mut Page) + 'static {}
 
-pub struct AddressSpace {
-    clean_pages: LinkedList<'static, Page>,
-    dirty_pages: LinkedList<'static, Page>,
-    locked_pages: LinkedList<'static, Page>,
-    total_pages_count: usize,
-    marker: PageMarker,
-}
+// pub type DeallocHandler = fn(&'static mut Page);
 
-#[derive(ListNode)]
-#[repr(C)]
-///the one represent meor
-pub struct MemoryMappingRegion {
-    #[list_pivots]
-    node: ListNode<MemoryMappingRegion>,
-    flags: MemoryMappingFlag,
-    //used to copy
-    virtual_offset: VirtualAddress,
-    physical_offset: PhysicalAddress,
-    page_count: usize,
-}
+pub type TaskRoutine = extern "C" fn();
 
-#[derive(ListNode)]
-#[repr(C)]
-pub struct Page {
-    #[list_pivots]
-    node: ListNode<Page>,
-    flags: PageFlag,
-    //it's easy to use in calculation, in future should be replace by macro
-    //when zero page should be free
-    ref_count: AtomicUsize,
-}
-
-//wrapper for page to control uses
-pub struct PageOwner {}
-
-assert_eq_size!(Page, [u8; 16]);
 pub enum AllocationStrategy {
     #[doc = "Allocation for Kernel space when page cannot be swapped"]
     NoSwap,
@@ -356,251 +300,352 @@ pub enum AllocationStrategy {
     Device,
 }
 
-pub fn alloc(size: usize, strategy: AllocationStrategy) -> *mut u8 {
-    ptr::null_mut()
+pub struct SlabInPlaceAllocator {
+    size: usize,
+    slab_name: &'static str,
+    ptr: *mut u8,
 }
 
-pub fn dealloc(pointer: *mut u8) {
-    assert!(!pointer.is_null(), "Cannot dealloc null");
+unsafe impl Allocator for SlabInPlaceAllocator {
+    fn allocate(
+        &self,
+        layout: core::alloc::Layout,
+    ) -> Result<NonNull<[u8]>, core::alloc::AllocError> {
+        if layout.size() != self.size {
+            return Err(core::alloc::AllocError);
+        }
+
+        let bytes =
+            unsafe { core::slice::from_raw_parts_mut(self.ptr, self.size) };
+
+        Ok(NonNull::from(bytes))
+    }
+
+    unsafe fn deallocate(
+        &self,
+        _ptr: NonNull<u8>,
+        _layout: core::alloc::Layout,
+    ) {
+        SYSTEM_ALLOCATOR.dealloc_slab(self.slab_name, self.ptr);
+    }
 }
 
-///the kernel method to allocate structure in kernel slab pool
-pub fn slab_alloc<T>(
-    strategy: AllocationStrategy,
-) -> Option<&'static mut MaybeUninit<T>> {
+pub type SlabBox<T> = Box<T, SlabInPlaceAllocator>;
+
+pub fn slab_alloc<T: Slab>(value: T) -> Result<SlabBox<T>, AllocError> {
     let size = mem::size_of::<T>();
-    let piece = if size <= u16::MAX as usize {
-        SlabPiece::with_capacity(size as u16)
-    } else {
-        unreachable!("Slab piece too huge");
+
+    assert!(size < u16::MAX as usize);
+
+    let layout = SYSTEM_ALLOCATOR.get().alloc_slab(SlabAlloc {
+        name: T::NAME,
+        size: size as u16,
+        alignment: T::ALIGNMENT,
+    })?;
+
+    let allocator = SlabInPlaceAllocator {
+        size,
+        ptr: layout,
+        slab_name: T::NAME,
     };
-    let offset = SLAB_ALLOCATOR
-        .alloc(piece, Alignment::Page)
-        .unwrap_or_else(|_| panic!("Failed to alloc slab with size={size}"));
-    Some(unsafe { &mut *(offset as *mut MaybeUninit<T>) })
+
+    Box::try_new_in(value, allocator).map_err(|_| AllocError::NoMemory)
 }
 
-pub fn slab_dealloc<T>(pointer: &mut T) {
-    let offset = pointer as *mut T as VirtualAddress;
-    SLAB_ALLOCATOR.dealloc(offset);
+pub fn into_boxed<T: Slab>(data: NonNull<T>) -> SlabBox<T> {
+    let ptr = data.as_ptr().cast::<u8>();
+
+    let allocator = SlabInPlaceAllocator {
+        ptr,
+        slab_name: T::NAME,
+        size: mem::size_of::<T>(),
+    };
+
+    unsafe { SlabBox::from_raw_in(data.as_ptr(), allocator) }
 }
 
 ///Allocate virtual memory regardless of physical layout
 ///The each virtual page, probably, will be separate
 ///The current implementation is simple slab allocation (it will fail with too huge memory size)
-pub fn virtual_alloc(size: usize) -> VirtualAddress {
-    SLAB_ALLOCATOR
+pub fn virtual_alloc(
+    size: usize,
+    flags: MemoryAllocationFlag,
+) -> Result<VirtualAddress, AllocError> {
+    SYSTEM_ALLOCATOR
         .get()
-        .virtual_alloc(size)
-        .expect("Failed to allocate virtual memory")
+        .virtual_alloc(size, flags)
+        .map(|ptr| ptr as VirtualAddress)
 }
 
-pub fn virtual_dealloc(offset: VirtualAddress) {
-    todo!()
+pub fn virtual_dealloc(offset: VirtualAddress, size: usize) {
+    SYSTEM_ALLOCATOR.get().virtual_dealloc(offset, size);
 }
 
-pub fn physical_alloc(bytes: usize) -> Result<*mut u8, OsAllocationError> {
-    todo!()
+pub fn new_page_marker() -> Result<PageMarker, AllocError> {
+    static_assertions::const_assert_eq!(
+        Page::SIZE,
+        mem::size_of::<PageDirectoryEntries>()
+    );
+
+    let raw_entries = SYSTEM_ALLOCATOR
+        .get()
+        .virtual_alloc(
+            Page::SIZE,
+            MemoryAllocationFlag::CONTINOUS
+                | MemoryAllocationFlag::ZEROED
+                | MemoryAllocationFlag::READ_WRITE,
+        )?
+        .cast::<PageDirectoryEntries<'static>>();
+
+    let entries = unsafe { &mut *raw_entries };
+
+    //essential data structures will be copied
+    //but we must ensure integrity kernel space
+    //in all processes
+    unsafe {
+        entries
+            .copy_from_slice(KERNEL_MARKER.get().directory().share_entries());
+    }
+
+    let physical_offset = KERNEL_MARKER
+        .get()
+        .lookup_physical(raw_entries as VirtualAddress)
+        .expect("vmalloc without page");
+
+    let directory = PageDirectory {
+        entries,
+        physical_offset,
+    };
+
+    Ok(PageMarker::new(directory))
 }
 
-pub fn physical_dealloc(offset: *mut u8) {
-    todo!()
+pub struct PhysicalAllocation {
+    pages: LinkedList<'static, Page>,
+}
+
+impl core::ops::Deref for PhysicalAllocation {
+    type Target = LinkedList<'static, Page>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pages
+    }
+}
+
+impl core::ops::DerefMut for PhysicalAllocation {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.pages
+    }
+}
+
+impl Drop for PhysicalAllocation {
+    fn drop(&mut self) {
+        if self.pages.is_empty() {
+            return;
+        }
+
+        let mut dealloc_pages = LinkedList::empty();
+        dealloc_pages.splice(&mut self.pages);
+
+        physical_dealloc(dealloc_pages);
+    }
+}
+
+impl From<LinkedList<'static, Page>> for PhysicalAllocation {
+    fn from(pages: LinkedList<'static, Page>) -> Self {
+        Self { pages }
+    }
+}
+
+pub fn remap(
+    process: &Process,
+    map_region: MemoryMappingRegion,
+) -> Result<(), AllocError> {
+    assert_eq!(map_region.virtual_offset % Page::SIZE, 0);
+
+    let pages = PHYSICAL_ALLOCATOR
+        .get()
+        .reserve_pages(map_region.physical_offset, map_region.page_count)?;
+
+    let mut state = process.state.try_lock().unwrap();
+
+    state.marker.map_user_range(&map_region)?;
+
+    let Some(mem_region) = state.find_region_mut(map_region.virtual_offset)
+    else {
+        let mem_region = MemoryRegion::new_allocated(
+            map_region,
+            MemoryRegionFlag::READ_WRITE,
+            pages,
+        )?;
+
+        state.add_region(mem_region.into_node());
+
+        return Ok(());
+    };
+
+    let mem_region_above =
+        mem_region.split_on(map_region.virtual_offset, pages)?;
+
+    if let Some(mem_region) = mem_region_above {
+        state.add_region(mem_region.into_node());
+    }
+
+    Ok(())
+}
+
+/// allocate physical memory
+/// not continuous
+pub fn physical_alloc(bytes: usize) -> Result<PhysicalAllocation, AllocError> {
+    let pages_count = Page::upper_bound(bytes);
+
+    let list = PHYSICAL_ALLOCATOR.get().alloc_zeroed_pages(pages_count)?;
+
+    Ok(list.into())
+}
+
+pub fn physical_dealloc(mut pages: LinkedList<'static, Page>) {
+    let mut iter = pages.iter_mut();
+
+    loop {
+        if iter.next().is_none() {
+            break;
+        }
+
+        let page = iter.unlink_watched().unwrap();
+
+        PHYSICAL_ALLOCATOR.get().dealloc_page(page);
+    }
 }
 
 //the method should be invoked only by one thread
 //concurrency is forbidden
-pub unsafe fn switch_to_task(task: &mut ThreadTask) {
-    TASK_STATE.set_kernel_stack(task.kernel_stack + process::TASK_STACK_SIZE);
-    let mut marker = if task.parent.is_some() {
-        unreachable!("Process functionality is not implemented")
+/// Set ss:esp in TSS
+/// This stack will be used during
+/// user-space to kernel-space switching
+/// for kernel-space switching no tss is used
+#[no_mangle]
+pub unsafe fn switch_to_task(task: &mut Task) {
+    let stack = task.stack_start();
+
+    let task_state = &raw mut TASK_STATE;
+    unsafe { (*task_state).set_kernel_stack(stack) };
+
+    // log::debug!("KERNEL Marker {:?}", *KERNEL_MARKER.get());
+
+    if let Some(process) = task.process.as_ref() {
+        let state = process.state.try_lock().unwrap();
+
+        // log::debug!("Process Marker {:?}", state.marker);
+        state.marker.load();
     } else {
-        KERNEL_MARKER.get()
+        KERNEL_MARKER.get().load();
     };
-    let table = marker.table();
-    table.load();
 }
 
 pub unsafe fn switch_to_kernel() {
-    let mut marker = KERNEL_MARKER.get();
-    let table = marker.table();
-    table.load();
+    let marker = KERNEL_MARKER.get();
+    marker.load();
 }
 
-pub fn alloc_proc() -> Result<ProcessInfo, OsAllocationError> {
-    let mut entries =
-        physical_alloc(TABLE_ENTRIES_COUNT * mem::size_of::<DirEntry>())?;
-    let table = unsafe {
-        // let table = RefTable::with_default_values(entries.as_mut(), TABLE_ENTRIES_COUNT);
-        // let marker = KERNEL_MARKER.get();
-        // let kernel_region = get_kernel_mapping_region();
-    };
-    todo!()
-}
-
-const KERNEL_LAYOUT_FLAGS: MemoryMappingFlag =
-    MemoryMappingFlag(MemoryMappingFlag::WRITABLE | MemoryMappingFlag::PRESENT);
 //duplicates in kernel.ld script
 declare_constants!(
     pub usize,
     MAX_PHYSICAL_MEMORY_SIZE = 32 * 1024 * 1024;//bytes
     MEMORY_MAP_SIZE = MAX_PHYSICAL_MEMORY_SIZE / Page::SIZE, "the count of pages in memory map array";
 );
+
 #[repr(transparent)]
 pub struct MemoryMap {
     pages: [Page; MEMORY_MAP_SIZE],
 }
 
-fn mem_map_offset() -> *mut Page {
-    unsafe { &mut MEMORY_MAP as *mut MemoryMap as *mut Page }
-}
+impl MemoryMap {
+    pub fn iter(&self) -> impl Iterator<Item = &Page> {
+        self.pages.iter()
+    }
 
-impl ToPhysicalAddress for Page {
-    //return which physical address is used for such
-    fn as_physical(&self) -> PhysicalAddress {
-        let page_offset = ptr::from_ref(self);
-        let page_index = unsafe { page_offset.sub_ptr(mem_map_offset()) };
-        page_index << Page::SHIFT
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Page> {
+        self.pages.iter_mut()
     }
 }
+
+fn mem_map_offset() -> *mut Page {
+    &raw mut MEMORY_MAP as *mut Page
+}
+
+// impl ToPhysicalAddress for Page {
+//     //return which physical address is used for such
+//     fn as_physical(&self) -> PhysicalAddress {
+//         let page_offset = ptr::from_ref(self);
+//
+//         let page_index =
+//             unsafe { page_offset.offset_from_unsigned(mem_map_offset()) };
+//
+//         page_index << Page::SHIFT
+//     }
+// }
 
 ///commit kernel memory
 pub fn kernel_commit(
-    region: MemoryMappingRegion,
+    mut region: MemoryMappingRegion,
 ) -> Result<(), PageMarkerError> {
-    KERNEL_MARKER.get().map_kernel_range(&region)
+    let mut marker = KERNEL_MARKER.get();
+    marker.map_kernel_range(&mut region)
 }
 
-pub fn user_commit(region: MemoryMappingRegion) -> Result<(), PageMarkerError> {
-    todo!()
-}
-
-impl Page {
-    declare_constants! {
-        pub usize,
-        SHIFT = 12, "the offset of page";
-        SIZE = 1 << Page::SHIFT, "the size in bytes of page";
-    }
-    pub fn flags(&self) -> PageFlag {
-        self.flags
-    }
-    pub fn set_flags(&mut self, flags: PageFlag) {
-        self.flags = flags;
-    }
-
-    pub const fn empty() -> Self {
-        Self {
-            flags: unsafe { PageFlag::wrap(PageFlag::UNUSED) },
-            ref_count: AtomicUsize::new(0),
-            node: unsafe { ListNode::empty() },
-        }
-    }
-    ///increment reference counter in page
-    pub fn take(&self) {
-        let _old_value = self.ref_count.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn free(&self) {
-        let old_value = self.ref_count.fetch_sub(1, Ordering::SeqCst);
-        if old_value == 0 {
-            panic!("The free page releases again");
-        }
-    }
-
-    pub fn is_used(&self) -> bool {
-        self.ref_count.load(Ordering::SeqCst) > 0
-    }
-    //utility methods
-    pub const fn upper_bound(byte_size: usize) -> usize {
-        (byte_size + Page::SIZE - 1) / Page::SIZE
-    }
-
-    pub const fn lower_bound(byte_size: usize) -> usize {
-        byte_size / Page::SIZE
-    }
-
-    pub unsafe fn new_at_offset(offset: PhysicalAddress) -> NonNull<Page> {
-        let page_index: usize = offset >> Page::SHIFT;
-        let page_offset = unsafe { mem_map_offset().add(page_index) };
-        unsafe { NonNull::new_unchecked(page_offset) }
-    }
-
-    pub unsafe fn as_slice(&mut self, count: usize) -> &'static [Page] {
-        core::slice::from_raw_parts(self, count)
-    }
-
-    pub unsafe fn as_slice_mut(&mut self, count: usize) -> &'static mut [Page] {
-        core::slice::from_raw_parts_mut(self, count)
-    }
-    //return the index of page
-    pub unsafe fn index(&self) -> usize {
-        ((self as *const Page as VirtualAddress)
-            - (mem_map_offset() as VirtualAddress))
-            / mem::size_of::<Page>()
-    }
-}
-
-#[cfg(test)]
-impl MemoryMap {
-    pub const fn empty() -> Self {
-        const NODE: Page = Page::empty();
-        let pages = [NODE; MEMORY_MAP_SIZE];
-        Self { pages }
-    }
-}
-
-// pub fn get_kernel_mapping_region() -> &'static MemoryMappingRegion {
-//     // let node = unsafe { ListNode::wrap_data(KERNEL_MAPPING) };
-//     // unsafe { node.as_head() }
-//     &KERNEL_MAPPING
-// }
-//
-// static KERNEL_MAPPING: MemoryMappingRegion = MemoryMappingRegion {
-//     flags: MemoryMappingFlag::wrap(MemoryMappingFlag::PRESENT | MemoryMappingFlag::WRITABLE),
-//     virtual_offset: 0, //unsafe { KERNEL_VIRTUAL_OFFSET },
-//     physical_offset: 0, //unsafe { KERNEL_PHYSICAL_OFFSET },
-//     page_count: 0, //unsafe { VirtualAddress::MAX - KERNEL_VIRTUAL_OFFSET },
-// };
-
-#[cfg(not(test))]
 extern "C" {
     static mut MEMORY_MAP: MemoryMap;
 }
 
 static mut TASK_STATE: TaskState = TaskState::null();
+static mut GDT: GDTTable = GDTTable::null();
+static mut GDT_HANDLE: GDTHandle = GDTHandle::null();
+
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> =
     UnsafeLazyCell::empty();
-static SLAB_ALLOCATOR: UnsafeLazyCell<SystemAllocator> =
+
+static SYSTEM_ALLOCATOR: UnsafeLazyCell<SystemAllocator> =
     UnsafeLazyCell::empty();
-#[cfg(not(test))]
+
+pub struct VirtualAllocator;
 #[global_allocator]
-static RUST_ALLOCATOR: allocators::RustAllocator = allocators::RustAllocator;
-static KERNEL_MARKER: SpinLockLazyCell<PageMarker> = SpinLockLazyCell::empty();
+static KERNEL_ALLOCATOR: VirtualAllocator = VirtualAllocator;
 
-#[cfg(test)]
-static mut MEMORY_MAP: MemoryMap = MemoryMap::empty();
+unsafe impl GlobalAlloc for VirtualAllocator {
+    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+        if let Some(slab) = allocators::classify_slab_by_size(layout.size()) {
+            let ptr = SYSTEM_ALLOCATOR
+                .get()
+                .alloc_slab(slab)
+                .inspect_err(|cause| {
+                    log::error!(
+                        "Failed to alloc virtual memory as slab: {cause}"
+                    );
+                })
+                .unwrap_or(ptr::null_mut());
 
-#[cfg(test)]
-mod tests {
-    use core::mem;
+            return ptr;
+        }
 
-    use kernel_types::collections::ListNode;
+        //huge allocation performed via virtual_alloc
+        virtual_alloc(
+            layout.size(),
+            MemoryAllocationFlag::CONTINOUS | MemoryAllocationFlag::READ_WRITE,
+        )
+        .map(|offset| offset as *mut u8)
+        .unwrap_or(ptr::null_mut())
+    }
 
-    use crate::memory::{
-        MemoryMap, Page, ToPhysicalAddress, VirtualAddress, MEMORY_MAP,
-    };
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
+        if let Some(slab) = allocators::classify_slab_by_size(layout.size()) {
+            SYSTEM_ALLOCATOR.get().dealloc_slab(slab.name, ptr);
 
-    #[test]
-    fn check_page_conversation() {
-        let mem_map_virtual_offset: VirtualAddress =
-            unsafe { &mut MEMORY_MAP as *mut MemoryMap as VirtualAddress };
-        let page_index = 42;
-        let page_virtual_offset = mem_map_virtual_offset
-            + page_index * mem::size_of::<ListNode<Page>>();
-        let page = unsafe { Page::new_at_offset(page_index << Page::SHIFT) }; //year, it's UB, but not write operation
-        assert_eq!(page.as_ptr() as VirtualAddress, page_virtual_offset);
-        assert_eq!(
-            page_index << Page::SHIFT,
-            unsafe { page.as_ref() }.as_physical()
-        );
+            return;
+        }
+
+        virtual_dealloc(ptr as VirtualAddress, layout.size());
     }
 }
+
+static KERNEL_MARKER: SpinLockLazyCell<PageMarker> = SpinLockLazyCell::empty();
