@@ -101,6 +101,7 @@ impl Page {
     }
 
     //return previous virtual offset
+    #[must_use]
     pub fn set_virtual(
         &mut self,
         offset: VirtualAddress,

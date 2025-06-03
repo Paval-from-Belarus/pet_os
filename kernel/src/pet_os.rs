@@ -82,10 +82,10 @@ pub fn main() {
     log::info!("Task switching is enabled");
 
     let thread_1 =
-        task::new_task(task3, 51 as *mut (), TaskPriority::Module(0)).unwrap();
+        task::new_task(task1, 51 as *mut (), TaskPriority::Module(0)).unwrap();
 
     let thread_2 =
-        task::new_task(task3, 52 as *mut (), TaskPriority::Kernel).unwrap();
+        task::new_task(task2, 52 as *mut (), TaskPriority::Kernel).unwrap();
 
     let thread_3 =
         task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(10))

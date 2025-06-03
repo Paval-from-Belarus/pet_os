@@ -1,12 +1,7 @@
 #![no_std]
 #![no_main]
 
-use kernel_lib::{
-    io::{
-        self,
-    },
-    KernelModule, ModuleError,
-};
+use kernel_lib::{io, KernelModule, ModuleError};
 
 kernel_lib::module! {
     module: VgaDriver,

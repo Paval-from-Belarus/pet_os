@@ -211,7 +211,7 @@ pub fn enable_task_switching() {
     unsafe { TASK_STATE = state };
 
     let task = TaskStateDescriptor::active(
-        &raw const TASK_STATE as VirtualAddress - kernel_virtual_offset(),
+        &raw const TASK_STATE as VirtualAddress,
         mem::size_of::<TaskState>() - 1,
     );
 

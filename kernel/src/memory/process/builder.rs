@@ -67,19 +67,21 @@ impl ProcessBuilder<ProcessSpace> {
 
         let mut pages = physical_alloc(size + offset_in_page)?;
 
-        let mut offset = start_offset - offset_in_page;
+        let mut virt_offset = start_offset - offset_in_page;
 
-        for page in pages.iter() {
+        for page in pages.iter_mut() {
             assert_eq!(page.use_count(), 1);
 
             self.marker.map_user_range(&MemoryMappingRegion {
                 flags: flags.into(),
-                virtual_offset: offset,
+                virtual_offset: virt_offset,
                 physical_offset: page.as_physical(),
                 page_count: 1,
             })?;
 
-            offset += Page::SIZE;
+            assert!(page.set_virtual(virt_offset).is_none());
+
+            virt_offset += Page::SIZE;
         }
 
         region.pages.splice(&mut pages);

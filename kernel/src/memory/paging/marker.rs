@@ -157,9 +157,6 @@ impl PageMarker {
                 dir_entry.set_ph_offset(ph_offset);
             }
 
-            if dir_entry.page_table_mut().is_none() {
-                let page = Page::take(dir_entry.ph_offset().unwrap());
-            }
             let page_table = dir_entry.page_table_mut().unwrap();
 
             let page_entry = &mut page_table[entry_index];
