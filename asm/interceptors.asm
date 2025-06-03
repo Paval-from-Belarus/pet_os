@@ -21,7 +21,7 @@ rept IRQ_LINES_COUNT index: 0
 rept IRQ_LINES_COUNT index: 0
 {
     stub#index:
-        push ds es fs gs ;fast produce valid 32 bit code
+        push ds es fs gs ;fasm produce valid 32 bit code
 
         pusha
 
@@ -120,3 +120,11 @@ breakpoint:
     mov eax, 42
     pop eax
     ret
+
+
+public _syscall
+extrn handle_syscall
+
+_syscall:
+    call handle_syscall
+    iret

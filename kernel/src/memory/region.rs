@@ -4,15 +4,16 @@ use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, LinkedList, ListNode};
 
 use super::{
-    slab_alloc, virtual_alloc, virtual_dealloc, AllocError, Page, Slab,
-    SlabBox, VirtualAddress,
+    physical_dealloc, slab_alloc, AllocError, MemoryAllocationFlag,
+    MemoryMappingRegion, Page, Slab, SlabBox, VirtualAddress,
 };
 
 pub struct MemoryRegionBox {
     region: SlabBox<MemoryRegion>,
 }
 
-/// The region of continous virtual memory
+/// The region of continous virtual memory of the proccess
+/// Each physical page should sequentially follow to virtual page
 #[derive(Debug, ListNode)]
 #[repr(C)]
 pub struct MemoryRegion {
@@ -33,10 +34,32 @@ bitflags::bitflags! {
         const WRITE = 0x02;
         const EXEC = 0x04;
 
+        const READ_WRITE = Self::READ.bits() | Self::WRITE.bits();
+
         const SHARED = 0x08;
 
         const SEQ_READ = 0x10;
         const RAND_READ = 0x20;
+    }
+}
+
+impl From<MemoryRegionFlag> for MemoryAllocationFlag {
+    fn from(value: MemoryRegionFlag) -> Self {
+        let mut flags = MemoryAllocationFlag::ZEROED;
+
+        if value.contains(MemoryRegionFlag::READ) {
+            flags |= MemoryAllocationFlag::READ;
+        }
+
+        if value.contains(MemoryRegionFlag::WRITE) {
+            flags |= MemoryAllocationFlag::WRITE;
+        }
+
+        if value.contains(MemoryRegionFlag::SEQ_READ) {
+            flags |= MemoryAllocationFlag::CONTINOUS;
+        }
+
+        flags
     }
 }
 
@@ -46,6 +69,10 @@ impl MemoryRegion {
         range: Range<VirtualAddress>,
         flag: MemoryRegionFlag,
     ) -> Result<MemoryRegionBox, AllocError> {
+        if range.start % Page::SIZE != 0 {
+            // return Err(AllocError::InvalidAlignment(super::Alignment::Page));
+        }
+
         let region = slab_alloc(Self {
             node: ListNode::empty(),
             pages: LinkedList::empty(),
@@ -56,30 +83,17 @@ impl MemoryRegion {
         Ok(MemoryRegionBox { region })
     }
 
-    pub fn new_uninit(
-        size: usize,
+    pub fn new_allocated(
+        map_region: MemoryMappingRegion,
         flag: MemoryRegionFlag,
+        pages: LinkedList<'static, Page>,
     ) -> Result<MemoryRegionBox, AllocError> {
-        assert!(size % Page::SIZE == 0);
+        let size = map_region.page_count * Page::SIZE;
+        let offset = map_region.virtual_offset;
 
-        let offset = virtual_alloc(size, flag)?;
+        let mut region = unsafe { Self::empty(offset..(offset + size), flag) }?;
 
-        unsafe { Self::empty(offset..(offset + size), flag) }
-    }
-
-    pub fn new_zeroed(
-        size: usize,
-        flag: MemoryRegionFlag,
-    ) -> Result<MemoryRegionBox, AllocError> {
-        let mut region = Self::new_uninit(size, flag)?;
-
-        let bytes = unsafe {
-            core::slice::from_raw_parts_mut(region.mem_mut_ptr(), region.size())
-        };
-
-        for byte in bytes {
-            *byte = 0;
-        }
+        region.pages = pages;
 
         Ok(region)
     }
@@ -105,8 +119,70 @@ impl MemoryRegion {
     pub fn populate(&mut self) -> usize {
         0
     }
+
     pub fn expand(&mut self) {
         todo!()
+    }
+
+    pub fn split_on(
+        &mut self,
+        offset: VirtualAddress,
+        pages: LinkedList<'static, Page>,
+    ) -> Result<Option<MemoryRegionBox>, AllocError> {
+        assert!(offset >= self.range.start);
+        assert!(!self.pages.is_empty());
+
+        let rest_pages_count = (offset - self.range.start) / Page::SIZE;
+
+        if rest_pages_count == 0 {
+            //reuse this region instead allocation of new
+
+            let mut to_dealloc = LinkedList::empty();
+            to_dealloc.splice(&mut self.pages);
+            physical_dealloc(to_dealloc);
+
+            self.range.end = offset;
+            self.pages = pages;
+
+            return Ok(None);
+        }
+
+        let buddy_size = pages.len() * Page::SIZE;
+        let mut buddy_region = unsafe {
+            MemoryRegion::empty(offset..(offset + buddy_size), self.flag)
+        }?;
+        buddy_region.pages = pages;
+
+        self.reduce_to(offset);
+
+        Ok(buddy_region.into())
+    }
+
+    pub fn reduce_to(&mut self, offset: VirtualAddress) {
+        assert!(offset > self.range.start);
+
+        let rest_pages_count = (offset - self.range.start) / Page::SIZE;
+
+        self.range.end = offset;
+        let mut to_dealloc = LinkedList::empty();
+
+        let mut iter = self.pages.iter_mut();
+        let mut index = 0;
+
+        loop {
+            if iter.next().is_none() {
+                break;
+            }
+
+            if index >= rest_pages_count {
+                let page = iter.unlink_watched().unwrap();
+                to_dealloc.push_back(page);
+            }
+
+            index += 1;
+        }
+
+        physical_dealloc(to_dealloc);
     }
 
     /// the size of region in bytes
@@ -145,7 +221,11 @@ impl core::ops::DerefMut for MemoryRegionBox {
 
 impl Drop for MemoryRegion {
     fn drop(&mut self) {
-        virtual_dealloc(self.mem_ptr() as VirtualAddress, self.size());
+        let mut to_dealloc = LinkedList::empty();
+
+        to_dealloc.splice(&mut self.pages);
+
+        physical_dealloc(to_dealloc);
     }
 }
 

@@ -20,7 +20,7 @@ use kernel_types::{
 use crate::{
     current_task,
     error::KernelError,
-    io, log_unchecked,
+    io, log_module,
     memory::{
         self, virtual_alloc, virtual_dealloc, MemoryMappingRegion,
         MemoryRegion, MemoryRegionFlag, Page, PageMarker, Process, ProcessId,
@@ -348,8 +348,6 @@ impl<'a> Loader<'a> {
                 let region =
                     builder.alloc_region(virt_addr, mem_size, region_flags)?;
 
-                log::debug!("Allocated region: {region:?}");
-
                 let region_data = self.elf_file.segment_data(&header)?;
 
                 region.copy_from(region_data);
@@ -357,6 +355,7 @@ impl<'a> Loader<'a> {
         }
 
         let entry_point = self.elf_file.ehdr.e_entry as VirtualAddress;
+
         assert!(entry_point != 0);
         let process = builder.build(entry_point)?;
 
@@ -398,20 +397,9 @@ pub extern "C" fn run_process() {
         (state.entry_point, state.stack.end)
     };
 
-    log::debug!("Running process");
-
-    log::debug!("EAX ptr: {:X?}", &raw const current_task!().context().eax);
-
-    unsafe { breakpoint() };
-
-    let stack_bottom = current_task!().kernel_stack_bottom;
-
-    current_task!().context_mut().esp =
-        (stack_bottom + TASK_STACK_SIZE - 1) as u32;
+    log::debug!("Running process",);
 
     log::debug!("Stack size: {}", current_task!().stack_size());
-
-    unsafe { memory::switch_to_task(current_task!()) };
 
     unsafe {
         core::arch::asm! {

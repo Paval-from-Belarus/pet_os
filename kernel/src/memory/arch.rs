@@ -1,4 +1,4 @@
-use core::mem;
+use core::mem::{self, MaybeUninit};
 use core::{fmt::Debug, marker::PhantomData};
 
 use bitfield::Bit;
@@ -6,7 +6,7 @@ use static_assertions::assert_eq_size;
 
 use kernel_types::{bitflags, declare_constants, Zeroed};
 
-use crate::memory::{PhysicalAddress, ToPhysicalAddress, VirtualAddress};
+use crate::memory::{PhysicalAddress, VirtualAddress};
 
 #[derive(Clone, Copy, Default)]
 #[repr(transparent)]
@@ -252,7 +252,7 @@ pub struct TaskStateDescriptor {
 assert_eq_size!(TaskStateDescriptor, [u32; 2]);
 
 impl TaskStateDescriptor {
-    pub fn active(base: VirtualAddress, limit: usize) -> Self {
+    pub fn active(base: PhysicalAddress, limit: usize) -> Self {
         let ring = PrivilegeLevel::KERNEL;
 
         let system_type =
@@ -261,7 +261,7 @@ impl TaskStateDescriptor {
         let flags = DescriptorFlags::new(true, ring, system_type);
 
         let mut instance = TaskStateDescriptor::null();
-        instance.set_base(base.as_physical());
+        instance.set_base(base);
         instance.set_limit(limit);
         instance.set_granularity(false);
 
@@ -271,6 +271,7 @@ impl TaskStateDescriptor {
     pub const fn null() -> Self {
         unsafe { mem::MaybeUninit::zeroed().assume_init() }
     }
+
     pub fn set_base(&mut self, base: PhysicalAddress) {
         self.lower_base = (base & 0xFFFF) as u16;
         self.middle_base = ((base >> 16) & 0xFF) as u8;
@@ -333,7 +334,7 @@ impl TaskGate {
 pub struct InterruptGate {
     lower_offset: u16,
     pub selector: SegmentSelector,
-    reserved: Zeroed<u8>,
+    reserved: MaybeUninit<u8>,
     pub flags: DescriptorFlags<SystemType>,
     upper_offset: u16,
 }
@@ -347,13 +348,13 @@ impl InterruptGate {
         handler_offset: VirtualAddress,
         selector: SegmentSelector,
         flags: SystemType,
-    ) -> InterruptGate {
+    ) -> Self {
         // let physical_offset = handler_offset.as_physical();
         let lower_offset = (handler_offset & 0xFFFF) as u16;
         let upper_offset = ((handler_offset >> 16) & 0xFFFF) as u16;
         let ring = PrivilegeLevel::KERNEL;
 
-        InterruptGate {
+        Self {
             lower_offset,
             selector,
             flags: DescriptorFlags::new(false, ring, flags),
@@ -361,6 +362,7 @@ impl InterruptGate {
             ..InterruptGate::null()
         }
     }
+
     pub const fn null() -> Self {
         unsafe { mem::MaybeUninit::<InterruptGate>::zeroed().assume_init() } //because the present bit is set to zero
     }

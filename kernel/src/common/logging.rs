@@ -16,7 +16,7 @@ macro_rules! log {
 }
 
 #[macro_export]
-macro_rules! log_unchecked {
+macro_rules! log_module {
     ( $($arg:tt)* ) => ({
 	use core::fmt::Write;
 

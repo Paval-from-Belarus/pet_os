@@ -48,7 +48,7 @@ mod user;
 #[panic_handler]
 pub fn panic(info: &core::panic::PanicInfo) -> ! {
     unsafe { io::disable() };
-    log_unchecked!("kernel panics={}", info);
+    log::error!("kernel panics={}", info);
     unsafe { core::arch::asm!("hlt", options(noreturn)) }
 }
 
@@ -67,12 +67,7 @@ pub fn main() {
 
     // drivers::vga::init();
 
-    let directory = properties.page_directory();
-    let heap_offset = properties.heap_offset();
-
-    let allocator = properties.boot_allocator();
-
-    memory::init_kernel_space(allocator, directory, heap_offset);
+    memory::init_kernel_space(properties);
     log::info!("memory is initialized");
 
     io::init();
@@ -82,8 +77,7 @@ pub fn main() {
 
     drivers::init();
 
-    let gdt = unsafe { properties.gdt().as_mut() };
-    memory::enable_task_switching(gdt);
+    memory::enable_task_switching();
 
     log::info!("Task switching is enabled");
 
@@ -120,7 +114,7 @@ extern "C" fn task3() {
             log::info!("Task {task_id} #{i}");
         }
 
-        task::sleep(10);
+        // task::sleep(10);
     }
 }
 

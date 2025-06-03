@@ -10,12 +10,9 @@ use alloc::sync::Arc;
 use builder::{KernelSpace, ProcessBuilder};
 use kernel_types::collections::LinkedList;
 
-use crate::{error::KernelError, memory};
+use crate::error::KernelError;
 
-use super::{
-    paging::PageMarker, AllocError, MemoryRegion, MemoryRegionFlag, Page,
-    VirtualAddress,
-};
+use super::{paging::PageMarker, MemoryRegion, Page, VirtualAddress};
 
 pub type ProcessId = usize;
 
@@ -37,6 +34,7 @@ pub fn new_proccess_id() -> Option<ProcessId> {
 #[derive(Clone)]
 #[repr(C)]
 pub struct Process {
+    pub id: ProcessId,
     pub state: Arc<spin::Mutex<ProcessState>>,
 }
 
@@ -48,7 +46,6 @@ impl Process {
 
 ///Alternative to linux mm_struct
 pub struct ProcessState {
-    pub id: ProcessId,
     pub entry_point: VirtualAddress,
     ///offset of data segment
     ///It's redundant to store any information about last page ― it's can be easily calculated from heap_offset as:<br>
@@ -58,7 +55,7 @@ pub struct ProcessState {
     //offset of stack memory -> used for erasing stack memory
     // last_page_index: usize,
     //Write | NoPrivilege
-    pub marker: PageMarker<'static>,
+    pub marker: PageMarker,
 
     // pub code: Range<VirtualAddress>,
     // pub data: Range<VirtualAddress>,
@@ -66,8 +63,6 @@ pub struct ProcessState {
     pub stack: Range<VirtualAddress>,
 
     pub regions: LinkedList<'static, MemoryRegion>,
-
-    pub pages: LinkedList<'static, Page>,
     // last_touched_region: Option<&'static MemoryRegion>,
 }
 
@@ -172,30 +167,18 @@ impl ProcessState {
     //     })
     // }
 
-    pub fn find_region(
+    pub fn find_region_mut(
         &mut self,
         address: VirtualAddress,
-    ) -> Option<&MemoryRegion> {
+    ) -> Option<&mut MemoryRegion> {
         self.regions
-            .iter()
+            .iter_mut()
             .find(|region| region.range.contains(&address))
-            .map(|region| region as &MemoryRegion)
+            .map(|region| region as &mut MemoryRegion)
     }
 
-    pub fn find_unmapped_region(
-        &mut self,
-        _offset: VirtualAddress,
-        _length: usize,
-        _flags: MemoryRegionFlag,
-    ) -> Option<VirtualAddress> {
-        None
-    }
-
-    pub fn add_region(
-        &mut self,
-        _region: &'static mut MemoryRegion,
-    ) -> Result<(), ()> {
-        Ok(())
+    pub fn add_region(&mut self, region: &'static mut MemoryRegion) {
+        self.regions.push_back(region.as_node());
     }
 
     pub fn find_prev_region(
@@ -219,7 +202,7 @@ impl ProcessState {
         &mut self,
         range: Range<VirtualAddress>,
     ) -> Option<&MemoryRegion> {
-        let option_region = self.find_region(range.start);
+        let option_region = self.find_region_mut(range.start);
         if let Some(region) = option_region
             && region.range.end < range.end
         {
@@ -234,35 +217,35 @@ pub struct AddressSpace {
     dirty_pages: LinkedList<'static, Page>,
     locked_pages: LinkedList<'static, Page>,
     total_pages_count: usize,
-    marker: PageMarker<'static>,
+    marker: PageMarker,
 }
 
-fn copy_physically(
-    data: &[u8],
-    pages: &LinkedList<'_, Page>,
-) -> Result<(), AllocError> {
-    assert_eq!(Page::upper_bound(data.len()), pages.len() * Page::SIZE);
-
-    let mut data_offset = 0;
-
-    for page in pages.iter() {
-        assert!(data_offset < data.len());
-
-        let code_ptr = unsafe { memory::kernel_map(page.as_slice(1)).unwrap() };
-
-        let copied_size = usize::min(Page::SIZE, data.len() - data_offset);
-
-        let source = &data[data_offset..(data_offset + copied_size)];
-
-        let target =
-            unsafe { core::slice::from_raw_parts_mut(code_ptr, source.len()) };
-
-        target.copy_from_slice(source);
-
-        unsafe { memory::kernel_unmap(page.as_slice(1), code_ptr) }
-
-        data_offset += copied_size;
-    }
-
-    Ok(())
-}
+// fn copy_physically(
+//     data: &[u8],
+//     pages: &LinkedList<'_, Page>,
+// ) -> Result<(), AllocError> {
+//     assert_eq!(Page::upper_bound(data.len()), pages.len() * Page::SIZE);
+//
+//     let mut data_offset = 0;
+//
+//     for page in pages.iter() {
+//         assert!(data_offset < data.len());
+//
+//         let code_ptr = unsafe { memory::kernel_map(page.as_slice(1)).unwrap() };
+//
+//         let copied_size = usize::min(Page::SIZE, data.len() - data_offset);
+//
+//         let source = &data[data_offset..(data_offset + copied_size)];
+//
+//         let target =
+//             unsafe { core::slice::from_raw_parts_mut(code_ptr, source.len()) };
+//
+//         target.copy_from_slice(source);
+//
+//         unsafe { memory::kernel_unmap(page.as_slice(1), code_ptr) }
+//
+//         data_offset += copied_size;
+//     }
+//
+//     Ok(())
+// }

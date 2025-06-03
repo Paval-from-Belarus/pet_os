@@ -7,8 +7,7 @@ use crate::{
     error::KernelError,
     memory::{
         self, new_proccess_id, physical_alloc, AllocError, MemoryMappingRegion,
-        MemoryRegion, MemoryRegionFlag, Page, PageMarker, ToPhysicalAddress,
-        VirtualAddress,
+        MemoryRegion, MemoryRegionFlag, Page, PageMarker, VirtualAddress,
     },
 };
 
@@ -23,9 +22,8 @@ impl AddressSpace for ProcessSpace {}
 impl AddressSpace for KernelSpace {}
 
 pub struct ProcessBuilder<T: AddressSpace> {
-    marker: PageMarker<'static>,
+    marker: PageMarker,
     regions: LinkedList<'static, MemoryRegion>,
-    pages: LinkedList<'static, Page>,
     _space: PhantomData<T>,
 }
 
@@ -36,7 +34,6 @@ impl ProcessBuilder<KernelSpace> {
         Ok(Self {
             marker,
             regions: LinkedList::empty(),
-            pages: LinkedList::empty(),
             _space: PhantomData,
         })
     }
@@ -47,7 +44,6 @@ impl ProcessBuilder<KernelSpace> {
         ProcessBuilder {
             marker: self.marker,
             regions: self.regions,
-            pages: self.pages,
             _space: PhantomData,
         }
     }
@@ -65,29 +61,32 @@ impl ProcessBuilder<ProcessSpace> {
         // let start_offset = start_offset - offset_in_page;
         // let size = size + offset_in_page;
 
-        let region = unsafe {
+        let mut region = unsafe {
             MemoryRegion::empty(start_offset..(start_offset + size), flags)
         }?;
 
         let mut pages = physical_alloc(size + offset_in_page)?;
 
-        let mut offset = start_offset - offset_in_page;
+        let mut virt_offset = start_offset - offset_in_page;
 
-        for page in pages.iter() {
+        for page in pages.iter_mut() {
+            assert_eq!(page.use_count(), 1);
+
             self.marker.map_user_range(&MemoryMappingRegion {
                 flags: flags.into(),
-                virtual_offset: offset,
+                virtual_offset: virt_offset,
                 physical_offset: page.as_physical(),
                 page_count: 1,
-                ..Default::default()
             })?;
 
-            offset += Page::SIZE;
+            assert!(page.set_virtual(virt_offset).is_none());
+
+            virt_offset += Page::SIZE;
         }
 
-        self.regions.push_back(region.into_node());
+        region.pages.splice(&mut pages);
 
-        self.pages.splice(&mut pages);
+        self.regions.push_back(region.into_node());
 
         Ok(self.regions.last_mut().unwrap())
     }
@@ -109,15 +108,14 @@ impl ProcessBuilder<ProcessSpace> {
         };
 
         let state = ProcessState {
-            id,
             stack,
             entry_point,
             regions: self.regions,
             marker: self.marker,
-            pages: self.pages,
         };
 
         Ok(Process {
+            id,
             state: Arc::new(spin::Mutex::new(state)),
         })
     }

@@ -1,28 +1,23 @@
-use core::arch::asm;
+use core::{arch::asm, ops::Range};
 
 use crate::{
-    log,
     memory::{
-        AllocHandler, DeallocHandler, MemoryMappingFlag, MemoryMappingRegion,
-        Page, PhysicalAddress, VirtualAddress,
+        self, MemoryMappingFlag, MemoryMappingRegion, Page, PhysicalAddress,
+        VirtualAddress,
     },
     page_index, table_index,
 };
 
-use super::{
-    table::RefTableEntry, PageDirectory, PageMarkerError, UnmapParamsFlag,
-    TABLE_PAGES_COUNT,
-};
+use super::{PageDirectory, PageMarkerError, TABLE_PAGES_COUNT};
 
 /// The struct is simply used to transfer physical layout for page allcoator
-pub struct PageMarker<'a> {
+#[derive(Debug)]
+pub struct PageMarker {
     // directory: &'a mut [DirEntry<'a>; DIRECTORY_ENTRIES_COUNT],
-    directory: PageDirectory<'a, 'a>,
-    alloc_handler: AllocHandler,
-    dealloc_handler: DeallocHandler,
+    directory: PageDirectory<'static, 'static>,
 }
 
-impl PageMarker<'static> {
+impl PageMarker {
     ///load underlying directory table to cpu
     #[inline(always)]
     pub fn load(&self) {
@@ -48,15 +43,11 @@ impl PageMarker<'static> {
 
         let page_entry = &page_table[page_index!(offset)];
 
-        if page_entry.has_page() {
-            Some(page_entry.page_offset())
-        } else {
-            None
-        }
+        page_entry.ph_offset()
     }
 }
 
-impl<'a> PageMarker<'a> {
+impl PageMarker {
     // /// build new page marker for memory regions
     // pub fn from_regions(
     //     regions: LinkedList<MemoryMappingRegion>,
@@ -87,36 +78,16 @@ impl<'a> PageMarker<'a> {
     //     Ok(marker)
     // }
 
-    pub fn directory(&self) -> &PageDirectory<'a, 'a> {
+    pub fn directory(&self) -> &PageDirectory<'static, 'static> {
         &self.directory
     }
 
-    pub fn new(
-        directory: PageDirectory<'a, 'a>,
-        alloc_handler: AllocHandler,
-        dealloc_handler: DeallocHandler,
-    ) -> Self {
-        Self {
-            directory,
-            alloc_handler,
-            dealloc_handler,
-        }
-    }
-
-    pub fn set_dealloc_handler(&mut self, handler: DeallocHandler) {
-        self.dealloc_handler = handler;
-    }
-
-    fn alloc_pages(&self, page_count: usize) -> Option<PhysicalAddress> {
-        (self.alloc_handler)(page_count)
-    }
-
-    fn dealloc_page(&self, offset: PhysicalAddress) {
-        (self.dealloc_handler)(offset)
+    pub fn new(directory: PageDirectory<'static, 'static>) -> Self {
+        Self { directory }
     }
 
     fn mark_pageg(
-        &'a mut self,
+        &mut self,
         virtual_offset: VirtualAddress,
         flags: MemoryMappingFlag,
     ) {
@@ -131,6 +102,7 @@ impl<'a> PageMarker<'a> {
         }
     }
 
+    #[inline(never)]
     pub fn map_user_range(
         &mut self,
         map_region: &MemoryMappingRegion,
@@ -154,102 +126,99 @@ impl<'a> PageMarker<'a> {
         map_region: &MemoryMappingRegion,
         can_allocate: bool,
     ) -> Result<(), PageMarkerError> {
-        let mut addressable_offset = map_region.virtual_offset;
-        let mut memory_offset = map_region.physical_offset;
-
         let flags = map_region.flags;
 
-        let allocator = &self.alloc_handler;
+        let mut ph_offset = map_region.physical_offset;
+        let mut virt_offset = map_region.virtual_offset;
 
         for _ in 0..map_region.page_count {
-            let table_index = table_index!(addressable_offset);
-            let entry_index = page_index!(addressable_offset);
+            let table_index = table_index!(virt_offset);
+            let entry_index = page_index!(virt_offset);
 
             let dir_entry = &mut self.directory.entries[table_index];
 
             dir_entry.set_flags(flags.as_directory_flag());
 
             if !dir_entry.has_page_table() {
+                log::debug!("Table index: {table_index}");
+
                 if !can_allocate {
-                    return Err(PageMarkerError::EmptyDirEntry);
+                    return Err(PageMarkerError::EmptyDirEntry(
+                        virt_offset as _,
+                    ));
                 }
 
-                let Some(pages) = allocator(TABLE_PAGES_COUNT) else {
+                let Some(ph_offset) =
+                    memory::alloc_physical_pages(TABLE_PAGES_COUNT)
+                else {
                     return Err(PageMarkerError::OutOfMemory);
                 };
 
-                dir_entry.set_table_offset(pages);
+                dir_entry.set_ph_offset(ph_offset);
             }
 
             let page_table = dir_entry.page_table_mut().unwrap();
 
-            let table_entry = &mut page_table[entry_index];
+            let page_entry = &mut page_table[entry_index];
 
-            table_entry.set_page_offset(memory_offset);
-            table_entry.set_flags(flags.as_table_flag());
+            let page = Page::take(ph_offset);
 
-            addressable_offset += Page::SIZE;
-            memory_offset += Page::SIZE;
+            page_entry.set_ph_offset(page.as_physical());
+            page_entry.set_flags(flags.as_table_flag());
+
+            virt_offset += Page::SIZE;
+            ph_offset += Page::SIZE;
         }
 
         Ok(())
     }
 
     pub fn unmap_range(
-        &'a mut self,
-        virtual_offset: VirtualAddress,
-        pages_count: usize,
-        params: UnmapParamsFlag,
+        &mut self,
+        range: Range<VirtualAddress>,
+        unmap_all: bool,
     ) {
-        let mut addressable_offset = virtual_offset;
-        let deallocator = self.dealloc_handler;
+        let mut virt_offset = range.start;
 
-        for _ in 0..pages_count {
-            let table_index = table_index!(addressable_offset);
-            let entry_index = page_index!(addressable_offset);
+        while virt_offset < range.end {
+            let table_index = table_index!(virt_offset);
+            let page_index = page_index!(virt_offset);
 
             let dir_entry = &mut self.directory.entries[table_index];
 
             if let Some(page_table) = dir_entry.page_table_mut() {
-                let table_entry = &mut page_table[entry_index];
+                let table_entry = &mut page_table[page_index];
 
-                if table_entry.has_page() {
-                    deallocator(table_entry.page_offset());
-                    table_entry.clear();
-                } else {
-                    log!("Unmapping not existing page table");
+                if let Some(ph_offset) = table_entry.clear() {
+                    memory::dealloc_physical_page(ph_offset);
                 }
-            } else {
-                log!("Unmapping not existing dir table");
             }
 
-            addressable_offset += Page::SIZE;
+            virt_offset += Page::SIZE;
         }
 
-        if !params.test_with(UnmapParamsFlag::TABLES) {
-            //no needs to unmap page tables
+        if !unmap_all {
             return;
         }
 
-        addressable_offset = virtual_offset;
-        for _ in 0..pages_count {
-            let table_index = table_index!(addressable_offset);
+        let mut virt_offset = range.start;
+
+        while virt_offset < range.end {
+            let table_index = table_index!(virt_offset);
             let dir_entry = &mut self.directory.entries[table_index];
 
-            if dir_entry.has_page_table() {
-                let page_offset = dir_entry.table_offset();
-                dir_entry.clear();
-                deallocator(page_offset);
+            if let Some(ph_offset) = dir_entry.clear() {
+                memory::dealloc_physical_page(ph_offset);
             }
+
+            virt_offset += Page::SIZE;
         }
     }
 }
 
-impl<'a> Drop for PageMarker<'a> {
+impl Drop for PageMarker {
     fn drop(&mut self) {
         log::debug!("Deallocation page marker");
-
-        let deallocator = self.dealloc_handler;
 
         for dir_entry in self.directory.entries.iter_mut() {
             let Some(page_table) = dir_entry.page_table_mut() else {
@@ -257,17 +226,18 @@ impl<'a> Drop for PageMarker<'a> {
             };
 
             for table_entry in page_table.iter_mut() {
-                if table_entry.has_page() {
-                    deallocator(table_entry.page_offset());
+                if let Some(ph_offset) = table_entry.clear() {
+                    memory::dealloc_physical_page(ph_offset);
                 }
-                // table_entry.clear()
             }
 
-            deallocator(dir_entry.table_offset());
+            if let Some(ph_offset) = dir_entry.clear() {
+                memory::dealloc_physical_page(ph_offset);
+            }
+
+            memory::dealloc_physical_page(self.directory.physical_offset);
+
+            self.directory.physical_offset = 0;
         }
-
-        let dir_offset = self.directory.physical_offset;
-
-        deallocator(dir_offset);
     }
 }

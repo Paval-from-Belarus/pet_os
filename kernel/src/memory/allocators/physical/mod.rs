@@ -12,7 +12,7 @@ use crate::memory::allocators::physical::page::BuddyPage;
 use crate::memory::paging::{BootAllocator, MemoryKind, PageMarkerError};
 use crate::memory::AllocError::NoMemory;
 use crate::memory::{
-    AllocError, Page, PhysicalAddress, ToPhysicalAddress, VirtualAddress,
+    AllocError, Page, PageFlag, PhysicalAddress, VirtualAddress,
     MEMORY_MAP_SIZE,
 };
 
@@ -55,13 +55,13 @@ pub enum AllocationType {
 }
 
 fn is_even_in_memory_map(page: &Page) -> bool {
-    unsafe { page.index() % 2 == 0 }
+    page.index() % 2 == 0
 }
 
 #[no_mangle]
 unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
     unsafe fn reset_pages(offset: VirtualAddress, count: usize) {
-        let page = Page::take_unchecked(offset);
+        let page = &mut *Page::take_unchecked(offset);
         let pages = page.as_slice_mut(count);
 
         for page in pages.iter_mut() {
@@ -75,13 +75,42 @@ unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
         let region_start = entry.next_offset();
         let kind = entry.kind();
 
-        log::info!("start = {region_start:0X}. size = {region_size}. pages = {pages_count}. kind = {kind:?}");
+        let range = region_start..(region_start + region_size);
+
+        log::info!(
+            "range = {range:X?}. pages = {pages_count}. kind = {kind:?}"
+        );
     });
 
     let mut buddies: BuddyArray = core::array::from_fn(|_| Default::default());
 
     for pivot in boot_allocator.as_slice_mut() {
         if pivot.kind() != MemoryKind::Available {
+            // if pivot.kind() == MemoryKind::Reserved {
+            //     let mut mem_offset = pivot.next_offset();
+            //     let max_offset =
+            //         mem_offset + (Page::SIZE * pivot.free_pages_count());
+            //
+            //     while mem_offset < max_offset {
+            //         let page = unsafe { Page::take_unchecked(mem_offset) };
+            //
+            //         let node_index = page.index();
+            //
+            //         if node_index >= MEMORY_MAP_SIZE || mem_offset > max_offset
+            //         {
+            //             log::warn!(
+            //                 "Invalid index for memory map: {node_index}"
+            //             );
+            //             break;
+            //         }
+            //
+            //         *page = Page::new();
+            //
+            //         page.flags = PageFlag::DMA;
+            //
+            //         mem_offset += Page::SIZE;
+            //     }
+            // }
             continue;
         }
 
@@ -94,7 +123,7 @@ unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
         reset_pages(mem_offset, pivot.free_pages_count());
 
         while mem_offset < max_offset {
-            let page = unsafe { Page::take_unchecked(mem_offset) };
+            let page = unsafe { &mut *Page::take_unchecked(mem_offset) };
 
             let node_index = page.index();
 
@@ -116,8 +145,6 @@ unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
             };
 
             let buddy_batch = page.as_buddy_batch_head(max_batch_size);
-
-            buddy_batch.iter().for_each(|page| page.acquire());
 
             mem_offset += Page::SIZE * buddy_batch.len();
 
@@ -186,7 +213,7 @@ impl PhysicalAllocator {
 
         let page_slice_size = 2usize.pow(power as u32) * mem::size_of::<Page>();
 
-        let mut buddy_offset = VirtualAddress::NULL;
+        let mut buddy_offset = 0;
 
         if is_even_in_memory_map(page) {
             if usize::MAX - page_offset > page_slice_size {
@@ -196,7 +223,7 @@ impl PhysicalAllocator {
             buddy_offset = page_offset - page_slice_size;
         }
 
-        if buddy_offset == VirtualAddress::NULL {
+        if buddy_offset == 0 {
             return None;
         }
 
@@ -221,6 +248,8 @@ impl PhysicalAllocator {
 
     /// Be careful with such method: it should, theoretically, batch page in solid memory region, but, truly, doesn't
     pub fn dealloc_page(&self, page: &'static mut Page) {
+        assert_ne!(page.flags, PageFlag::DMA);
+
         page.release();
 
         if !page.is_used() {
@@ -228,6 +257,32 @@ impl PhysicalAllocator {
             let last_list = lock.last_mut().unwrap();
             last_list.push_back(page.as_node());
         }
+    }
+
+    /// Remove requested pages from allocation proccess
+    pub fn reserve_pages(
+        &self,
+        ph_offset: PhysicalAddress,
+        pages_count: usize,
+    ) -> Result<LinkedList<'static, Page>, AllocError> {
+        let mut pages = LinkedList::empty();
+
+        let unchecked_pages = unsafe {
+            let Some(head) = Page::take_mut(ph_offset) else {
+                return Err(AllocError::PageInUse);
+            };
+
+            head.as_slice_mut(pages_count)
+        };
+
+        for page in unchecked_pages.iter_mut() {
+            assert!(!page.is_used());
+            page.acquire();
+
+            pages.push_back(page.as_node());
+        }
+
+        Ok(pages)
     }
 
     /// allocate pages in different regions
@@ -315,12 +370,12 @@ impl PhysicalAllocator {
         assert!(count > 0);
 
         let mut lock = self.buddies.lock();
-        let last_head = lock.last_mut().unwrap();
+        let mut last_head = lock.last_mut().unwrap();
         let mut longest = 0; //the current longest count of pages in same sequence
 
         let mut start_offset = Option::<PhysicalAddress>::None;
 
-        for page in last_head.iter() {
+        for page in last_head.iter_mut() {
             if longest == count {
                 break;
             }
@@ -407,22 +462,6 @@ impl PhysicalAllocator {
             list.push_back(page);
         }
         Ok(list)
-    }
-
-    //capture available pages in rec
-    fn capture_pages(&mut self, _page_cnt: usize) -> LinkedList<Page> {
-        LinkedList::empty()
-    }
-
-    fn release_pages(&mut self, _pages: LinkedList<Page>) {}
-
-    //this function is used to captured required for allocation list of pages
-    pub fn index(&self, _index: usize) -> Option<&Page> {
-        None
-    }
-
-    pub fn index_mut(&mut self, _index: usize) -> Option<&mut Page> {
-        None
     }
 }
 

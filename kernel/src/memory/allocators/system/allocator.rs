@@ -9,11 +9,12 @@ use crate::memory::{
         physical::BuddyBatch,
         system::{slab_entry::MAX_SLAB_CAPACITY, RESERVED_SLAB_HEAD},
     },
-    AllocError, MemoryMappingRegion, Page, PhysicalAddress, PhysicalAllocator,
-    ToPhysicalAddress, VirtualAddress,
+    AllocError, MemoryMappingRegion, Page, PhysicalAllocator, VirtualAddress,
 };
 
-use super::{slab_entry::SlabEntry, slab_head::SlabHead, SlabAlloc};
+use super::{
+    slab_entry::SlabEntry, slab_head::SlabHead, MemoryAllocationFlag, SlabAlloc,
+};
 
 #[derive(ListNode)]
 pub struct HeapSnapshot {
@@ -49,38 +50,20 @@ impl SlabAllocator {
         }
     }
 
-    pub fn map_page(&mut self, pages: &[Page]) -> Result<*mut u8, AllocError> {
-        assert!(pages.len() > 0);
-
-        let heap_offset = self.move_heap_offset(pages.len());
-        let memory_offset = pages.first().unwrap().as_physical();
-
-        Ok(commit(memory_offset, heap_offset, pages.len()))
-    }
-
-    pub fn unmap_page(&mut self, ptr: *mut u8, pages_count: usize) {
-        self.restore_heap(ptr as VirtualAddress, pages_count);
-    }
-
     pub fn virtual_alloc(
         &mut self,
         pages_count: usize,
+        _flags: MemoryAllocationFlag,
     ) -> Result<*mut u8, AllocError> {
         assert!(pages_count > 0);
 
-        let pages = self.allocator.alloc_zeroed_pages(pages_count)?;
+        let mut pages = self.allocator.alloc_zeroed_pages(pages_count)?;
 
         let heap_start_offset = self.move_heap_offset(pages_count);
 
-        let mut page_offset = heap_start_offset;
-
         assert_eq!(pages.len(), pages_count);
 
-        for page in pages.iter() {
-            let _ = commit(page.as_physical(), page_offset, 1);
-
-            page_offset += Page::SIZE;
-        }
+        commit(&mut pages, heap_start_offset)?;
 
         Ok(heap_start_offset as *mut u8)
     }
@@ -90,6 +73,24 @@ impl SlabAllocator {
         _offset: VirtualAddress,
         _pages_count: usize,
     ) {
+        //page marker can call this method
+        //todo: prevent deadlock
+        // let mut virt_offset = offset;
+        //
+        // for _ in 0..pages_count {
+        //     let Some(ph_offset) =
+        //         memory::lookup_kernel_physical_page(virt_offset)
+        //     else {
+        //         log::warn!("No ph_offset for virt_offset: {virt_offset:X}");
+        //         continue;
+        //     };
+        //
+        //     if let Some(page) = Page::take_mut(ph_offset) {
+        //         self.allocator.dealloc_page(page);
+        //     }
+        //
+        //     virt_offset += Page::SIZE;
+        // }
     }
 
     pub fn alloc_slab_head(
@@ -104,15 +105,13 @@ impl SlabAllocator {
             return Ok(&mut *head);
         }
 
-        let pages = self.allocator.alloc_continuous_pages(1)?.into_slice();
+        let mut pages = self.allocator.alloc_continuous_pages(1)?.into_list();
         assert!(pages.len() == 1);
 
-        let page = &mut pages[0];
+        let heap_offset = self.move_heap_offset(pages.len());
 
-        let heap_offset = self.move_heap_offset(1);
-
-        let head_ptr = commit(page.as_physical(), heap_offset, 1)
-            .cast::<MaybeUninit<SlabHead>>();
+        let head_ptr =
+            commit(&mut pages, heap_offset)?.cast::<MaybeUninit<SlabHead>>();
 
         let heads =
             unsafe { core::slice::from_raw_parts_mut(head_ptr, HEADS_IN_PAGE) };
@@ -149,7 +148,8 @@ impl SlabAllocator {
             let allocated_pages =
                 self.allocator.alloc_continuous_pages(pages_to_alloc)?;
 
-            let mut commited_entries = self.commit_new_entries(allocated_pages);
+            let mut commited_entries =
+                self.commit_new_entries(allocated_pages)?;
 
             self.cached_entries.splice(&mut commited_entries);
         }
@@ -169,18 +169,17 @@ impl SlabAllocator {
         };
 
         for entry in entries.iter_mut() {
-            let entry_pages = self
+            let mut entry_pages = self
                 .allocator
                 .alloc_continuous_pages(slab_size_in_pages)
                 .expect("Failed to allocate heap for slab entry")
-                .into_slice();
+                .into_list();
 
-            let physical_offset = entry_pages[0].as_physical();
+            assert_eq!(entry_pages.len(), slab_size_in_pages);
 
-            let heap_offset = self.move_heap_offset(slab_size_in_pages);
+            let heap_offset = self.move_heap_offset(entry_pages.len());
 
-            let slab_heap_offset =
-                commit(physical_offset, heap_offset, slab_size_in_pages);
+            let slab_heap_offset = commit(&mut entry_pages, heap_offset)?;
 
             unsafe { entry.set(object_size, slab_heap_offset, entry_pages) }
         }
@@ -192,7 +191,7 @@ impl SlabAllocator {
     fn commit_new_entries(
         &mut self,
         batch: BuddyBatch,
-    ) -> LinkedList<'static, SlabEntry> {
+    ) -> Result<LinkedList<'static, SlabEntry>, AllocError> {
         const ENTRIES_PER_PAGE: usize =
             Page::SIZE / mem::size_of::<SlabEntry>();
         static_assertions::const_assert!(ENTRIES_PER_PAGE > 0);
@@ -200,8 +199,11 @@ impl SlabAllocator {
         let mut list = LinkedList::<SlabEntry>::empty();
 
         for page in batch.into_slice() {
+            let mut pages = LinkedList::empty();
+            pages.push_back(page);
+
             let committed_offset =
-                commit(page.as_physical(), self.move_heap_offset(1), 1)
+                commit(&mut pages, self.move_heap_offset(1))?
                     .cast::<MaybeUninit<SlabEntry>>();
 
             let page_entries = unsafe {
@@ -219,7 +221,7 @@ impl SlabAllocator {
             }
         }
 
-        list
+        Ok(list)
     }
 
     //take heap offset available for requested pages count
@@ -242,25 +244,30 @@ impl SlabAllocator {
 /// commit current heap_offset
 /// return the next offset
 #[inline(never)]
-#[must_use]
 fn commit(
-    memory_offset: PhysicalAddress,
+    pages: &mut LinkedList<'static, Page>,
     heap_offset: VirtualAddress,
-    count: usize,
-) -> *mut u8 {
-    let region = MemoryMappingRegion {
-        node: ListNode::empty(),
-        flags: memory::MemoryMappingFlag::KERNEL_LAYOUT,
-        virtual_offset: heap_offset,
-        physical_offset: memory_offset,
-        page_count: count,
-    };
+) -> Result<*mut u8, AllocError> {
+    let mut virt_offset = heap_offset;
 
-    log::debug!("Region will be commited for heap (at {:0X})", heap_offset);
+    for page in pages.iter_mut() {
+        let region = MemoryMappingRegion {
+            flags: memory::MemoryMappingFlag::KERNEL_LAYOUT,
+            virtual_offset: virt_offset,
+            physical_offset: page.as_physical(),
+            page_count: 1,
+        };
 
-    memory::kernel_commit(region).expect("Failed to commit kernel heap memory");
+        log::debug!("Region will be commited for heap (at {:0X})", heap_offset);
 
+        memory::kernel_commit(region)?;
+
+        let old_virt_offset = page.set_virtual(virt_offset);
+        assert!(old_virt_offset.is_none());
+
+        virt_offset += Page::SIZE;
+    }
     let committed_offset = heap_offset;
 
-    committed_offset as *mut u8
+    Ok(committed_offset as *mut u8)
 }
