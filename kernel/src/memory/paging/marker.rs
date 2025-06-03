@@ -163,7 +163,7 @@ impl PageMarker {
 
             let page = Page::take(ph_offset);
 
-            page_entry.set_page_offset(page.as_physical());
+            page_entry.set_ph_offset(page.as_physical());
             page_entry.set_flags(flags.as_table_flag());
 
             virt_offset += Page::SIZE;

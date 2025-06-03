@@ -128,10 +128,7 @@ unsafe fn enable_paging() {
         //     DirEntryFlag(DirEntryFlag::PRESENT),
         // );
         //
-        // page_entries.fill(TableEntry::new(
-        //     PhysicalAddress::NULL,
-        //     TableEntryFlag(TableEntryFlag::EMPTY),
-        // ));
+        page_entries.fill(TableEntry::empty());
     }
 
     // mark_region(DirEntryFlag(DirEntryFlag::), table_flag, dir, p_o, v_o, pages_count)
