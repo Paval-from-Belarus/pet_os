@@ -1,8 +1,17 @@
 pub use kernel_types::io::block::*;
 
-use kernel_types::io::{Error, Result};
+use kernel_types::{
+    io::{Error, Result},
+    syscall,
+};
 
-pub fn register_device(_device: BlockDeviceInfo) -> Result<()> {
+pub fn register_device(device: BlockDeviceInfo) -> Result<()> {
+    unsafe {
+        syscall! {
+            syscall::Request::RegBlockDevice,
+            edx: &device
+        }?;
+    }
     Ok(())
 }
 

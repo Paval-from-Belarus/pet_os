@@ -5,7 +5,7 @@ use kernel_types::{
     object::Handle,
 };
 
-pub fn register_device(_device: Device) -> io::Result<()> {
+pub fn register_device(_device: CharDeviceInfo) -> io::Result<()> {
     todo!()
 }
 

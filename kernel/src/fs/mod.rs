@@ -2,14 +2,13 @@ pub use error::*;
 pub use file::*;
 pub use index_node::*;
 use kernel_types::fs::FileSystem;
-use kernel_types::string::MutString;
 pub use mount_point::*;
 pub use path::*;
 pub use super_block::*;
 pub use work::*;
 
 use kernel_types::declare_constants;
-use kernel_types::drivers::{Device, DeviceId};
+use kernel_types::drivers::Device;
 
 use crate::current_task;
 use crate::object::{self};
@@ -44,8 +43,6 @@ bitflags::bitflags! {
 static FILE_SYSTEMS: SystemMountPoints = SystemMountPoints::new();
 
 pub fn init() {}
-
-pub fn regiser_block_dev(_id: DeviceId, _name: MutString) {}
 
 pub fn register_fs(fs: FileSystem) -> Result<FileSystemId, ()> {
     let fs_id = FILE_SYSTEMS.register(fs)?;

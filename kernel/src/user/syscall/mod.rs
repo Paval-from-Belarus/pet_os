@@ -1,12 +1,12 @@
 use kernel_types::{
     get_edx,
-    io::MemoryRemap,
+    io::{block::BlockDeviceInfo, char::CharDeviceInfo, MemoryRemap},
     string::MutString,
     syscall::{Request, SyscallError},
 };
 
 use crate::{
-    current_task, log_module,
+    current_task, drivers, log_module,
     memory::{self, AllocError, VirtualAddress},
 };
 
@@ -22,22 +22,15 @@ pub fn validate_ref<'a, T: Sized>(
     Ok(unsafe { &*ptr })
 }
 
-pub fn handle(request: Request) -> Result<(), SyscallError> {
+pub fn handle(request: Request, edx: usize) -> Result<(), SyscallError> {
     match request {
         Request::PrintK => {
-            let string: &MutString = unsafe {
-                let ptr = get_edx!();
-                validate_ref(ptr)?
-            };
+            let string: &MutString = validate_ref(edx)?;
 
             log_module!("{string}");
         }
-
         Request::MemRemap => {
-            let remap: &MemoryRemap = unsafe {
-                let ptr = get_edx!();
-                validate_ref(ptr)?
-            };
+            let remap = validate_ref::<MemoryRemap>(edx)?;
 
             let Some(process) = current_task!().process.clone() else {
                 return Err(SyscallError::KernelSpaceCall);
@@ -49,6 +42,24 @@ pub fn handle(request: Request) -> Result<(), SyscallError> {
             // state.find_region(remap.virtual_start)
 
             // procces.state
+        }
+        Request::RegBlockDevice => {
+            let blk_dev = validate_ref::<BlockDeviceInfo>(edx)?.clone();
+
+            unsafe { memory::switch_to_kernel() };
+
+            drivers::api::reg_blk_dev(&blk_dev)?;
+
+            unsafe { memory::switch_to_task(current_task!()) };
+        }
+        Request::RegCharDevice => {
+            let chr_dev = validate_ref::<CharDeviceInfo>(edx)?.clone();
+
+            unsafe { memory::switch_to_kernel() };
+
+            drivers::api::reg_chr_dev(&chr_dev)?;
+
+            unsafe { memory::switch_to_task(current_task!()) };
         }
     }
 

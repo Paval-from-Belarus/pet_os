@@ -18,7 +18,7 @@ kernel_lib::module! {
     name: "ata-disk",
 }
 
-pub struct AtaDriver {}
+pub struct AtaDriver;
 
 fn handle_request(request: block::Request) -> io::Result<()> {
     match request.work {
@@ -55,7 +55,7 @@ fn handle_request(request: block::Request) -> io::Result<()> {
 
 impl KernelModule for AtaDriver {
     fn init() -> Result<Self, ModuleError> {
-        block::register_device(BlockDeviceInfo {
+        let _ = block::register_device(BlockDeviceInfo {
             name: DEVICE_NAME.into(),
             sector_size: 512,
             queue_size: 10,
@@ -63,10 +63,10 @@ impl KernelModule for AtaDriver {
                 request: handle_request,
                 ..block::default_operations()
             },
-        })?;
+        });
 
-        log::debug!("Ata driver is initialized");
+        log::info!("Ata driver is initialized");
 
-        Ok(Self {})
+        Ok(Self)
     }
 }

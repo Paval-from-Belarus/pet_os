@@ -1,4 +1,6 @@
-use kernel_types::{declare_constants, get_eax, set_eax, set_edx, syscall};
+use kernel_types::{
+    declare_constants, get_eax, get_edx, set_eax, set_edx, syscall,
+};
 
 use crate::io::irq::IrqChain;
 use crate::io::{
@@ -75,6 +77,7 @@ extern "x86-interrupt" {
 #[no_mangle]
 pub extern "C" fn handle_syscall() {
     let id: u32 = unsafe { get_eax!() };
+    let edx: usize = unsafe { get_edx!() };
 
     if id == syscall::RESERVED {
         unsafe { set_edx!(CHECK_CODE) };
@@ -87,7 +90,7 @@ pub extern "C" fn handle_syscall() {
         return;
     };
 
-    let code = match user::syscall::handle(request) {
+    let code = match user::syscall::handle(request, edx) {
         Ok(()) => 0,
         Err(cause) => cause as u32,
     };
@@ -95,9 +98,18 @@ pub extern "C" fn handle_syscall() {
     unsafe { set_eax!(code) }
 }
 
-#[no_mangle]
 pub extern "x86-interrupt" fn terminate_process(_frame: InterruptStackFrame) {
     log::info!("Proccess will be terminated");
+    task::terminate();
+}
+
+#[no_mangle]
+pub extern "x86-interrupt" fn module_complete(_frame: InterruptStackFrame) {
+    log::info!("Module initialization is completed");
+
+    loop {
+        log::debug!("Module loop");
+    }
 }
 
 pub extern "x86-interrupt" fn division_by_zero(_from: InterruptStackFrame) {

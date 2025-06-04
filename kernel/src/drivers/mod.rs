@@ -15,7 +15,7 @@ use crate::common::atomics::SpinLockLazyCell;
 use crate::fs::{FileOperations, IndexNode, IndexNodeItem, SuperBlock};
 use crate::memory::{slab_alloc, ProcessId, SlabBox, VirtualAddress};
 
-mod api;
+pub mod api;
 mod disk;
 mod generated;
 mod keyboard;

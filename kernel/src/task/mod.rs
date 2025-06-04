@@ -230,6 +230,10 @@ pub fn submit_task(task: &'static mut RunningTask) {
     SCHEDULER.access_lock().push_task(task);
 }
 
+pub fn terminate() {
+    idle_task();
+}
+
 //run the kernel main loop
 pub fn run() -> ! {
     SCHEDULER.get().run();

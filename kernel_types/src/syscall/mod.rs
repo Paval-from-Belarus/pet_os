@@ -3,6 +3,7 @@ use crate::declare_constants;
 declare_constants! {
     pub u32,
     RESERVED = 0xFFFF_FFFF, "No function to zero can be used; this function used to test system initialization";
+    MIN_MODULE_REQUEST_CODE = 0x80
 }
 
 #[derive(Debug, Clone, Copy, num_enum::TryFromPrimitive)]
@@ -11,6 +12,17 @@ pub enum Request {
     PrintK = 0x02,
     /// map physical memory to virtual memory in driver
     MemRemap = 0x03,
+
+    RegBlockDevice = MIN_MODULE_REQUEST_CODE,
+    RegCharDevice,
+}
+
+impl Request {
+    pub const fn is_module_request(&self) -> bool {
+        let code = *self as u32;
+
+        code >= MIN_MODULE_REQUEST_CODE
+    }
 }
 
 #[derive(Debug, num_enum::FromPrimitive, thiserror_no_std::Error)]
@@ -33,21 +45,18 @@ pub enum SyscallError {
 #[macro_export]
 macro_rules! syscall {
     ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?) => ({
-        let id = $id as u32;
-
+        let mut id = $id as u32;
         core::arch::asm!(
           "int 80h",
-           in("eax") id
+           lateout("ecx") _,
+           lateout("edx") _,
+           inout("eax") id
            $(,in("ecx") $ecx)?
            $(,in("edx") $edx)?
+
         );
 
-        let status: u32;
-
-        core::arch::asm!(
-            "",
-            out("eax") status
-        );
+        let status = id;
 
         if status == 0 {
             Ok(())

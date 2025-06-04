@@ -13,4 +13,7 @@ rustflags = [
 	"link-arg=init",
 	"-C",
 	"link-arg=-pie",
+	"--codegen",
+	"target-cpu=generic",
+
 ]

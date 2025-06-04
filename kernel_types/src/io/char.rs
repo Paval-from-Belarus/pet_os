@@ -8,6 +8,7 @@ use super::op::{UserBuf, UserBufMut};
 use crate::io::Error;
 
 //same as file operations
+#[derive(Debug, Clone)]
 pub struct Operations {
     pub open: fn(Handle<IndexNode>, Handle<File>),
     //performs read operation for file
@@ -17,7 +18,8 @@ pub struct Operations {
     pub write: fn(Handle<File>, UserBuf) -> Result<(), Error>,
 }
 
-pub struct Device {
+#[derive(Debug, Clone)]
+pub struct CharDeviceInfo {
     pub name: heapless::String<12>,
     pub ops: Operations,
 }

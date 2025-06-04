@@ -268,6 +268,11 @@ pub fn init() {
         InterruptGate::syscall(system::terminate_process),
     );
 
+    table.set(
+        IDTable::MODULE_COMPLETE,
+        InterruptGate::syscall(system::module_complete),
+    );
+
     unsafe {
         pic::remap(
             IrqLine::IRQ_MASTER_OFFSET as u8,
@@ -327,7 +332,6 @@ pub unsafe fn validate_stack() {
 #[allow(clippy::pointers_in_nomem_asm_block)]
 pub unsafe extern "C" fn interceptor_stub() {
     let index: usize = get_eax!();
-
     let mut frame_ptr: *mut TaskContext = get_edx!();
 
     io::disable();

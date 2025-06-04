@@ -1,6 +1,6 @@
 mod device;
 
-use crate::io::{KernelBuf, KernelBufMut, Error};
+use crate::io::{Error, KernelBuf, KernelBufMut};
 pub use device::*;
 
 #[derive(Debug)]
@@ -24,6 +24,7 @@ pub struct Request {
     pub work: Work,
 }
 
+#[derive(Debug, Clone)]
 pub struct BlockDeviceInfo {
     pub name: heapless::String<12>,
     pub sector_size: usize,
@@ -34,6 +35,7 @@ pub struct BlockDeviceInfo {
 
 //todo: handle hardware and software request
 //separately
+#[derive(Debug, Clone)]
 pub struct Operations {
     pub open: fn(),
     pub close: fn(),

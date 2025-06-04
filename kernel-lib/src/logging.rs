@@ -2,7 +2,7 @@ use kernel_types::{string::MutString, syscall};
 
 pub fn init() -> Result<(), log::SetLoggerError> {
     log::set_logger(&LOGGER_INSTANCE)?;
-    log::set_max_level(log::LevelFilter::Info);
+    log::set_max_level(log::LevelFilter::Debug);
 
     Ok(())
 }

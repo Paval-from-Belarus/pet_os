@@ -3,7 +3,7 @@ use core::ptr::NonNull;
 use kernel_macro::ListNode;
 use kernel_types::{
     collections::{LinkedList, ListNode},
-    drivers::{Device, DeviceId, DriverId},
+    drivers::{Device, DeviceId, DriverId}, io::block::BlockDeviceInfo,
 };
 
 use crate::{
@@ -32,6 +32,7 @@ pub struct BlockDevice {
 }
 
 impl BlockDevice {
+    // pub fn new_boxed(blk_dev: &BlockDeviceInfo) 
     //file operations are created from
     //blocK::Operations
     pub fn file_ops(&self) -> FileOperations {
