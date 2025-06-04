@@ -4,8 +4,11 @@ use core::{mem, ptr};
 
 use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
-use kernel_types::{declare_constants, declare_types, syscall};
+use kernel_types::{
+    declare_constants, declare_types, get_eax, get_edx, set_eax, syscall,
+};
 
+use crate::io;
 use crate::io::irq::IrqChain;
 use crate::io::pic::PicLine;
 use crate::memory::{
@@ -14,7 +17,6 @@ use crate::memory::{
 };
 use crate::task::TaskContext;
 use crate::{current_task, object};
-use crate::{get_eax, get_edx, io, set_eax};
 
 pub use lock::InterruptableLazyCell;
 
@@ -486,6 +488,7 @@ impl IDTable {
         //all others don't have error code
         SYSTEM_CALL = 0x80, "system call";
         PROCCESS_EXIT = 0x81, "proccess exit";
+        MODULE_COMPLETE = 0x82, "module initialization is completed";
         //other reserved
         TRAP_COUNT = 32, "The average count of exception reserved by Intel";
     );

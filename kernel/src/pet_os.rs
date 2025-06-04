@@ -21,6 +21,7 @@ extern crate static_assertions;
 extern crate multiboot2;
 
 use common::logging;
+use kernel_types::get_eax;
 use memory::PagingProperties;
 
 use crate::task::TaskPriority;

@@ -14,7 +14,6 @@ use kernel_types::fs::{FileSystem, FileSystemKind};
 use crate::common::atomics::SpinLockLazyCell;
 use crate::fs::{FileOperations, IndexNode, IndexNodeItem, SuperBlock};
 use crate::memory::{slab_alloc, ProcessId, SlabBox, VirtualAddress};
-use crate::{get_eax, set_eax, set_edx};
 
 mod api;
 mod disk;

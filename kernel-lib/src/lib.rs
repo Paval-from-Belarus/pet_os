@@ -1,11 +1,12 @@
 #![no_std]
+#![feature(allocator_api)]
 
 pub mod fs;
 pub mod io;
 
-#[cfg(feature = "log")]
 pub mod logging;
 
+#[cfg(feature = "alloc")]
 pub mod alloc;
 pub mod object;
 pub mod string;
@@ -13,7 +14,6 @@ pub mod string;
 #[cfg(not(test))]
 #[panic_handler]
 pub fn panic(info: &core::panic::PanicInfo) -> ! {
-    #[cfg(feature = "log")]
     log::error!("Panic is detected: {info}");
     loop {}
 }
@@ -21,27 +21,75 @@ pub fn panic(info: &core::panic::PanicInfo) -> ! {
 #[macro_export]
 macro_rules! module {
     (
-        module: $ty:ty,
-        name: $name:literal,
-    ) => {};
+        module: $ty:ident,
+        name: $name:literal$(,)?
+    ) => {
+        static mut MODULE: Option<$ty> = None;
+        #[export_name = "init"]
+        extern "C" fn init() {
+            $crate::logging::init().unwrap();
+
+            match $ty::init() {
+                Ok(data) => {
+                    unsafe { MODULE = Some(data) };
+                    $crate::complete();
+                }
+
+                Err(cause) => {
+                    log::error!("Failed init: {cause}");
+                    $crate::exit(cause.into());
+                }
+            }
+        }
+
+        #[export_name = "exit"]
+        extern "C" fn exit() {
+            let module = unsafe { MODULE.take() };
+
+            if core::mem::needs_drop::<$ty>() {
+                if let Some(module) = module {
+                    let _ = module;
+                }
+            }
+        }
+    };
 }
 
-#[derive(Debug)]
-pub enum ModuleError {}
+#[derive(Debug, thiserror_no_std::Error)]
+pub enum ModuleError {
+    #[error("Io Op failed: {0}")]
+    Io(#[from] io::Error),
 
-impl From<io::Error> for ModuleError {
-    fn from(_value: io::Error) -> Self {
-        todo!()
+    #[error("Fs Op failed: {0}")]
+    Fs(#[from] fs::FsError),
+
+    #[cfg(feature = "alloc")]
+    #[error("Failed to perform memory allocation: {0}")]
+    Alloc(#[from] core::alloc::AllocError),
+}
+
+pub fn exit(code: Option<ModuleError>) -> ! {
+    let code = if code.is_some() { 1 } else { 0 };
+
+    unsafe {
+        core::arch::asm! {
+            "mov eax, {0}",
+            "int 81h",
+            in(reg) code,
+            options(noreturn, nostack)
+        }
     }
 }
 
-impl From<fs::FsError> for ModuleError {
-    fn from(_value: fs::FsError) -> Self {
-        todo!()
+pub fn complete() -> ! {
+    unsafe {
+        core::arch::asm! {
+            "int 82h",
+            options(noreturn, nostack)
+        }
     }
 }
 
-#[allow(drop_bounds)]
-pub trait KernelModule: Drop {
-    fn init() -> Result<(), ModuleError>;
+pub trait KernelModule: Sized {
+    fn init() -> Result<Self, ModuleError>;
 }

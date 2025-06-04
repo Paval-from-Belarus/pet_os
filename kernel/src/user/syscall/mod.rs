@@ -1,11 +1,12 @@
 use kernel_types::{
+    get_edx,
     io::MemoryRemap,
     string::MutString,
     syscall::{Request, SyscallError},
 };
 
 use crate::{
-    current_task, get_edx, log_module,
+    current_task, log_module,
     memory::{self, AllocError, VirtualAddress},
 };
 

@@ -1,4 +1,4 @@
-use kernel_types::{declare_constants, syscall};
+use kernel_types::{declare_constants, get_eax, set_eax, set_edx, syscall};
 
 use crate::io::irq::IrqChain;
 use crate::io::{
@@ -6,8 +6,7 @@ use crate::io::{
 };
 use crate::memory::{SlabBox, VirtualAddress};
 use crate::{
-    current_task, error_trap, get_eax, log_module, memory, naked_trap, set_eax,
-    set_edx, task, user,
+    current_task, error_trap, log_module, memory, naked_trap, task, user,
 };
 
 //the common handlers

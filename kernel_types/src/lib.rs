@@ -16,6 +16,7 @@ pub mod io;
 pub mod object;
 pub mod string;
 pub mod syscall;
+mod arch;
 
 extern crate alloc;
 

@@ -6,12 +6,12 @@ edition = "2021"
 [dependencies]
 heapless = { version = "0.7", default-features = false }
 kernel-types = { workspace = true }
-log = { version = "0.4", optional = true }
+log = { version = "0.4" }
 spin.workspace = true
+thiserror-no-std.workspace = true
 
 
 [features]
-default = ["log", "driver", "alloc"]
+default = ["driver", "alloc"]
 driver = []
 alloc = []
-log = ["dep:log"]

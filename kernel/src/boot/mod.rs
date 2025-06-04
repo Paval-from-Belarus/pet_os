@@ -2,16 +2,13 @@ pub mod properties;
 
 use core::arch::asm;
 
+use kernel_types::{get_eax, set_eax};
 use multiboot2::BootInformation;
 use properties::KernelProperties;
 
-use crate::{
-    get_eax,
-    memory::{
-        self, CaptureMemRec, DirEntry, TableEntry, DIRECTORY_ENTRIES_COUNT,
-        DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT,
-    },
-    set_eax,
+use crate::memory::{
+    self, CaptureMemRec, DirEntry, TableEntry, DIRECTORY_ENTRIES_COUNT,
+    DIRECTORY_PAGES_COUNT, TABLE_ENTRIES_COUNT,
 };
 
 #[repr(u32)]

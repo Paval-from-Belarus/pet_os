@@ -2,6 +2,8 @@
 
 use core::{marker::PhantomData, ops::Deref};
 
+use crate::io;
+
 pub trait KernelObject {}
 
 #[derive(Debug, Clone)]
@@ -10,7 +12,7 @@ pub struct Handle<T: KernelObject>(usize, PhantomData<T>);
 pub type RawHandle = usize;
 
 impl Handle<Event> {
-    pub fn new_event() -> Result<Self, ()> {
+    pub fn new_event() -> io::Result<Self> {
         Ok(Self(0, PhantomData))
     }
 

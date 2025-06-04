@@ -8,7 +8,6 @@ use core::{
 use crate::{
     current_task, io, log_module,
     memory::{self, SegmentSelector},
-    set_eax, set_edx,
     task::{switch_context, RunningTask, TaskContext},
 };
 

@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use kernel_types::{bitflags, declare_constants, Zeroed};
+use kernel_types::{bitflags, declare_constants, get_eax, Zeroed};
 
 use crate::common::atomics::UnsafeLazyCell;
 
@@ -17,7 +17,7 @@ use crate::memory::{
     MemoryAllocationFlag, Page, SegmentSelector, TaskRoutine, VirtualAddress,
 };
 use crate::task::scheduler::SchedulerLock;
-use crate::{get_eax, memory, object};
+use crate::{memory, object};
 
 mod arch;
 pub mod clocks;
@@ -177,7 +177,7 @@ pub fn new_task(
         TASK_STACK_SIZE,
         MemoryAllocationFlag::ZEROED
             | MemoryAllocationFlag::ZEROED
-            | MemoryAllocationFlag::READ_WRITE 
+            | MemoryAllocationFlag::READ_WRITE,
     )?;
 
     let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);

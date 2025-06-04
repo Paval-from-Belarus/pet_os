@@ -1,11 +1,11 @@
 pub use kernel_types::io::char::*;
 use kernel_types::{
-    io::{UserBuf, Error},
-    object::{Handle},
     fs::File,
+    io::{self, Error, UserBuf},
+    object::Handle,
 };
 
-pub fn register_device(_device: Device) -> Result<(), ()> {
+pub fn register_device(_device: Device) -> io::Result<()> {
     todo!()
 }
 
