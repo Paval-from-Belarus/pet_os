@@ -27,15 +27,17 @@ use kernel_lib::{
 extern crate alloc;
 extern crate core;
 
-pub struct FatDriver {
+pub struct FatContext {
     pub bpb: BiosParameterBlock,
 }
 
-pub type DriverContextLock = Mutex<FatDriver>;
+pub struct FatDriver;
+
+pub type DriverContextLock = Mutex<FatContext>;
 
 pub struct FatEntry;
 
-impl FatDriver {
+impl FatContext {
     pub fn new(bpb: BiosParameterBlock, _disk: Handle<BlockDevice>) -> Self {
         Self { bpb }
     }
@@ -179,7 +181,7 @@ pub fn mount_fs(disk: Handle<BlockDevice>) -> fs::Result<SuperBlockInfo> {
 
     let bpb = bpb::parse(&buffer)?;
 
-    let context = Mutex::new(FatDriver::new(bpb, disk));
+    let context = Mutex::new(FatContext::new(bpb, disk));
 
     let boxed = Box::try_new(context)?;
 
@@ -213,7 +215,7 @@ kernel_lib::module! {
 }
 
 impl KernelModule for FatDriver {
-    fn init() -> Result<(), ModuleError> {
+    fn init() -> Result<Self, ModuleError> {
         kernel_lib::logging::init().unwrap();
 
         fs::register(fs::FileSystem {
@@ -223,18 +225,6 @@ impl KernelModule for FatDriver {
             unmount: unmount_fs,
         })?;
 
-        Ok(())
+        Ok(Self)
     }
 }
-
-impl Drop for FatDriver {
-    fn drop(&mut self) {}
-}
-
-#[no_mangle]
-unsafe extern "C" fn init() -> i32 {
-    0
-}
-
-#[no_mangle]
-unsafe extern "C" fn exit() {}

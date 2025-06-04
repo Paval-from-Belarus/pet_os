@@ -11,23 +11,11 @@ kernel_lib::module! {
 pub struct VgaDriver {}
 
 impl KernelModule for VgaDriver {
-    fn init() -> Result<(), ModuleError> {
-        Ok(())
+    fn init() -> Result<Self, ModuleError> {
+        loop {
+            log::info!("From vga driver");
+        }
+
+        Ok(Self {})
     }
 }
-
-impl Drop for VgaDriver {
-    fn drop(&mut self) {}
-}
-
-#[export_name = "init"]
-extern "C" fn init() -> i32 {
-    kernel_lib::logging::init().unwrap();
-
-    loop {
-        log::info!("From vga driver");
-    }
-}
-
-#[export_name = "exit"]
-extern "C" fn exit() {}

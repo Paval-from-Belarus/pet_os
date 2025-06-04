@@ -8,17 +8,48 @@ use alloc::sync::Arc;
 use kernel_lib::{
     fs::{File, IndexNode},
     io::{self, char::not_supported_write, spin, IoTransaction, UserBufMut},
+    module,
     object::{Event, Handle},
+    KernelModule, ModuleError,
 };
 
 static DEVICE_NAME: &str = "keyboard";
 
 extern crate alloc;
 
-#[cfg(not(test))]
-#[panic_handler]
-pub fn panic(info: &core::panic::PanicInfo) -> ! {
-    kernel_lib::panic(info)
+pub struct KeyboardDriver;
+
+module! {
+    module: KeyboardDriver,
+    name: "keybrd"
+}
+
+impl KernelModule for KeyboardDriver {
+    fn init() -> Result<Self, ModuleError> {
+        io::char::register_device(io::char::Device {
+            name: DEVICE_NAME.into(),
+            ops: io::char::Operations {
+                open: handle_open,
+                read: handle_read,
+                write: not_supported_write,
+            },
+        })?;
+
+        let event = Handle::new_event()?;
+
+        let context = spin::Mutex::new(DriverContext {
+            scan_codes: heapless::Deque::new(),
+            event,
+        });
+
+        let boxed_context = Arc::try_new(context)?;
+
+        io::set_irq(32, handle_irq, Arc::into_raw(boxed_context))?;
+
+        log::info!("Driver is configured");
+
+        Ok(Self)
+    }
 }
 
 fn handle_irq(raw_lock: *const DriverContextLock) {
@@ -72,45 +103,3 @@ pub struct DriverContext {
     pub scan_codes: heapless::Deque<u8, 255>,
     pub event: Handle<Event>,
 }
-
-#[export_name = "init"]
-extern "C" fn driver_init() -> i32 {
-    kernel_lib::log::init().expect("Failed to set logger");
-
-    if io::char::register_device(io::char::Device {
-        name: DEVICE_NAME.into(),
-        ops: io::char::Operations {
-            open: handle_open,
-            read: handle_read,
-            write: not_supported_write,
-        },
-    })
-    .is_err()
-    {
-        return -1;
-    };
-
-    let Ok(event) = Handle::new_event() else {
-        return -5;
-    };
-
-    let context = spin::Mutex::new(DriverContext {
-        scan_codes: heapless::Deque::new(),
-        event,
-    });
-
-    let Ok(boxed_context) = Arc::try_new(context) else {
-        return -2;
-    };
-
-    if io::set_irq(32, handle_irq, Arc::into_raw(boxed_context)).is_err() {
-        return -3;
-    }
-
-    log::info!("Driver is configured");
-
-    0
-}
-
-#[export_name = "exit"]
-fn driver_exit() {}

@@ -91,10 +91,6 @@ public start_process
 ;ecx -> esp to switch
 ;
 start_process:
-    call @F
-    int 81h
-
-@@:
     mov es, dx
     mov ds, dx
     mov fs, dx
