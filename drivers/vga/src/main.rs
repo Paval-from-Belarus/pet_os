@@ -23,10 +23,6 @@ const VGA_COLOR_BLACK: u8 = 0;
 const VGA_COLOR_WHITE: u8 = 0xF;
 const VGA_DEFAULT_COLOR: u8 = VGA_COLOR_WHITE | (VGA_COLOR_BLACK << 4);
 
-// Global state for cursor position
-static mut CURSOR_X: usize = 0;
-static mut CURSOR_Y: usize = 0;
-
 static mut VGA_BUFFER: VgaBuffer = VgaBuffer::new();
 
 #[repr(align(4096))]
@@ -42,71 +38,89 @@ impl VgaBuffer {
     fn write_char(&mut self, x: usize, y: usize, c: char, color: u8) {
         let index = y * VGA_WIDTH + x;
 
-        let ptr = self.buffer.as_mut_ptr();
+        let ptr = &raw mut self.buffer[index];
 
-        unsafe {
-            ptr.add(index)
-                .write_volatile((c as u16) | ((color as u16) << 8))
+        unsafe { ptr.write_volatile((c as u16) | ((color as u16) << 8)) };
+    }
+}
+
+struct VgaWriter {
+    pub color: u8,
+    pub buffer: *mut VgaBuffer,
+
+    pub cursor_x: usize,
+    pub cursor_y: usize,
+}
+
+impl VgaWriter {
+    pub unsafe fn new_unchecked(buffer: *mut VgaBuffer) -> Self {
+        Self {
+            buffer,
+            color: VGA_DEFAULT_COLOR,
+            cursor_x: 0,
+            cursor_y: 0,
         }
     }
-}
 
-// Clear the screen
-pub fn clear_screen() {
-    let mut vga = VgaBuffer::new();
-    for i in 0..(VGA_WIDTH * VGA_HEIGHT) {
-        vga.write_char(i % VGA_WIDTH, i / VGA_WIDTH, ' ', VGA_DEFAULT_COLOR);
+    pub fn clear(&mut self) {
+        let vga = unsafe { &mut *self.buffer };
+
+        for i in 0..(VGA_WIDTH * VGA_HEIGHT) {
+            vga.write_char(
+                i % VGA_WIDTH,
+                i / VGA_WIDTH,
+                ' ',
+                VGA_DEFAULT_COLOR,
+            );
+        }
+
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+
+        self.update_cursor();
     }
-    unsafe {
-        CURSOR_X = 0;
-        CURSOR_Y = 0;
+
+    pub fn update_cursor(&self) {
+        let pos = self.cursor_y * VGA_WIDTH + self.cursor_x;
+
+        IoTransaction::new_write()
+            .port_u8(0x3D4, 0x0F)
+            .port_u8(0x3D5, pos as u8)
+            .port_u8(0x3D4, 0x0E)
+            .port_u8(0x3D5, (pos >> 8) as u8)
+            .commit()
+            .expect("Failed to update cursor pos")
     }
-}
 
-// Update hardware cursor
-pub fn update_cursor() {
-    use kernel_lib::io::Write;
+    pub fn put_char(&mut self, c: char) {
+        let vga = unsafe { &mut *self.buffer };
 
-    let pos = unsafe { CURSOR_Y * VGA_WIDTH + CURSOR_X };
-
-    IoTransaction::<Write, 8>::new_write()
-        .port_u8(0x3D4, 0x0F)
-        .port_u8(0x3D5, pos as u8)
-        .port_u8(0x3D4, 0x0E)
-        .port_u8(0x3D5, (pos >> 8) as u8)
-        .commit()
-        .expect("Failed to update cursor pos")
-}
-
-// Print a single character
-fn putchar(c: char) {
-    let mut vga = VgaBuffer::new();
-    unsafe {
         if c == '\n' {
-            CURSOR_X = 0;
-            CURSOR_Y += 1;
-            if CURSOR_Y >= VGA_HEIGHT {
-                CURSOR_Y = VGA_HEIGHT - 1; // No scrolling yet
+            self.cursor_x = 0;
+            self.cursor_y += 1;
+
+            if self.cursor_y >= VGA_HEIGHT {
+                self.cursor_y = VGA_HEIGHT - 1; // No scrolling yet
             }
         } else {
-            vga.write_char(CURSOR_X, CURSOR_Y, c, VGA_DEFAULT_COLOR);
-            CURSOR_X += 1;
-            if CURSOR_X >= VGA_WIDTH {
-                CURSOR_X = 0;
-                CURSOR_Y += 1;
-                if CURSOR_Y >= VGA_HEIGHT {
-                    CURSOR_Y = VGA_HEIGHT - 1;
+            vga.write_char(self.cursor_x, self.cursor_y, c, self.color);
+
+            self.cursor_x += 1;
+            if self.cursor_x >= VGA_WIDTH {
+                self.cursor_x = 0;
+                self.cursor_y += 1;
+                if self.cursor_y >= VGA_HEIGHT {
+                    self.cursor_y = VGA_HEIGHT - 1;
                 }
             }
         }
     }
-    // update_cursor();
-}
 
-// Print a string
-pub fn puts(s: &str) {
-    for c in s.chars() {
-        putchar(c);
+    pub fn put_string(&mut self, s: &str) {
+        for c in s.chars() {
+            log::debug!("Putting {c}");
+            self.put_char(c);
+        }
     }
 }
 
@@ -226,9 +240,12 @@ impl KernelModule for VgaDriver {
 
         io::remap(VGA_BUFFER_OFFSET, offset as _, VGA_WIDTH * VGA_HEIGHT)?;
 
-        clear_screen();
-        puts("Hello From Vga");
-        update_cursor();
+        let mut writer =
+            unsafe { VgaWriter::new_unchecked(&raw mut VGA_BUFFER) };
+
+        writer.clear();
+        writer.put_string("Hello from vga");
+        writer.update_cursor();
 
         loop {
             log::info!("From vga driver");

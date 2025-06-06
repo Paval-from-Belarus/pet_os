@@ -17,14 +17,16 @@ pub struct Write;
 impl IoKind for Read {}
 impl IoKind for Write {}
 
-impl<const N: usize> IoTransaction<Read, N> {
-    pub fn new_read() -> IoTransaction<Read, N> {
+impl IoTransaction<Read, 32> {
+    pub fn new_read() -> IoTransaction<Read, 32> {
         IoTransaction {
             ops: heapless::Vec::new(),
             _kind: Read,
         }
     }
+}
 
+impl<const N: usize> IoTransaction<Read, N> {
     pub fn port_u8(self, _port: u16) -> io::Result<u8> {
         todo!()
     }
@@ -42,14 +44,16 @@ impl<const N: usize> IoTransaction<Read, N> {
     }
 }
 
-impl<const N: usize> IoTransaction<Write, N> {
-    pub fn new_write() -> IoTransaction<Write, N> {
+impl IoTransaction<Write, 32> {
+    pub fn new_write() -> IoTransaction<Write, 32> {
         IoTransaction {
             ops: heapless::Vec::new(),
             _kind: Write,
         }
     }
+}
 
+impl<const N: usize> IoTransaction<Write, N> {
     pub fn port_u8(&mut self, port: u16, value: u8) -> &mut Self {
         self.ops
             .push(PortOperation::WriteByte { port, value }.into())
