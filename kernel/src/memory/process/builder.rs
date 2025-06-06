@@ -97,7 +97,7 @@ impl ProcessBuilder<ProcessSpace> {
     ) -> Result<Process, KernelError> {
         let stack_region = self.alloc_region(
             0xB_000_000,
-            0x2000,
+            Page::SIZE * 2,
             MemoryRegionFlag::READ | MemoryRegionFlag::WRITE,
         )?;
 

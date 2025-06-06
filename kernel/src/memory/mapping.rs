@@ -68,8 +68,8 @@ impl Default for MemoryMappingRegion {
     }
 }
 
-impl<'a> From<&'a MemoryRemap> for MemoryMappingRegion {
-    fn from(value: &'a MemoryRemap) -> Self {
+impl From<MemoryRemap> for MemoryMappingRegion {
+    fn from(value: MemoryRemap) -> Self {
         Self {
             page_count: Page::upper_bound(value.len),
             physical_offset: value.physical_start,

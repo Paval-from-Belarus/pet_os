@@ -58,6 +58,8 @@ pub enum AllocError {
     PageMappingFailed(#[from] PageMarkerError),
     #[error("Invalid alignment. Requested: {0:?}")]
     InvalidAlignment(Alignment),
+    #[error("Several overlaping regions")]
+    OverlappingRegions,
 }
 
 extern "C" {

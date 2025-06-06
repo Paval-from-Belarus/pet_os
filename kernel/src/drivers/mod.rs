@@ -33,6 +33,11 @@ pub struct AutoLoad {
     pub shout_down_count: usize,
 }
 
+
+pub fn init_work_queue() {
+
+}
+
 pub fn auto_load() {}
 
 pub fn fs() -> Arc<FileSystem> {

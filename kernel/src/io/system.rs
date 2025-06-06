@@ -1,14 +1,13 @@
-use kernel_types::{
-    declare_constants, get_eax, get_edx, set_eax, set_edx, syscall,
-};
+use kernel_types::{declare_constants, set_eax, set_edx, syscall};
 
 use crate::io::irq::IrqChain;
 use crate::io::{
     self, IDTable, InterruptStackFrame, IrqLine, MAX_INTERRUPTS_COUNT,
 };
-use crate::memory::{SlabBox, VirtualAddress};
+use crate::memory::{Page, SlabBox, VirtualAddress};
 use crate::{
-    current_task, error_trap, log_module, memory, naked_trap, task, user,
+    current_task, drivers, error_trap, log_module, memory, naked_trap, task,
+    user,
 };
 
 //the common handlers
@@ -76,8 +75,18 @@ extern "x86-interrupt" {
 
 #[no_mangle]
 pub extern "C" fn handle_syscall() {
-    let id: u32 = unsafe { get_eax!() };
-    let edx: usize = unsafe { get_edx!() };
+    let edx: usize;
+    let ecx: usize;
+    let id: u32;
+
+    unsafe {
+        core::arch::asm! {
+            "",
+            out("eax") id,
+            out("edx") edx,
+            out("ecx") ecx
+        }
+    }
 
     if id == syscall::RESERVED {
         unsafe { set_edx!(CHECK_CODE) };
@@ -90,7 +99,7 @@ pub extern "C" fn handle_syscall() {
         return;
     };
 
-    let code = match user::syscall::handle(request, edx) {
+    let code = match user::syscall::handle(request, edx, ecx) {
         Ok(()) => 0,
         Err(cause) => cause as u32,
     };
@@ -99,16 +108,14 @@ pub extern "C" fn handle_syscall() {
 }
 
 pub extern "x86-interrupt" fn terminate_process(_frame: InterruptStackFrame) {
-    log::info!("Proccess will be terminated");
     task::terminate();
 }
 
 #[no_mangle]
 pub extern "x86-interrupt" fn module_complete(_frame: InterruptStackFrame) {
-    log::info!("Module initialization is completed");
-
+    drivers::init_work_queue();
     loop {
-        log::debug!("Module loop");
+        //do somework to switch to the kernel task
     }
 }
 
@@ -205,6 +212,28 @@ pub extern "x86-interrupt" fn page_fault(
             "mov eax, cr2",
             out("eax") access_address,
             options(nomem, nostack, preserves_flags)
+        }
+    }
+
+    if let Some(process) = current_task!().process.clone() {
+        let mut state = process.state.try_lock().unwrap();
+
+        let stack_bottom = state.stack.start;
+
+        if stack_bottom > access_address
+            && (stack_bottom - access_address) < 2 * Page::SIZE
+        {
+            let new_stack_bottom = stack_bottom - 2 * Page::SIZE;
+
+            if let Err(cause) = state.resize_stack(new_stack_bottom) {
+                log::error!("User proccess cannot resize stack: {cause}");
+                drop(state);
+                user::terminate(process.id);
+            }
+
+            log::debug!("Stack resized to {:X?}", state.stack);
+
+            return;
         }
     }
 

@@ -1,12 +1,13 @@
 use kernel_types::{
-    get_edx,
-    io::{block::BlockDeviceInfo, char::CharDeviceInfo, MemoryRemap},
+    io::{
+        block::BlockDeviceInfo, char::CharDeviceInfo, IoOperation, MemoryRemap,
+    },
     string::MutString,
     syscall::{Request, SyscallError},
 };
 
 use crate::{
-    current_task, drivers, log_module,
+    current_task, drivers, io, log_module,
     memory::{self, AllocError, VirtualAddress},
 };
 
@@ -22,7 +23,11 @@ pub fn validate_ref<'a, T: Sized>(
     Ok(unsafe { &*ptr })
 }
 
-pub fn handle(request: Request, edx: usize) -> Result<(), SyscallError> {
+pub fn handle(
+    request: Request,
+    edx: usize,
+    ecx: usize,
+) -> Result<(), SyscallError> {
     match request {
         Request::PrintK => {
             let string: &MutString = validate_ref(edx)?;
@@ -36,8 +41,14 @@ pub fn handle(request: Request, edx: usize) -> Result<(), SyscallError> {
                 return Err(SyscallError::KernelSpaceCall);
             };
 
-            memory::remap(&process, remap.into())?;
+            let remap = remap.clone();
 
+            unsafe { memory::switch_to_kernel() };
+
+            memory::remap(&process, remap.into())
+                .inspect_err(|cause| log::warn!("Failed to remap: {cause}"))?;
+
+            unsafe { memory::switch_to_task(current_task!()) };
             // let state = procces.state.try_lock().unwrap();
             // state.find_region(remap.virtual_start)
 
@@ -60,6 +71,22 @@ pub fn handle(request: Request, edx: usize) -> Result<(), SyscallError> {
             drivers::api::reg_chr_dev(&chr_dev)?;
 
             unsafe { memory::switch_to_task(current_task!()) };
+        }
+        Request::IoOperation => {
+            let len = ecx;
+            let _ = validate_ref::<IoOperation>(edx)?;
+
+            let ops = unsafe {
+                core::slice::from_raw_parts(edx as *const IoOperation, len)
+            };
+
+            io::start_tx();
+
+            for op in ops.iter() {
+                unsafe { io::interpretate_op(op) };
+            }
+
+            io::end_tx();
         }
     }
 

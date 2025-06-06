@@ -120,8 +120,10 @@ impl MemoryRegion {
         0
     }
 
-    pub fn expand(&mut self) {
-        todo!()
+    pub fn expand_mem_before(&mut self, pages: &mut LinkedList<'static, Page>) {
+        self.range.start -= Page::SIZE * pages.len();
+
+        self.pages.splice(pages);
     }
 
     pub fn split_on(
@@ -158,6 +160,7 @@ impl MemoryRegion {
         Ok(buddy_region.into())
     }
 
+    //update the start of the region
     pub fn reduce_to(&mut self, offset: VirtualAddress) {
         assert!(offset > self.range.start);
 

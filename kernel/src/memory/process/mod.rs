@@ -10,9 +10,14 @@ use alloc::sync::Arc;
 use builder::{KernelSpace, ProcessBuilder};
 use kernel_types::collections::LinkedList;
 
-use crate::error::KernelError;
+use crate::{
+    error::KernelError,
+    memory::{self, MemoryMappingRegion, MemoryRegionFlag},
+};
 
-use super::{paging::PageMarker, MemoryRegion, Page, VirtualAddress};
+use super::{
+    paging::PageMarker, AllocError, MemoryRegion, Page, VirtualAddress,
+};
 
 pub type ProcessId = usize;
 
@@ -167,6 +172,48 @@ impl ProcessState {
     //     })
     // }
 
+    pub fn resize_stack(
+        &mut self,
+        stack_bottom: VirtualAddress,
+    ) -> Result<(), AllocError> {
+        assert!(stack_bottom < self.stack.start);
+
+        if self.find_region(stack_bottom).is_some() {
+            return Err(AllocError::OverlappingRegions);
+        }
+
+        let stack_bottom = stack_bottom - (stack_bottom % Page::SIZE);
+
+        let prefix_size = self.stack.start - stack_bottom;
+
+        let mut pages = memory::physical_alloc(prefix_size)?;
+
+        let mut virt_offset = stack_bottom;
+
+        for page in pages.iter_mut() {
+            self.marker.map_user_range(&MemoryMappingRegion {
+                flags: MemoryRegionFlag::READ_WRITE.into(),
+                virtual_offset: virt_offset,
+                physical_offset: page.as_physical(),
+                page_count: 1,
+            })?;
+
+            virt_offset += Page::SIZE;
+        }
+
+        let stack_region = self
+            .find_region_mut(self.stack.start + 1)
+            .expect("No stack region");
+
+        stack_region.expand_mem_before(&mut pages);
+
+        assert_eq!(stack_bottom, stack_region.range.start);
+
+        self.stack.start = stack_bottom;
+
+        Ok(())
+    }
+
     pub fn find_region_mut(
         &mut self,
         address: VirtualAddress,
@@ -175,6 +222,16 @@ impl ProcessState {
             .iter_mut()
             .find(|region| region.range.contains(&address))
             .map(|region| region as &mut MemoryRegion)
+    }
+
+    pub fn find_region(
+        &self,
+        address: VirtualAddress,
+    ) -> Option<&MemoryRegion> {
+        self.regions
+            .iter()
+            .find(|region| region.range.contains(&address))
+            .map(|region| region as &MemoryRegion)
     }
 
     pub fn add_region(&mut self, region: &'static mut MemoryRegion) {

@@ -4,10 +4,12 @@ use core::{mem, ptr};
 
 use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
+use kernel_types::io::IoOperation;
 use kernel_types::{
     declare_constants, declare_types, get_eax, get_edx, set_eax, syscall,
 };
 
+use crate::common::io::{inb, inw, outb, outw};
 use crate::io;
 use crate::io::irq::IrqChain;
 use crate::io::pic::PicLine;
@@ -252,6 +254,40 @@ pub fn registry(_handle: object::RawHandle, line: IrqLine, info: CallbackInfo) {
 //all segment registers + all base registers + InterStackFrame + error code + user-mode switching ― the worst case
 pub const KERNEL_TRAP_SIZE: usize =
     4 * 2 + 8 * 4 + mem::size_of::<InterruptStackFrame>() + 4 + 4 * 2;
+
+pub fn start_tx() {}
+
+pub fn end_tx() {}
+
+pub unsafe fn interpretate_op(op: &IoOperation) {
+    use kernel_types::io::PortOperation;
+
+    log::debug!("JIT: {op:?}");
+
+    match op {
+        IoOperation::PortOperation(op) => match op {
+            PortOperation::WriteByte { port, value } => {
+                outb(*port, *value);
+            }
+
+            PortOperation::WriteWord { port, value } => {
+                outw(*port, *value);
+            }
+
+            PortOperation::ReadByte { port, value } => {
+                let read_byte = inb(*port);
+                value.write_volatile(read_byte);
+            }
+
+            PortOperation::ReadWord { port, value } => {
+                let read_word = inw(*port);
+                value.write_volatile(read_word);
+            }
+        },
+        IoOperation::MemoryOperation(_) => todo!(),
+        IoOperation::MemoryCopy { .. } => todo!(),
+    }
+}
 
 pub fn init() {
     let mut table = IDTable::empty();
