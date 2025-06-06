@@ -16,7 +16,10 @@ pub use handle::*;
 pub enum Kind {
     IoWork,
     FsWork,
+    FileWork,
     IrqEvent,
+
+    File,
 
     Mutex,
     Queue,

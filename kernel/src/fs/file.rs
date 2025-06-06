@@ -1,28 +1,18 @@
 use core::{ptr::NonNull, sync::atomic::AtomicUsize};
 
-use kernel_types::{bitflags, collections::ListNode};
+use kernel_types::{bitflags, collections::ListNode, fs::FileOperations};
 
-use super::{IndexNode, MountPoint, PathNode};
+use crate::memory::Slab;
 
-#[repr(C)]
-pub struct FileOperations {
-    pub open: fn(&mut IndexNode, &mut File),
-    pub flush: fn(&mut File),
-    pub close: fn(&mut IndexNode, &mut File),
-    pub read: fn(&mut File, *mut u8, usize),
-    pub write: fn(&mut File, *const u8, usize),
-    pub seek: fn(&mut File, mode: FileSeekMode, offset: usize),
-    #[doc = "for devices only"]
-    pub ioctl: fn(&mut IndexNode, &mut File, usize),
-    //consider additionally implement file_lock and mmap handler
-}
+use super::{MountPoint, PathNode};
 
-bitflags! {
-    pub FileRenameFlag(usize),
-    //if target is exist then no replacement can occurred
-    NO_REPLACE = 0b01,
-    //both files should exist; swap files by places
-    EXCHANGE = 0b10
+bitflags::bitflags! {
+    pub struct FileRenameFlag: u8 {
+        //if target is exist then no replacement can occurred
+        const NO_REPLACE = 0b01;
+        //both files should exist; swap files by places
+        const EXCHANGE = 0b10;
+    }
 }
 
 ///consider to implement prefix-tree
@@ -77,7 +67,6 @@ impl FileOpenMode {
 
 //IndexNode has no state (as class)
 //Whereas file is an implementation of this class
-
 #[derive(kernel_macro::ListNode)]
 #[repr(C)]
 pub struct File {

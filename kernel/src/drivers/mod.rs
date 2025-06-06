@@ -1,52 +1,58 @@
-#![allow(unused)]
-
-/// All drivers storing in
-use core::ptr::NonNull;
-use core::{mem, slice};
-
 use alloc::sync::Arc;
-use kernel_macro::{export_symbolic, ListNode};
-use kernel_types::collections::{LinkedList, ListNode, Queue};
-use kernel_types::declare_constants;
-use kernel_types::drivers::{Device, DeviceId, DriverId, KernelSymbol};
-use kernel_types::fs::{FileSystem, FileSystemKind};
+use kernel_macro::ListNode;
+use kernel_types::collections::{LinkedList, ListNode};
+use kernel_types::drivers::{DeviceId, DriverId};
+use kernel_types::fs::{FileOperations, FileSystem, FileSystemKind};
 
-use crate::common::atomics::SpinLockLazyCell;
-use crate::fs::{FileOperations, IndexNode, IndexNodeItem, SuperBlock};
-use crate::memory::{slab_alloc, ProcessId, SlabBox, VirtualAddress};
+use crate::fs::{FileWork, FsWork};
+use crate::io::block;
+use crate::memory::ProcessId;
+use crate::user::queue::Queue;
 
 pub mod api;
-mod disk;
+mod auto_load;
 mod generated;
-mod keyboard;
 mod loader;
-mod management;
-mod memory;
 mod module_task;
-mod network;
-mod vga;
+
+// mod disk;
+// mod keyboard;
+// mod memory;
+// mod network;
+// mod vga;
 
 use generated::STATIC_DRIVERS;
 
-pub type ModuleId = ProcessId;
+const MAX_MODULE_NAME_LEN: usize = 12;
 
-pub struct AutoLoad {
-    pub shout_down_count: usize,
+#[derive(ListNode)]
+pub struct Module {
+    #[list_pivots]
+    node: ListNode<Module>,
+    //same as process id
+    pub id: ModuleId,
+    pub name: heapless::String<MAX_MODULE_NAME_LEN>,
+    pub ops: ModuleOperations,
 }
 
-pub fn init_work_queue() {}
+pub enum ModuleOperations {
+    CharDeviceModule(CharDeviceModule),
+}
 
-pub fn auto_load() {}
+pub struct CharDeviceModule {
+    pub ops: FileOperations,
+}
 
-pub fn fs() -> Arc<FileSystem> {
-    let fs = FileSystem {
-        name: "dev-fs".into(),
-        kind: FileSystemKind::READ_ONLY,
-        mount: todo!(),
-        unmount: todo!(),
-    };
+pub enum ModuleQueue {
+    Fs(Queue<FsWork>),
+    Block(Queue<block::WorkObject>),
+    Char(Queue<FileWork>),
+}
 
-    Arc::new(fs)
+pub type ModuleId = ProcessId;
+
+pub struct ModuleManager {
+    modules: spin::RwLock<LinkedList<'static, Module>>,
 }
 
 pub fn register_char_device_range(
@@ -72,13 +78,6 @@ pub struct StaticDriver {
     pub len: usize,
 }
 
-extern "Rust" {
-    #[link_name = "symbol_table_start"]
-    static SYMBOL_TABLE_START: *const KernelSymbol;
-    #[link_name = "symbol_table_end"]
-    static SYMBOL_TABLE_END: *const KernelSymbol;
-}
-
 pub fn init() {
     log::info!("Detected {} static drivers", STATIC_DRIVERS.len());
 
@@ -90,16 +89,23 @@ pub fn init() {
         });
     }
 
-    disk::init();
+    auto_load::spawn_task().expect("Failed to init autoload task");
 }
 
-fn find_symbol(name: &str) -> Option<VirtualAddress> {
-    let table_size =
-        unsafe { SYMBOL_TABLE_END.offset_from_unsigned(SYMBOL_TABLE_START) };
-    let symbol_table =
-        unsafe { slice::from_raw_parts(SYMBOL_TABLE_START, table_size) };
-    symbol_table
-        .iter()
-        .find(|entry| entry.has_same_name(name))
-        .map(|entry| entry.offset())
-}
+// extern "Rust" {
+//     #[link_name = "symbol_table_start"]
+//     static SYMBOL_TABLE_START: *const KernelSymbol;
+//     #[link_name = "symbol_table_end"]
+//     static SYMBOL_TABLE_END: *const KernelSymbol;
+// }
+//
+// fn find_symbol(name: &str) -> Option<VirtualAddress> {
+//     let table_size =
+//         unsafe { SYMBOL_TABLE_END.offset_from_unsigned(SYMBOL_TABLE_START) };
+//     let symbol_table =
+//         unsafe { slice::from_raw_parts(SYMBOL_TABLE_START, table_size) };
+//     symbol_table
+//         .iter()
+//         .find(|entry| entry.has_same_name(name))
+//         .map(|entry| entry.offset())
+// }

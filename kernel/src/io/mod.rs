@@ -22,8 +22,8 @@ use crate::{current_task, object};
 
 pub use lock::InterruptableLazyCell;
 
-mod block;
-mod char;
+pub mod block;
+pub mod char;
 mod irq;
 mod lock;
 pub(crate) mod pic;

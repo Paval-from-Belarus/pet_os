@@ -3,17 +3,18 @@ use core::ptr::NonNull;
 use kernel_macro::ListNode;
 use kernel_types::{
     collections::{LinkedList, ListNode},
-    drivers::{Device, DeviceId, DriverId}, io::block::BlockDeviceInfo,
+    drivers::{Device, DeviceId, DriverId},
+    fs::FileOperations,
+    io::block::BlockDeviceInfo,
 };
 
 use crate::{
-    fs::FileOperations,
     memory::ProcessId,
     object::{self, Object},
     user::queue::Queue,
 };
 
-use super::IoWork;
+use super::WorkObject;
 
 pub const MAX_DEVICE_NAME_LEN: usize = 32;
 
@@ -28,23 +29,15 @@ pub struct BlockDevice {
     driver_name: [u8; 32],
     name: heapless::String<MAX_DEVICE_NAME_LEN>,
     ops: NonNull<FileOperations>,
-    io_work: object::Handle<Queue<IoWork>>,
+    io_work: object::Handle<Queue<WorkObject>>,
 }
 
 impl BlockDevice {
-    // pub fn new_boxed(blk_dev: &BlockDeviceInfo) 
+    // pub fn new_boxed(blk_dev: &BlockDeviceInfo)
     //file operations are created from
     //blocK::Operations
     pub fn file_ops(&self) -> FileOperations {
-        FileOperations {
-            open: todo!(),
-            flush: todo!(),
-            close: todo!(),
-            read: todo!(),
-            write: todo!(),
-            seek: todo!(),
-            ioctl: todo!(),
-        }
+        todo!()
     }
 }
 

@@ -1,11 +1,10 @@
 use core::ptr::NonNull;
 
-use kernel_types::{collections::LinkedList, drivers::Device};
-
-use crate::{
-    fs::{FileOperations, IndexNodeItem},
-    memory::ProcessId,
+use kernel_types::{
+    collections::LinkedList, drivers::Device, fs::FileOperations,
 };
+
+use crate::{fs::IndexNodeItem, memory::ProcessId};
 
 //that's a
 pub struct CharDevice {

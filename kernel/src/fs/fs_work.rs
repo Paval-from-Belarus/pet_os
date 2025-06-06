@@ -11,22 +11,22 @@ use super::FileId;
 
 //handle is the address of object
 pub struct FsWork {
-    pub work: Work,
+    pub op: FsOperation,
     object: Object,
 }
 
 impl FsWork {
     pub fn new_boxed(
-        work: Work,
+        work: FsOperation,
         parent: &object::Handle<Queue<FsWork>>,
     ) -> Box<Self> {
         let object = Self::new_object(parent);
 
-        Box::new(Self { work, object })
+        Box::new(Self { op: work, object })
     }
 }
 
-pub enum Work {
+pub enum FsOperation {
     Open {
         name: String,
     },

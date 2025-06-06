@@ -12,7 +12,7 @@ use crate::{
     user::queue::Queue,
 };
 
-use super::{File, FsWork, MountPoint, Work};
+use super::{File, FsWork, MountPoint, FsOperation};
 
 #[derive(ListNode)]
 pub struct FileSystemItem {
@@ -87,7 +87,7 @@ impl SuperBlock {
         .unwrap()
     }
 
-    pub fn work(&self, work: Work) -> object::Handle<FsWork> {
+    pub fn work(&self, work: FsOperation) -> object::Handle<FsWork> {
         let queue = &self.queue;
 
         let work = FsWork::new_boxed(work, queue);

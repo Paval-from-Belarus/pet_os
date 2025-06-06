@@ -1,11 +1,12 @@
 pub use error::*;
 pub use file::*;
+pub use file_work::*;
+pub use fs_work::*;
 pub use index_node::*;
 use kernel_types::fs::FileSystem;
 pub use mount_point::*;
 pub use path::*;
 pub use super_block::*;
-pub use work::*;
 
 use kernel_types::declare_constants;
 use kernel_types::drivers::Device;
@@ -15,12 +16,13 @@ use crate::object::{self};
 
 mod error;
 mod file;
+mod file_work;
+mod fs_work;
 mod index_node;
 mod mount_point;
 mod path;
 mod super_block;
 mod system_fs;
-mod work;
 
 use system_fs::{FileSystemId, SystemMountPoints};
 
@@ -64,7 +66,7 @@ pub fn unregister_fs(id: FileSystemId) -> Result<(), ()> {
 pub fn open<T: AsRef<str>>(path: T) -> object::RawHandle {
     let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
 
-    fs.super_block().work(Work::Open { name }).as_raw()
+    fs.super_block().work(FsOperation::Open { name }).as_raw()
 }
 
 pub fn read(
@@ -76,7 +78,7 @@ pub fn read(
         return Err(FsError::InvalidFileHandle);
     };
 
-    let op_handle = file.super_block().work(Work::Read {
+    let op_handle = file.super_block().work(FsOperation::Read {
         file: file.id(),
         buffer: dest,
         count,
@@ -94,7 +96,7 @@ pub fn write(
         return Err(FsError::InvalidFileHandle);
     };
 
-    let op_handle = file.super_block().work(Work::Write {
+    let op_handle = file.super_block().work(FsOperation::Write {
         file: file.id(),
         buffer: source,
         count,
@@ -108,7 +110,9 @@ pub fn close(file_handle: usize) -> Result<object::RawHandle, FsError> {
         return Err(FsError::InvalidFileHandle);
     };
 
-    let op_handle = file.super_block().work(Work::Close { file: file.id() });
+    let op_handle = file
+        .super_block()
+        .work(FsOperation::Close { file: file.id() });
 
     Ok(op_handle.as_raw())
 }

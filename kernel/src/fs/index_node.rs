@@ -1,27 +1,17 @@
-use core::ptr::NonNull;
-
 use alloc::sync::Arc;
 use kernel_macro::ListNode;
-use kernel_types::collections::{BoxedNode, ListNode};
+use kernel_types::{
+    collections::{BoxedNode, ListNode},
+    container_of,
+};
 
 use crate::{
     common::time::Timestamp,
     memory::{self, Slab, SlabBox},
+    object::{self, Object, ObjectContainer},
 };
 
-use super::{
-    Device, FileOperations, FilePermissions, FileRenameFlag, NodeKind,
-    SuperBlock,
-};
-
-#[repr(C)]
-pub struct IndexNodeOperations {
-    create_directory: fn(&mut IndexNode),
-    remove_directory: fn(&mut IndexNode),
-    rename: fn(&mut IndexNode, &mut IndexNode, FileRenameFlag),
-    check_permissions: fn(&mut IndexNode) -> bool,
-    truncate: fn(&mut IndexNode, size: usize),
-}
+use super::{Device, FilePermissions, NodeKind, SuperBlock};
 
 pub struct IndexNodeBox {
     item: SlabBox<IndexNodeItem>,
@@ -32,6 +22,7 @@ pub struct IndexNodeBox {
 pub struct IndexNodeItem {
     #[list_pivots]
     node: ListNode<IndexNodeItem>,
+    object: Object,
     pub lock: Arc<spin::RwLock<IndexNode>>,
 }
 
@@ -54,8 +45,8 @@ pub struct IndexNode {
     change_time: Timestamp,
     access_time: Timestamp,
     modify_time: Timestamp,
-    node_operations: NonNull<IndexNodeOperations>,
-    file_operations: Option<NonNull<FileOperations>>,
+    // node_operations: NonNull<IndexNodeOperations>,
+    // file_operations: Option<NonNull<FileOperations>>,
     //for block/chart file devices only
     kind: NodeKind,
     //where file is storing
@@ -87,5 +78,21 @@ impl BoxedNode for IndexNodeItem {
         let item = memory::into_boxed(node.into());
 
         Self::Target { item }
+    }
+}
+
+impl ObjectContainer for IndexNodeItem {
+    const KIND: object::Kind = object::Kind::File;
+
+    fn container_of(object: *mut Object) -> *mut Self {
+        container_of!(object, IndexNodeItem, object)
+    }
+
+    fn object(&self) -> &Object {
+        &self.object
+    }
+
+    fn object_mut(&mut self) -> &mut Object {
+        &mut self.object
     }
 }
