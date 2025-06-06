@@ -25,7 +25,7 @@ for DRIVER in ${DRIVERS}; do
 	-Z build-std=core,alloc,compiler_builtins \
 	-Z build-std-features=compiler-builtins-mem \
 	--release \
-	--bin ${DRIVER}
+	--bin ${DRIVER} || exit $?
 
 
 	objcopy -x --strip-unneeded \

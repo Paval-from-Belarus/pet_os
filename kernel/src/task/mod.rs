@@ -23,7 +23,7 @@ mod arch;
 pub mod clocks;
 mod context;
 mod fs;
-mod futex;
+mod mutex;
 mod pid;
 mod priority;
 mod scheduler;
