@@ -1,12 +1,14 @@
 pub mod block;
 pub mod char;
 pub mod spin;
+mod transaction;
 
 pub use kernel_types::io::op::*;
 use kernel_types::io::MemoryRemap;
 pub use kernel_types::io::Result;
 use kernel_types::syscall;
 use kernel_types::syscall::Request;
+pub use transaction::*;
 
 #[repr(C)]
 pub struct FileOperations {
@@ -38,7 +40,7 @@ pub fn remap(
     len: usize,
 ) -> Result<()> {
     let remap = MemoryRemap {
-        physical_start: physical_memory as usize,
+        physical_start: physical_memory,
         virtual_start: virtual_memory as usize,
         len,
     };

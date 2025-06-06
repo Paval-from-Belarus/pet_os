@@ -1,5 +1,6 @@
 use crate::syscall::SyscallError;
 
+#[derive(Debug, Clone)]
 pub enum MemoryOperation {
     Write {},
 }
@@ -10,28 +11,15 @@ pub enum PortValue {
     Word(u16),
 }
 
+#[derive(Debug, Clone)]
 pub enum PortOperation {
-    WriteByte {
-        port: u16,
-        value: u8,
-    },
-    WriteWord {
-        port: u16,
-        value: u16,
-    },
-    ReadByte {
-        port: u16,
-    },
-    ReadWord {
-        port: u16,
-    },
-    ReadToMemory {
-        port: u16,
-        buffer: *mut u8,
-        buffer_size: usize,
-    },
+    WriteByte { port: u16, value: u8 },
+    WriteWord { port: u16, value: u16 },
+    ReadByte { port: u16, value: *mut u8 },
+    ReadWord { port: u16, value: *mut u16 },
 }
 
+#[derive(Debug, Clone)]
 pub enum IoOperation {
     PortOperation(PortOperation),
     MemoryOperation(MemoryOperation),
@@ -52,14 +40,6 @@ impl From<MemoryOperation> for IoOperation {
     fn from(value: MemoryOperation) -> Self {
         Self::MemoryOperation(value)
     }
-}
-
-#[cfg(feature = "alloc")]
-#[repr(C)]
-#[must_use]
-pub struct IoTransaction<Kind: IoKind> {
-    ops: alloc::vec::Vec<IoOperation>,
-    _kind: Kind,
 }
 
 #[derive(Debug)]
@@ -121,37 +101,10 @@ impl KernelBufMut {
     }
 }
 
-pub trait IoKind {}
-pub struct Read;
-pub struct Write;
-
-impl IoKind for Read {}
-impl IoKind for Write {}
-
-impl IoTransaction<Read> {
-    pub fn new_read() -> IoTransaction<Read> {
-        Self {
-            ops: alloc::vec![],
-            _kind: Read,
-        }
-    }
-
-    pub fn port_u8(self, _port: u16) -> Result<u8, Error> {
-        todo!()
-    }
-
-    pub fn port_u16(self, _port: u16) -> Result<u16, Error> {
-        todo!()
-    }
-
-    pub fn port_to_buf(
-        self,
-        _port: u16,
-        _buffer: &mut KernelBufMut,
-    ) -> Result<(), Error> {
-        todo!()
-    }
-}
+//какие типы операций могут быть:
+//из одного куска памяти в другой (memcopy)
+//из порта в какой-то один кусок памяти (один раз)
+//из порта в какой-то кусок памяти (много раз), увеличение буфера
 
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum Error {
@@ -160,43 +113,3 @@ pub enum Error {
     #[error("Syscall is failed")]
     SyscallFailed(#[from] SyscallError),
 }
-
-impl IoTransaction<Write> {
-    pub fn new_write() -> IoTransaction<Write> {
-        Self {
-            ops: alloc::vec![],
-            _kind: Write,
-        }
-    }
-
-    pub fn port_u8(&mut self, port: u16, value: u8) -> &mut Self {
-        self.ops
-            .push(PortOperation::WriteByte { port, value }.into());
-
-        self
-    }
-
-    pub fn port_u16(&mut self, port: u16, value: u16) -> &mut Self {
-        self.ops
-            .push(PortOperation::WriteWord { port, value }.into());
-
-        self
-    }
-
-    pub fn commit(&mut self) -> Result<(), Error> {
-        Ok(())
-    }
-
-    pub fn slice_to_buf(
-        &mut self,
-        _slice: &[u8],
-        _buf: &mut UserBufMut,
-    ) -> &mut Self {
-        self
-    }
-}
-
-//какие типы операций могут быть:
-//из одного куска памяти в другой (memcopy)
-//из порта в какой-то один кусок памяти (один раз)
-//из порта в какой-то кусок памяти (много раз), увеличение буфера

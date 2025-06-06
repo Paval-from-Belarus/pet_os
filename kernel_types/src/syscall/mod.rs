@@ -15,6 +15,8 @@ pub enum Request {
 
     RegBlockDevice = MIN_MODULE_REQUEST_CODE,
     RegCharDevice,
+
+    IoOperation,
 }
 
 impl Request {
@@ -44,7 +46,7 @@ pub enum SyscallError {
 
 #[macro_export]
 macro_rules! syscall {
-    ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?) => ({
+    ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)? $(,)?) => ({
         let mut id = $id as u32;
         core::arch::asm!(
           "int 80h",
