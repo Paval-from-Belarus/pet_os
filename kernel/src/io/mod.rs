@@ -262,7 +262,7 @@ pub fn end_tx() {}
 pub unsafe fn interpretate_op(op: &IoOperation) {
     use kernel_types::io::PortOperation;
 
-    log::debug!("JIT: {op:?}");
+    log::debug!("JIT: {op:X?}");
 
     match op {
         IoOperation::PortOperation(op) => match op {
@@ -306,7 +306,7 @@ pub fn init() {
 
     table.set(
         IDTable::MODULE_COMPLETE,
-        InterruptGate::syscall(system::module_complete),
+        InterruptGate::syscall(system::_module_complete),
     );
 
     unsafe {

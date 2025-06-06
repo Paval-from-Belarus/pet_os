@@ -230,8 +230,8 @@ pub fn submit_task(task: &'static mut RunningTask) {
     SCHEDULER.access_lock().push_task(task);
 }
 
-pub fn terminate() {
-    idle_task();
+pub fn terminate() -> ! {
+    todo!()
 }
 
 //run the kernel main loop

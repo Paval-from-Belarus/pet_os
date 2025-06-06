@@ -67,8 +67,6 @@ impl KernelModule for AtaDriver {
 
         log::info!("Ata driver is initialized");
 
-        loop {}
-
         Ok(Self)
     }
 }

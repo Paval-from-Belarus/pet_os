@@ -22,6 +22,7 @@ mod keyboard;
 mod loader;
 mod management;
 mod memory;
+mod module_task;
 mod network;
 mod vga;
 
@@ -33,10 +34,7 @@ pub struct AutoLoad {
     pub shout_down_count: usize,
 }
 
-
-pub fn init_work_queue() {
-
-}
+pub fn init_work_queue() {}
 
 pub fn auto_load() {}
 

@@ -118,7 +118,6 @@ impl VgaWriter {
 
     pub fn put_string(&mut self, s: &str) {
         for c in s.chars() {
-            log::debug!("Putting {c}");
             self.put_char(c);
         }
     }
@@ -236,8 +235,6 @@ impl KernelModule for VgaDriver {
     fn init() -> Result<Self, ModuleError> {
         let offset = unsafe { VGA_BUFFER.buffer.as_ptr() };
 
-        log::debug!("Virtual offset: {offset:X?}");
-
         io::remap(VGA_BUFFER_OFFSET, offset as _, VGA_WIDTH * VGA_HEIGHT)?;
 
         let mut writer =
@@ -247,9 +244,7 @@ impl KernelModule for VgaDriver {
         writer.put_string("Hello from vga");
         writer.update_cursor();
 
-        loop {
-            log::info!("From vga driver");
-        }
+        log::info!("Vga driver is initialized");
 
         Ok(Self {})
     }

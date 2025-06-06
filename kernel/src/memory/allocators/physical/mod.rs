@@ -86,31 +86,35 @@ unsafe fn collect_buddies(mut boot_allocator: BootAllocator) -> BuddyArray {
 
     for pivot in boot_allocator.as_slice_mut() {
         if pivot.kind() != MemoryKind::Available {
-            // if pivot.kind() == MemoryKind::Reserved {
-            //     let mut mem_offset = pivot.next_offset();
-            //     let max_offset =
-            //         mem_offset + (Page::SIZE * pivot.free_pages_count());
-            //
-            //     while mem_offset < max_offset {
-            //         let page = unsafe { Page::take_unchecked(mem_offset) };
-            //
-            //         let node_index = page.index();
-            //
-            //         if node_index >= MEMORY_MAP_SIZE || mem_offset > max_offset
-            //         {
-            //             log::warn!(
-            //                 "Invalid index for memory map: {node_index}"
-            //             );
-            //             break;
-            //         }
-            //
-            //         *page = Page::new();
-            //
-            //         page.flags = PageFlag::DMA;
-            //
-            //         mem_offset += Page::SIZE;
-            //     }
-            // }
+            if pivot.kind() == MemoryKind::Reserved {
+                let mut mem_offset = pivot.next_offset();
+                let max_offset =
+                    mem_offset + (Page::SIZE * pivot.free_pages_count());
+
+                while mem_offset < max_offset {
+                    let page = Page::take_unchecked(mem_offset);
+
+                    unsafe { *page = Page::new() };
+
+                    let page = Page::take_mut(mem_offset).expect("New page");
+
+                    let node_index = page.index();
+
+                    if node_index >= MEMORY_MAP_SIZE || mem_offset > max_offset
+                    {
+                        log::warn!(
+                            "Invalid index for memory map: {node_index}"
+                        );
+                        break;
+                    }
+
+                    page.flags = PageFlag::DMA;
+
+                    page.release();
+
+                    mem_offset += Page::SIZE;
+                }
+            }
             continue;
         }
 
@@ -268,15 +272,13 @@ impl PhysicalAllocator {
         let mut pages = LinkedList::empty();
 
         let unchecked_pages = unsafe {
-            let Some(head) = Page::take_mut(ph_offset) else {
-                return Err(AllocError::PageInUse);
-            };
+            let head = &mut *Page::take_unchecked(ph_offset);
 
             head.as_slice_mut(pages_count)
         };
 
         for page in unchecked_pages.iter_mut() {
-            assert!(!page.is_used());
+            debug_assert!(!page.is_used());
             page.acquire();
 
             pages.push_back(page.as_node());

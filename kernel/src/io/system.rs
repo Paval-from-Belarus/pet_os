@@ -6,8 +6,7 @@ use crate::io::{
 };
 use crate::memory::{Page, SlabBox, VirtualAddress};
 use crate::{
-    current_task, drivers, error_trap, log_module, memory, naked_trap, task,
-    user,
+    current_task, error_trap, log_module, memory, naked_trap, task, user,
 };
 
 //the common handlers
@@ -71,6 +70,8 @@ declare_constants!(
 
 extern "x86-interrupt" {
     pub fn _syscall(frame: InterruptStackFrame);
+    /// external intrinsic which will invoke the [[module_task]]
+    pub fn _module_complete(frame: InterruptStackFrame);
 }
 
 #[no_mangle]
@@ -109,14 +110,6 @@ pub extern "C" fn handle_syscall() {
 
 pub extern "x86-interrupt" fn terminate_process(_frame: InterruptStackFrame) {
     task::terminate();
-}
-
-#[no_mangle]
-pub extern "x86-interrupt" fn module_complete(_frame: InterruptStackFrame) {
-    drivers::init_work_queue();
-    loop {
-        //do somework to switch to the kernel task
-    }
 }
 
 pub extern "x86-interrupt" fn division_by_zero(_from: InterruptStackFrame) {
