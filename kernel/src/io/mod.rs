@@ -255,9 +255,9 @@ pub fn registry(_handle: object::RawHandle, line: IrqLine, info: CallbackInfo) {
 pub const KERNEL_TRAP_SIZE: usize =
     4 * 2 + 8 * 4 + mem::size_of::<InterruptStackFrame>() + 4 + 4 * 2;
 
-pub fn start_tx() {}
+pub fn start_op_tx() {}
 
-pub fn end_tx() {}
+pub fn end_op_tx() {}
 
 pub unsafe fn interpretate_op(op: &IoOperation) {
     use kernel_types::io::PortOperation;

@@ -23,7 +23,7 @@ pub type ProcessId = usize;
 
 pub const MAX_PROCESS_ID: usize = u16::MAX as usize;
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
 pub fn new_proccess_id() -> Option<ProcessId> {
     let next_id = NEXT_ID.fetch_add(1, Ordering::SeqCst);

@@ -1,7 +1,6 @@
 use kernel_types::{
     container_of,
     io::{KernelBuf, KernelBufMut},
-    string::MutString,
 };
 
 use crate::{
@@ -17,11 +16,9 @@ pub struct FileWork {
 }
 
 pub enum FileOperation {
-    Open {
-        name: MutString<'static>,
-    },
-    Close {
+    Command {
         file: Handle<IndexNodeItem>,
+        command: usize,
     },
     Read {
         file: Handle<IndexNodeItem>,

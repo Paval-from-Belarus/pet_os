@@ -83,14 +83,15 @@ switch_context:
 
     iret
 
-public start_process
+public run_process_routine
+
 ;Input:
 ;eax -> entry point
 ;low 16 bits of edx (dx) -> data segment (as ss)
 ;high 16 bits of edx -> code segment
 ;ecx -> esp to switch
 ;
-start_process:
+run_process_routine:
     mov es, dx
     mov ds, dx
     mov fs, dx

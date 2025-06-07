@@ -407,7 +407,7 @@ pub extern "C" fn run_process() {
             "mov dx, cx",
             "mov ecx, eax",
             "mov eax, ebx",
-            "jmp start_process",
+            "jmp run_process_routine",
             in("eax") stack_end,
             in("ebx") entry_point,
             in("cx") *SegmentSelector::USER_DATA,

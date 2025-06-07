@@ -1,19 +1,20 @@
 use alloc::sync::Arc;
-use kernel_macro::ListNode;
-use kernel_types::collections::{LinkedList, ListNode};
+use kernel_types::collections::LinkedList;
 use kernel_types::drivers::{DeviceId, DriverId};
-use kernel_types::fs::{FileOperations, FileSystem, FileSystemKind};
+use module_info::Module;
 
-use crate::fs::{FileWork, FsWork};
-use crate::io::block;
+use crate::common::atomics::UnsafeLazyCell;
+use crate::current_task;
 use crate::memory::ProcessId;
-use crate::user::queue::Queue;
 
 pub mod api;
 mod auto_load;
 mod generated;
 mod loader;
+mod module_info;
 mod module_task;
+
+pub use module_info::*;
 
 // mod disk;
 // mod keyboard;
@@ -23,37 +24,50 @@ mod module_task;
 
 use generated::STATIC_DRIVERS;
 
-const MAX_MODULE_NAME_LEN: usize = 12;
-
-#[derive(ListNode)]
-pub struct Module {
-    #[list_pivots]
-    node: ListNode<Module>,
-    //same as process id
-    pub id: ModuleId,
-    pub name: heapless::String<MAX_MODULE_NAME_LEN>,
-    pub ops: ModuleOperations,
-}
-
-pub enum ModuleOperations {
-    CharDeviceModule(CharDeviceModule),
-}
-
-pub struct CharDeviceModule {
-    pub ops: FileOperations,
-}
-
-pub enum ModuleQueue {
-    Fs(Queue<FsWork>),
-    Block(Queue<block::WorkObject>),
-    Char(Queue<FileWork>),
-}
+// pub enum ModuleQueue {
+//     Fs(Queue<FsWork>),
+//     Block(Queue<block::WorkObject>),
+//     Char(Queue<FileWork>),
+// }
 
 pub type ModuleId = ProcessId;
+pub const KERNEL_MODULE: usize = 0;
 
 pub struct ModuleManager {
-    modules: spin::RwLock<LinkedList<'static, Module>>,
+    modules: spin::Mutex<LinkedList<'static, ModuleItem>>,
 }
+
+impl ModuleManager {
+    pub fn from_modules(modules: LinkedList<'static, ModuleItem>) -> Self {
+        Self {
+            modules: spin::Mutex::new(modules),
+        }
+    }
+
+    pub fn find_module(&self, id: ModuleId) -> Option<Arc<Module>> {
+        self.modules
+            .try_lock()
+            .unwrap()
+            .iter()
+            .find(|item| item.state.id == id)
+            .map(|item| item.state.clone())
+    }
+}
+
+pub fn current_module() -> Option<Arc<Module>> {
+    let module_id = current_task!()
+        .process
+        .clone()
+        .map(|proc| proc.id)
+        .unwrap_or(KERNEL_MODULE);
+
+    MODULES.get().find_module(module_id)
+}
+
+unsafe impl Send for ModuleManager {}
+unsafe impl Sync for ModuleManager {}
+
+static MODULES: UnsafeLazyCell<ModuleManager> = UnsafeLazyCell::empty();
 
 pub fn register_char_device_range(
     _id: DriverId,
@@ -88,6 +102,8 @@ pub fn init() {
             log::warn!("Failed to load driver: {cause}");
         });
     }
+
+    MODULES.set(ModuleManager::from_modules(LinkedList::empty()));
 
     auto_load::spawn_task().expect("Failed to init autoload task");
 }

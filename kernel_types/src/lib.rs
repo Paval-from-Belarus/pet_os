@@ -9,6 +9,7 @@
 
 use thiserror_no_std::Error;
 
+mod arch;
 pub mod collections;
 pub mod drivers;
 pub mod fs;
@@ -16,7 +17,6 @@ pub mod io;
 pub mod object;
 pub mod string;
 pub mod syscall;
-mod arch;
 
 extern crate alloc;
 

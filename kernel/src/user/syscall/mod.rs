@@ -80,13 +80,13 @@ pub fn handle(
                 core::slice::from_raw_parts(edx as *const IoOperation, len)
             };
 
-            io::start_tx();
+            io::start_op_tx();
 
             for op in ops.iter() {
                 unsafe { io::interpretate_op(op) };
             }
 
-            io::end_tx();
+            io::end_op_tx();
         }
     }
 

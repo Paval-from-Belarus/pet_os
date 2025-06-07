@@ -16,13 +16,11 @@ impl IrqEvent {
     pub fn new_boxed(
         line: IrqLine,
         parent: &Handle<Queue<IrqEvent>>,
-    ) -> Result<&'static mut Self, AllocError> {
-        let event = crate::memory::slab_alloc(Self {
+    ) -> Result<SlabBox<Self>, AllocError> {
+        crate::memory::slab_alloc(Self {
             line,
             object: Self::new_object(parent),
-        })?;
-
-        unsafe { Ok(&mut *SlabBox::into_raw(event)) }
+        })
     }
 }
 

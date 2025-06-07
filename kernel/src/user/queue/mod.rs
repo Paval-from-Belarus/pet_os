@@ -6,7 +6,7 @@ use kernel_types::{collections::LinkedList, container_of};
 
 use crate::{
     common::atomics::SpinLock,
-    memory::{self, Slab},
+    memory::{self, Slab, SlabBox},
     object::{
         alloc_root_object, dealloc_root_object, runtime, Handle, Kind, Object,
         ObjectContainer,
@@ -58,11 +58,15 @@ where
         runtime::notify(self.handle().as_raw());
     }
 
-    pub fn try_push(&self, _data: &'static mut T) -> Result<(), ()> {
+    pub fn try_push(&self, _data: SlabBox<T>) -> Result<(), ()> {
         Ok(())
     }
 
-    pub fn pop(&self) -> Option<&'static mut T> {
+    pub fn try_pop(&self) -> Option<SlabBox<T>> {
+        todo!()
+    }
+
+    pub fn blocking_pop(&self) -> Option<SlabBox<T>> {
         None
     }
 }

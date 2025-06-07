@@ -15,6 +15,7 @@ pub use paging::PagingProperties;
 use paging::{GDTHandle, PageDirectoryEntries};
 
 use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
+use crate::current_task;
 use crate::memory::allocators::SystemAllocator;
 use crate::memory::paging::GDTTable;
 
@@ -481,6 +482,40 @@ pub unsafe fn switch_to_task(task: &mut Task) {
     } else {
         KERNEL_MARKER.get().load();
     };
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AddressSpace {
+    Kernel,
+    User,
+}
+
+impl AddressSpace {
+    pub fn is_kernel(&self) -> bool {
+        matches!(self, Self::Kernel)
+    }
+
+    pub fn is_user(&self) -> bool {
+        !self.is_kernel()
+    }
+}
+
+pub fn address_space() -> AddressSpace {
+    current_task!()
+        .process
+        .clone()
+        .map(|proc| {
+            let kernel_dir = KERNEL_MARKER.get().directory() as *const _;
+            let user_dir =
+                proc.state.try_lock().unwrap().marker.directory() as *const _;
+
+            if ptr::eq(kernel_dir, user_dir) {
+                AddressSpace::Kernel
+            } else {
+                AddressSpace::User
+            }
+        })
+        .unwrap_or(AddressSpace::Kernel)
 }
 
 pub unsafe fn switch_to_kernel() {
