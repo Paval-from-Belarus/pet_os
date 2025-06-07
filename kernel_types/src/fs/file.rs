@@ -1,14 +1,14 @@
 use crate::{
-    io::{UserBuf, UserBufMut},
-    object::{Handle, KernelObject},
+    fs,
+    io::{KernelBuf, KernelBufMut},
+    object::{Handle, KernelObject, RawHandle},
 };
 
-use super::{IndexNode, SuperBlock};
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct File {
     pub offset: usize,
+    pub handle: RawHandle,
 }
 
 impl File {
@@ -17,12 +17,16 @@ impl File {
     }
 }
 
+impl From<RawHandle> for File {
+    fn from(_value: RawHandle) -> Self {
+        todo!()
+    }
+}
+
 impl KernelObject for File {}
 
-pub type FnRead =
-    fn(Handle<SuperBlock>, Handle<IndexNode>, UserBufMut) -> super::Result<()>;
-pub type FnWrite =
-    fn(Handle<SuperBlock>, Handle<IndexNode>, UserBuf) -> super::Result<()>;
+pub type FnRead = fn(Handle<File>, KernelBufMut) -> fs::Result<()>;
+pub type FnWrite = fn(Handle<File>, KernelBuf) -> fs::Result<()>;
 
 pub struct FileOperations {
     pub write: FnWrite,

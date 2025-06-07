@@ -1,13 +1,11 @@
-use alloc::{boxed::Box, string::String};
-use kernel_types::container_of;
+use alloc::boxed::Box;
+use kernel_types::{container_of, fs::FsOperation};
 
 use crate::{
     memory::Slab,
     object::{self, Object, ObjectContainer},
     user::queue::Queue,
 };
-
-use super::FileId;
 
 //handle is the address of object
 pub struct FsWork {
@@ -24,25 +22,6 @@ impl FsWork {
 
         Box::new(Self { op: work, object })
     }
-}
-
-pub enum FsOperation {
-    Open {
-        name: String,
-    },
-    Close {
-        file: FileId,
-    },
-    Read {
-        file: FileId,
-        buffer: *mut u8,
-        count: usize,
-    },
-    Write {
-        file: FileId,
-        buffer: *const u8,
-        count: usize,
-    },
 }
 
 impl ObjectContainer for FsWork {

@@ -30,7 +30,6 @@ pub struct BlockDeviceInfo {
     pub sector_size: usize,
     //deseriable queue size
     pub queue_size: usize,
-    pub ops: Operations,
 }
 
 //todo: handle hardware and software request

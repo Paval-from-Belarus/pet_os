@@ -4,8 +4,10 @@
 use core::mem::MaybeUninit;
 
 use kernel_lib::{
-    io::{self, IoTransaction},
-    KernelModule, ModuleError,
+    fs::{self, not_supported_read, File, FileOperations},
+    io::{self, IoTransaction, KernelBuf, KernelBufMut},
+    object::Handle,
+    KernelModule, ModuleError, ModuleOperations,
 };
 
 kernel_lib::module! {
@@ -123,6 +125,10 @@ impl VgaWriter {
     }
 }
 
+pub fn write(_file: Handle<File>, _buf: KernelBuf) -> fs::Result<()> {
+    Ok(())
+}
+
 impl KernelModule for VgaDriver {
     fn init() -> Result<Self, ModuleError> {
         let offset = unsafe { VGA_BUFFER.buffer.as_ptr() };
@@ -139,5 +145,13 @@ impl KernelModule for VgaDriver {
         log::info!("Vga driver is initialized");
 
         Ok(Self {})
+    }
+
+    fn ops() -> ModuleOperations {
+        FileOperations {
+            read: not_supported_read,
+            write,
+        }
+        .into()
     }
 }

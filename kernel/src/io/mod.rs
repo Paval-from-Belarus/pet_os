@@ -304,11 +304,6 @@ pub fn init() {
         InterruptGate::syscall(system::terminate_process),
     );
 
-    table.set(
-        IDTable::MODULE_COMPLETE,
-        InterruptGate::syscall(system::_module_complete),
-    );
-
     unsafe {
         pic::remap(
             IrqLine::IRQ_MASTER_OFFSET as u8,
@@ -528,7 +523,6 @@ impl IDTable {
         //all others don't have error code
         SYSTEM_CALL = 0x80, "system call";
         PROCCESS_EXIT = 0x81, "proccess exit";
-        MODULE_COMPLETE = 0x82, "module initialization is completed";
         //other reserved
         TRAP_COUNT = 32, "The average count of exception reserved by Intel";
     );

@@ -1,11 +1,14 @@
 use crate::{io::block, object::Handle};
 
 mod file;
+mod file_op;
+mod fs_op;
 mod index_node;
-mod ops;
 mod super_block;
 
 pub use file::*;
+pub use file_op::*;
+pub use fs_op::*;
 pub use index_node::*;
 pub use super_block::*;
 
@@ -27,6 +30,9 @@ pub enum FsError {
 
     #[error("File is not found")]
     NotFound,
+
+    #[error("Operation is not supported")]
+    NotSupported,
 }
 
 /// user-space structure to register file system

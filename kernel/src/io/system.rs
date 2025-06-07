@@ -70,8 +70,6 @@ declare_constants!(
 
 extern "x86-interrupt" {
     pub fn _syscall(frame: InterruptStackFrame);
-    /// external intrinsic which will invoke the [[module_task]]
-    pub fn _module_complete(frame: InterruptStackFrame);
 }
 
 #[no_mangle]

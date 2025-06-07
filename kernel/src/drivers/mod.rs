@@ -12,7 +12,6 @@ mod auto_load;
 mod generated;
 mod loader;
 mod module_info;
-mod module_task;
 
 pub use module_info::*;
 

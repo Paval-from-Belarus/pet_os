@@ -125,14 +125,3 @@ extrn handle_syscall
 _syscall:
     call handle_syscall
     iret
-
-public _module_complete
-extrn module_task 
-_module_complete:
-    add esp, 5 * 4 ;clear kernel stack
-
-    push 0x200 ;enable interrupts
-    push 0x08 ;kernel code
-    push module_task
-    iret
-

@@ -1,33 +1,13 @@
-use kernel_types::{
-    container_of,
-    io::{KernelBuf, KernelBufMut},
-};
+use kernel_types::{container_of, fs::FileOperation};
 
 use crate::{
     memory::Slab,
-    object::{self, Handle, Object, ObjectContainer},
+    object::{self, Object, ObjectContainer},
 };
-
-use super::IndexNodeItem;
 
 pub struct FileWork {
     pub op: FileOperation,
     object: Object,
-}
-
-pub enum FileOperation {
-    Command {
-        file: Handle<IndexNodeItem>,
-        command: usize,
-    },
-    Read {
-        file: Handle<IndexNodeItem>,
-        buf: KernelBufMut,
-    },
-    Write {
-        file: Handle<IndexNodeItem>,
-        buf: KernelBuf,
-    },
 }
 
 impl Slab for FileWork {

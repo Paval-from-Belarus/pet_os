@@ -32,7 +32,7 @@ impl<T> Queue<T> {
                 edx: object.as_mut_ptr(),
             }
             .inspect_err(|cause| {
-                log::error!("Failed to access queue data: {cause}");
+                log::error!("Failed to access queue data: {cause:?}");
             })
             .ok()?;
 

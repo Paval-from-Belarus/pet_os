@@ -1,6 +1,8 @@
 #![no_std]
 #![feature(allocator_api)]
 
+pub use rt::ModuleOperations;
+
 pub mod fs;
 pub mod io;
 
@@ -95,4 +97,5 @@ pub fn complete() -> ! {
 
 pub trait KernelModule: Sized {
     fn init() -> Result<Self, ModuleError>;
+    fn ops() -> ModuleOperations;
 }

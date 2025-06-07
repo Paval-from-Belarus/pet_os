@@ -1,10 +1,16 @@
 use crate::{
     io::{self, IoEvent},
-    object::{Handle, KernelObject},
+    object::{Handle, KernelObject, RawHandle},
 };
 
 //not block device, but device partition
 pub struct BlockDevice;
+
+impl From<RawHandle> for BlockDevice {
+    fn from(value: RawHandle) -> Self {
+        todo!()
+    }
+}
 
 impl KernelObject for BlockDevice {}
 

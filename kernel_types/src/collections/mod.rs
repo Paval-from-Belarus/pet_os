@@ -2,12 +2,10 @@ use core::ptr::NonNull;
 
 pub use doubly_linked_list::{LinkedList, ListNode};
 pub use hash_table::{HashTable, PolynomialHasher};
-pub use queue::Queue;
 pub use singly_linked_list::{TinyLinkedList, TinyListNode};
 
 mod doubly_linked_list;
 mod hash_table;
-mod queue;
 mod singly_linked_list;
 
 #[macro_export]

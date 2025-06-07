@@ -1,0 +1,129 @@
+use core::mem::MaybeUninit;
+
+use kernel_types::{
+    drivers::{Module, ModuleQueue},
+    fs::{
+        self, FileOperation, FileOperations, FsOperation, SuperBlockOperations,
+    },
+    io::block,
+    object::Queue,
+    syscall,
+};
+
+use crate::process;
+
+pub enum ModuleOperations {
+    Block(block::Operations),
+    Fs(fs::SuperBlockOperations),
+    Char(fs::FileOperations),
+}
+
+impl From<fs::FileOperations> for ModuleOperations {
+    fn from(value: fs::FileOperations) -> Self {
+        Self::Char(value)
+    }
+}
+
+impl From<block::Operations> for ModuleOperations {
+    fn from(value: block::Operations) -> Self {
+        Self::Block(value)
+    }
+}
+
+impl From<fs::SuperBlockOperations> for ModuleOperations {
+    fn from(value: fs::SuperBlockOperations) -> Self {
+        Self::Fs(value)
+    }
+}
+
+pub fn module_task(ops: ModuleOperations) -> ! {
+    let module = match access_module_info() {
+        Ok(module) => module,
+        Err(cause) => {
+            log::error!("Failed to access module info: {cause:?}");
+            process::exit(32);
+        }
+    };
+
+    match module.queue {
+        ModuleQueue::Fs(handle) => {
+            if let ModuleOperations::Fs(ops) = ops {
+                handle_fs_module(handle.to_owned(), ops);
+            } else {
+                process::exit(34);
+            }
+        }
+
+        ModuleQueue::Char(handle) => {
+            if let ModuleOperations::Char(ops) = ops {
+                handle_char_module(handle.to_owned(), ops);
+            } else {
+                process::exit(34);
+            }
+        }
+
+        ModuleQueue::Block(handle) => {
+            if let ModuleOperations::Block(ops) = ops {
+                handle_block_module(handle.to_owned(), ops)
+            } else {
+                process::exit(34);
+            }
+        }
+    };
+
+    process::exit(33);
+}
+
+#[derive(Debug, thiserror_no_std::Error)]
+pub enum HandleError {
+    #[error("Fs operation is failed: {0}")]
+    FsError(#[from] fs::FsError),
+}
+
+pub fn handle_char_module(queue: Queue<FileOperation>, _ops: FileOperations) {
+    loop {
+        let Some(_) = queue.blocking_recv() else {
+            break;
+        };
+
+        // match op {
+        //     FileOperation::Command { file, command } => todo!(),
+        //     FileOperation::Read { file, buf } => (ops.read)(file, buf),
+        //     FileOperation::Write { file, buf } => todo!(),
+        // }
+    }
+}
+
+pub fn handle_fs_module(queue: Queue<FsOperation>, _ops: SuperBlockOperations) {
+    loop {
+        let Some(_op) = queue.blocking_recv() else {
+            break;
+        };
+    }
+}
+
+pub fn handle_block_module(
+    queue: Queue<block::Request>,
+    _ops: block::Operations,
+) {
+    loop {
+        let Some(_request) = queue.blocking_recv() else {
+            break;
+        };
+    }
+}
+
+pub fn access_module_info() -> syscall::Result<Module> {
+    let module = unsafe {
+        let mut module = MaybeUninit::<Module>::uninit();
+
+        syscall! {
+            syscall::Request::GetModuleInfo,
+            edx: module.as_mut_ptr()
+        }?;
+
+        module.assume_init()
+    };
+
+    Ok(module)
+}

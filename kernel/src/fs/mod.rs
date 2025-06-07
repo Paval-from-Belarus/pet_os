@@ -3,7 +3,7 @@ pub use file::*;
 pub use file_work::*;
 pub use fs_work::*;
 pub use index_node::*;
-use kernel_types::fs::FileSystem;
+use kernel_types::fs::{FileSystem, FsOperation};
 pub use mount_point::*;
 pub use path::*;
 pub use super_block::*;
@@ -71,48 +71,51 @@ pub fn open<T: AsRef<str>>(path: T) -> object::RawHandle {
 
 pub fn read(
     file_handle: usize,
-    dest: *mut u8,
-    count: usize,
+    _dest: *mut u8,
+    _count: usize,
 ) -> Result<object::RawHandle, FsError> {
-    let Some(file) = current_task!().opened_files.get(file_handle) else {
+    let Some(_file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
 
-    let op_handle = file.super_block().work(FsOperation::Read {
-        file: file.id(),
-        buffer: dest,
-        count,
-    });
+    // let op_handle = file.super_block().work(Fileo::Read {
+    //     file: file.id(),
+    //     buffer: dest,
+    //     count,
+    // });
 
-    Ok(op_handle.as_raw())
+    // Ok(op_handle.as_raw())
+    todo!()
 }
 
 pub fn write(
     file_handle: usize,
-    source: *const u8,
-    count: usize,
+    _source: *const u8,
+    _count: usize,
 ) -> Result<object::RawHandle, FsError> {
-    let Some(file) = current_task!().opened_files.get(file_handle) else {
+    let Some(_file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
+    todo!()
 
-    let op_handle = file.super_block().work(FsOperation::Write {
-        file: file.id(),
-        buffer: source,
-        count,
-    });
-
-    Ok(op_handle.as_raw())
+    // let op_handle = file.super_block().work(FsOperation::Write {
+    //     file: file.id(),
+    //     buffer: source,
+    //     count,
+    // });
+    //
+    // Ok(op_handle.as_raw())
 }
 
 pub fn close(file_handle: usize) -> Result<object::RawHandle, FsError> {
-    let Some(file) = current_task!().opened_files.get(file_handle) else {
+    let Some(_file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
+    todo!()
 
-    let op_handle = file
-        .super_block()
-        .work(FsOperation::Close { file: file.id() });
-
-    Ok(op_handle.as_raw())
+    // let op_handle = file
+    //     .super_block()
+    //     .work(FsOperation::Close { file: file.id() });
+    //
+    // Ok(op_handle.as_raw())
 }

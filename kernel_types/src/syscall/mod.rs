@@ -67,7 +67,6 @@ macro_rules! syscall {
            inout("eax") id
            $(,in("ecx") $ecx)?
            $(,in("edx") $edx)?
-           $(, options($options))?
         );
 
         let status = id;

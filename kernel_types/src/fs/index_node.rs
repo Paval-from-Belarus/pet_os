@@ -1,10 +1,12 @@
-use crate::object::KernelObject;
+use crate::object::{KernelObject, RawHandle};
 
 use super::{FileId, FileOperations};
 
-pub struct IndexNode {}
+pub struct IndexNode {
+    handle: RawHandle,
+}
 pub struct IndexNodeInfo {
-    pub ops: FileOperations
+    pub ops: FileOperations,
 }
 
 impl IndexNode {
@@ -14,6 +16,12 @@ impl IndexNode {
 
     pub fn context<T: Send + Sync>(&self) -> *const T {
         todo!()
+    }
+}
+
+impl From<RawHandle> for IndexNode {
+    fn from(value: RawHandle) -> Self {
+        Self { handle: value }
     }
 }
 

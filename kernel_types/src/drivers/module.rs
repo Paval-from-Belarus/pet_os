@@ -1,9 +1,13 @@
-use crate::object::{Handle, KernelObject, Queue, RawHandle};
+use crate::{
+    fs::{FileOperation, FsOperation},
+    io::block,
+    object::{Handle, Queue},
+};
 
 pub enum ModuleQueue {
-    // Fs(Handle<Queue<FsWork>>),
-    Char,
-    Block,
+    Fs(Handle<Queue<FsOperation>>),
+    Char(Handle<Queue<FileOperation>>),
+    Block(Handle<Queue<block::Request>>),
 }
 
 #[repr(C)]

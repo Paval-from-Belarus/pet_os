@@ -1,3 +1,5 @@
+use crate::io;
+
 use super::{KernelObject, RawHandle};
 
 pub struct Event {

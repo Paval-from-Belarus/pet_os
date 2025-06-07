@@ -1,6 +1,6 @@
 use crate::{
     io::block::BlockDevice,
-    object::{Handle, KernelObject},
+    object::{Handle, KernelObject, RawHandle},
     string::QuickString,
 };
 
@@ -35,6 +35,18 @@ pub struct SuperBlockOperations {
     //this method also flush changes on the disk
     pub flush_node: FnFlush,
     pub destroy_node: FnFlush,
+}
+
+impl From<RawHandle> for SuperBlock {
+    fn from(_: RawHandle) -> Self {
+        todo!()
+    }
+}
+
+impl From<RawHandle> for PathNode<'_> {
+    fn from(_: RawHandle) -> Self {
+        todo!()
+    }
 }
 
 impl KernelObject for SuperBlock {}

@@ -35,7 +35,7 @@ impl Drop for RawHandle {
                 edx: handle
             )
             .inspect_err(|cause| {
-                log::error!("Failed to release kernel object: {cause}");
+                log::error!("Failed to release kernel object: {cause:?}");
             });
         }
     }

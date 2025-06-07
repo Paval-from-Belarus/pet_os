@@ -9,17 +9,6 @@ pub fn register_device(_device: CharDeviceInfo) -> io::Result<()> {
     todo!()
 }
 
-pub fn noop_write(_file: Handle<File>, _buf: UserBuf) -> Result<(), Error> {
-    Ok(())
-}
-
-pub fn not_supported_write(
-    _file: Handle<File>,
-    _buf: UserBuf,
-) -> Result<(), Error> {
-    Err(Error::NotSupported)
-}
-
 // Нерешённые задачи:
 //  1. Как вернуть ответ пользователю
 //  2. Как предотвратить исполнение?

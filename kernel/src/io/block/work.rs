@@ -1,4 +1,4 @@
-use kernel_types::{container_of, io::block::Work};
+use kernel_types::{container_of, io::block::BlockDeviceOperation};
 
 use crate::{
     memory::Slab,
@@ -7,7 +7,7 @@ use crate::{
 
 pub struct WorkObject {
     object: object::Object,
-    pub work: Work,
+    pub work: BlockDeviceOperation,
 }
 
 impl ObjectContainer for WorkObject {
