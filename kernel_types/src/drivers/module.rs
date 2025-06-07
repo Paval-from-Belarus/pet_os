@@ -1,14 +1,4 @@
-use crate::{
-    fs::{FileOperation, FsOperation},
-    io::block,
-    object::{Handle, Queue, RawHandle},
-};
-
-pub enum ModuleQueue {
-    Fs(Handle<Queue<FsOperation>>),
-    Char(Handle<Queue<FileOperation>>),
-    Block(Handle<Queue<block::Request>>),
-}
+use crate::object::RawHandle;
 
 #[derive(Debug, Clone, Copy, num_enum::TryFromPrimitive)]
 #[repr(u32)]

@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(allocator_api)]
 
+use kernel_types::syscall;
 use rt::module_task;
 pub use rt::ModuleOperations;
 
@@ -11,6 +12,7 @@ pub mod logging;
 
 #[cfg(feature = "alloc")]
 pub mod alloc;
+pub mod drivers;
 pub mod object;
 pub mod process;
 mod rt;
@@ -68,6 +70,9 @@ pub enum ModuleError {
 
     #[error("Fs Op failed: {0}")]
     Fs(#[from] fs::FsError),
+
+    #[error("SysCall is failed")]
+    Syscall(#[from] syscall::SyscallError),
 
     #[cfg(feature = "alloc")]
     #[error("Failed to perform memory allocation: {0}")]

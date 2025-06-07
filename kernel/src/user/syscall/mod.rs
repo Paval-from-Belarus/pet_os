@@ -2,7 +2,7 @@ use kernel_types::{
     drivers::UserModule,
     fs::{FileOperation, FsOperation},
     io::{
-        block::BlockDeviceInfo, char::CharDeviceInfo, IoOperation, MemoryRemap,
+        block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, MemoryRemap,
     },
     string::MutString,
     syscall::{Request, SyscallError},
@@ -17,7 +17,7 @@ use crate::{
         IrqEvent, IrqLine,
     },
     log_module,
-    memory::{self, AllocError, SlabBox, VirtualAddress},
+    memory::{self, AllocError, VirtualAddress},
     object::{AnyObject, Handle, Object, ObjectContainer},
     task, user,
 };
@@ -72,16 +72,16 @@ pub fn handle(
 
             unsafe { memory::switch_to_kernel() };
 
-            drivers::api::reg_blk_dev(&blk_dev)?;
+            drivers::api::reg_blk_module(&blk_dev)?;
 
             unsafe { memory::switch_to_task(current_task!()) };
         }
         Request::RegCharDevice => {
-            let chr_dev = validate_ref::<CharDeviceInfo>(edx)?.clone();
+            let chr_dev = validate_ref::<CharModuleInfo>(edx)?.clone();
 
             unsafe { memory::switch_to_kernel() };
 
-            drivers::api::reg_chr_dev(&chr_dev)?;
+            drivers::api::reg_chr_module(&chr_dev)?;
 
             unsafe { memory::switch_to_task(current_task!()) };
         }

@@ -2,14 +2,17 @@ use crate::common::atomics::UnsafeLazyCell;
 use crate::current_task;
 use alloc::sync::Arc;
 use kernel_types::collections::LinkedList;
-use kernel_types::drivers::{DeviceId, DriverId, ModuleId};
+pub use kernel_types::drivers::ModuleId;
+use kernel_types::drivers::{DeviceId, DriverId, ModuleKind};
 
 pub mod api;
 mod auto_load;
+mod error;
 mod generated;
 mod loader;
 mod module_info;
 
+pub use error::*;
 pub use module_info::*;
 
 // mod disk;
@@ -19,12 +22,6 @@ pub use module_info::*;
 // mod vga;
 
 use generated::STATIC_DRIVERS;
-
-// pub enum ModuleQueue {
-//     Fs(Queue<FsWork>),
-//     Block(Queue<block::WorkObject>),
-//     Char(Queue<FileWork>),
-// }
 
 pub const KERNEL_MODULE: usize = 0;
 
@@ -47,6 +44,24 @@ impl ModuleManager {
             .find(|item| item.state.id == id)
             .map(|item| item.state.clone())
     }
+
+    pub fn add_module(&self, module: Module) -> Result<(), ModuleError> {
+        let item = ModuleItem::new_boxed(module)?;
+
+        let mut modules = self.modules.try_lock().unwrap();
+
+        let has_found = modules
+            .iter()
+            .any(|m| m.state.name.eq(&item.item.state.name));
+
+        if has_found {
+            return Err(ModuleError::UniqueError);
+        }
+
+        modules.push_back(item.into_node());
+
+        Ok(())
+    }
 }
 
 pub fn current_module() -> Option<Arc<Module>> {
@@ -59,27 +74,20 @@ pub fn current_module() -> Option<Arc<Module>> {
     MODULES.get().find_module(module_id)
 }
 
+pub fn init_module(
+    name: &str,
+    kind: ModuleKind,
+    capacity: usize,
+) -> Result<(), ModuleError> {
+    let module = Module::new(name, kind, capacity)?;
+
+    MODULES.get().add_module(module)
+}
+
 unsafe impl Send for ModuleManager {}
 unsafe impl Sync for ModuleManager {}
 
 static MODULES: UnsafeLazyCell<ModuleManager> = UnsafeLazyCell::empty();
-
-pub fn register_char_device_range(
-    _id: DriverId,
-    _count: usize,
-    _name: &str,
-) -> Result<(), ()> {
-    Err(())
-}
-
-///return the lowest value of deviceId
-pub fn alloc_char_device_range(
-    _minor_base: usize,
-    _count: usize,
-    _name: &str,
-) -> Result<DeviceId, ()> {
-    Err(())
-}
 
 #[repr(C)]
 pub struct StaticDriver {

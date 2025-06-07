@@ -53,7 +53,7 @@ impl<T: ObjectContainer> Handle<T> {
     pub fn into_raw(self) -> RawHandle {
         let handle = self.0;
 
-        ManuallyDrop::new(self);
+        let _ = ManuallyDrop::new(self);
 
         handle
     }

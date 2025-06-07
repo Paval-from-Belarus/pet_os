@@ -1,8 +1,13 @@
 pub use kernel_types::io::char::*;
-use kernel_types::io::{self};
+use kernel_types::syscall;
 
-pub fn register_device(_device: CharDeviceInfo) -> io::Result<()> {
-    todo!()
+pub fn register_module(device: CharModuleInfo) -> syscall::Result<()> {
+    unsafe {
+        syscall! {
+            syscall::Request::RegCharDevice,
+            edx: &device
+        }
+    }
 }
 
 // Нерешённые задачи:

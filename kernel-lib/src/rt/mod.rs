@@ -1,7 +1,7 @@
 use core::mem::MaybeUninit;
 
 use kernel_types::{
-    drivers::{Module, ModuleKind, ModuleQueue},
+    drivers::{ModuleKind, UserModule},
     fs::{
         self, FileOperation, FileOperations, FsOperation, SuperBlockOperations,
     },
@@ -55,30 +55,30 @@ pub fn module_task(ops: ModuleOperations) -> ! {
         }
     };
 
-    match module.queue {
-        ModuleQueue::Fs(handle) => {
+    match module.kind {
+        ModuleKind::Fs => unsafe {
             if let ModuleOperations::Fs(ops) = ops {
-                handle_fs_module(handle.to_owned(), ops);
+                handle_fs_module(module.queue.cast(), ops);
             } else {
                 process::exit(34);
             }
-        }
+        },
 
-        ModuleQueue::Char(handle) => {
+        ModuleKind::Char => unsafe {
             if let ModuleOperations::Char(ops) = ops {
-                handle_char_module(handle.to_owned(), ops);
+                handle_char_module(module.queue.cast(), ops);
             } else {
                 process::exit(34);
             }
-        }
+        },
 
-        ModuleQueue::Block(handle) => {
+        ModuleKind::Block => unsafe {
             if let ModuleOperations::Block(ops) = ops {
-                handle_block_module(handle.to_owned(), ops)
+                handle_block_module(module.queue.cast(), ops)
             } else {
                 process::exit(34);
             }
-        }
+        },
     };
 
     process::exit(33);
@@ -123,9 +123,9 @@ pub fn handle_block_module(
     }
 }
 
-pub fn access_module_info() -> syscall::Result<Module> {
+pub fn access_module_info() -> syscall::Result<UserModule> {
     let module = unsafe {
-        let mut module = MaybeUninit::<Module>::uninit();
+        let mut module = MaybeUninit::<UserModule>::uninit();
 
         syscall! {
             syscall::Request::GetModuleInfo,

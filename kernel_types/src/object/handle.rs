@@ -8,12 +8,6 @@ pub trait KernelObject: From<RawHandle> {}
 #[repr(C)]
 pub struct Handle<T: KernelObject>(RawHandle, PhantomData<T>);
 
-impl<T: KernelObject> Handle<T> {
-    pub fn to_owned(self) -> T {
-        self.0.into()
-    }
-}
-
 impl RawHandle {
     /// .
     ///
@@ -22,6 +16,15 @@ impl RawHandle {
     /// .
     pub unsafe fn new_unchecked(handle: usize) -> Self {
         Self(handle)
+    }
+
+    /// .
+    ///
+    /// # Safety
+    ///
+    /// .
+    pub unsafe fn cast<T: KernelObject>(self) -> T {
+        self.into()
     }
 }
 

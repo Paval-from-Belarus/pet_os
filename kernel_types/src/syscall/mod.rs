@@ -56,6 +56,7 @@ pub enum SyscallError {
     InvalidQueueKind = 6,
     QueueIsEmpty = 7,
     ModuleIsNotFound = 8,
+    InvalidModuleParams = 9,
 
     #[num_enum(default)]
     Failed = 0x42,

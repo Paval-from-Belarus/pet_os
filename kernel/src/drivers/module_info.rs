@@ -1,16 +1,24 @@
 use alloc::sync::Arc;
 use kernel_macro::ListNode;
 use kernel_types::{
-    collections::ListNode,
+    collections::{BoxedNode, ListNode},
     drivers::{ModuleId, ModuleKind, UserModule},
 };
 
 use crate::{
+    current_task,
     fs::{FileWork, FsWork},
     io::block,
+    memory::{self, AllocError, Slab, SlabBox},
     object::Handle,
     user::queue::Queue,
 };
+
+use super::KERNEL_MODULE;
+
+pub struct ModuleItemBox {
+    pub item: SlabBox<ModuleItem>,
+}
 
 #[derive(ListNode)]
 #[repr(C)]
@@ -20,7 +28,37 @@ pub struct ModuleItem {
     pub state: Arc<Module>,
 }
 
-const MAX_MODULE_NAME_LEN: usize = 12;
+impl Slab for ModuleItem {
+    const NAME: &str = "module_item";
+}
+
+impl ModuleItem {
+    pub fn new_boxed(module: Module) -> Result<ModuleItemBox, AllocError> {
+        let state = Arc::try_new(module)?;
+
+        let item = memory::slab_alloc(Self {
+            state,
+            node: ListNode::empty(),
+        })?;
+
+        Ok(ModuleItemBox { item })
+    }
+}
+
+impl ModuleItemBox {
+    pub fn into_node(self) -> &'static mut ListNode<ModuleItem> {
+        unsafe { &mut *SlabBox::into_raw(self.item) }.as_node()
+    }
+}
+
+impl BoxedNode for ModuleItem {
+    type Target = SlabBox<ModuleItem>;
+
+    fn into_boxed(node: &mut Self::Item) -> Self::Target {
+        memory::into_boxed(node.into())
+    }
+}
+pub const MAX_MODULE_NAME_LEN: usize = 12;
 
 #[repr(C)]
 pub struct Module {
@@ -37,6 +75,35 @@ pub enum ModuleQueue {
 }
 
 impl Module {
+    pub fn new(
+        name: &str,
+        kind: ModuleKind,
+        capacity: usize,
+    ) -> Result<Self, AllocError> {
+        let queue = match kind {
+            ModuleKind::Fs => ModuleQueue::Fs(Queue::new_bounded(capacity)?),
+            ModuleKind::Char => {
+                ModuleQueue::Char(Queue::new_bounded(capacity)?)
+            }
+            ModuleKind::Block => {
+                ModuleQueue::Block(Queue::new_bounded(capacity)?)
+            }
+        };
+
+        let id = current_task!()
+            .process
+            .clone()
+            .map(|proc| proc.id)
+            .unwrap_or(KERNEL_MODULE);
+
+        let concated_name = &name[..MAX_MODULE_NAME_LEN];
+
+        Ok(Self {
+            queue,
+            id,
+            name: concated_name.into(),
+        })
+    }
     pub fn as_user_module(&self) -> kernel_types::drivers::UserModule {
         let queue_handle = self.queue.clone();
 

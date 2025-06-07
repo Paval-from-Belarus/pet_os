@@ -61,6 +61,8 @@ pub enum AllocError {
     InvalidAlignment(Alignment),
     #[error("Several overlaping regions")]
     OverlappingRegions,
+    #[error("Rust allocator failed: {0}")]
+    AllocationFailed(#[from] alloc::alloc::AllocError),
 }
 
 extern "C" {

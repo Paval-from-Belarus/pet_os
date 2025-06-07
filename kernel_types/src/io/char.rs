@@ -19,9 +19,6 @@ pub struct Operations {
 }
 
 #[derive(Debug, Clone)]
-pub struct CharDeviceInfo {
+pub struct CharModuleInfo {
     pub name: heapless::String<12>,
-    pub ops: Operations,
 }
-
-//Когда реально необходимо вызывать

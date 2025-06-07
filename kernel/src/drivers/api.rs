@@ -1,13 +1,25 @@
 use kernel_types::{
-    io::{block::BlockDeviceInfo, char::CharDeviceInfo},
+    drivers::ModuleKind,
+    io::{block::BlockDeviceInfo, char::CharModuleInfo},
     syscall::SyscallError,
 };
 
-pub fn reg_blk_dev(dev: &BlockDeviceInfo) -> Result<(), SyscallError> {
-    log::debug!("blk dev: {dev:?}");
+use super::init_module;
+
+pub fn reg_blk_module(dev: &BlockDeviceInfo) -> Result<(), SyscallError> {
+    init_module(&dev.name, ModuleKind::Block, dev.queue_size).inspect_err(
+        |cause| {
+            log::warn!("Failed to init new module: {cause}");
+        },
+    )?;
+
     Ok(())
 }
 
-pub fn reg_chr_dev(dev: &CharDeviceInfo) -> Result<(), SyscallError> {
+pub fn reg_chr_module(dev: &CharModuleInfo) -> Result<(), SyscallError> {
+    init_module(&dev.name, ModuleKind::Char, 10).inspect_err(|cause| {
+        log::warn!("Failed to init new module: {cause}");
+    })?;
+
     Ok(())
 }

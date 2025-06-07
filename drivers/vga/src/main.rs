@@ -5,7 +5,7 @@ use core::mem::MaybeUninit;
 
 use kernel_lib::{
     fs::{self, not_supported_read, File, FileOperations},
-    io::{self, IoTransaction, KernelBuf, KernelBufMut},
+    io::{self, char::register_module, IoTransaction, KernelBuf, KernelBufMut},
     object::Handle,
     KernelModule, ModuleError, ModuleOperations,
 };
@@ -131,6 +131,8 @@ pub fn write(_file: Handle<File>, _buf: KernelBuf) -> fs::Result<()> {
 
 impl KernelModule for VgaDriver {
     fn init() -> Result<Self, ModuleError> {
+        register_module(io::char::CharModuleInfo { name: "vga".into() })?;
+
         let offset = unsafe { VGA_BUFFER.buffer.as_ptr() };
 
         io::remap(VGA_BUFFER_OFFSET, offset as _, VGA_WIDTH * VGA_HEIGHT)?;
