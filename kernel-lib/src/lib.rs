@@ -9,7 +9,10 @@ pub mod logging;
 #[cfg(feature = "alloc")]
 pub mod alloc;
 pub mod object;
+pub mod process;
+mod rt;
 pub mod string;
+pub mod task;
 
 #[cfg(not(test))]
 #[panic_handler]

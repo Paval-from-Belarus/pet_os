@@ -1,5 +1,7 @@
 use crate::declare_constants;
 
+pub type Result<T> = core::result::Result<T, SyscallError>;
+
 declare_constants! {
     pub u32,
     RESERVED = 0xFFFF_FFFF, "No function to zero can be used; this function used to test system initialization";
@@ -17,6 +19,16 @@ pub enum Request {
     RegCharDevice,
 
     IoOperation,
+
+    GetModuleInfo,
+
+    TerminateCurrentTask,
+    TerminateCurrentProcess,
+
+    FreeKernelObject,
+
+    QueueBlockingGet,
+    QueueTryGet,
 }
 
 impl Request {
@@ -46,7 +58,7 @@ pub enum SyscallError {
 
 #[macro_export]
 macro_rules! syscall {
-    ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)? $(,)?) => ({
+    ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?$(,)?) => ({
         let mut id = $id as u32;
         core::arch::asm!(
           "int 80h",
@@ -55,7 +67,7 @@ macro_rules! syscall {
            inout("eax") id
            $(,in("ecx") $ecx)?
            $(,in("edx") $edx)?
-
+           $(, options($options))?
         );
 
         let status = id;

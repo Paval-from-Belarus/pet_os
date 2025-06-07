@@ -1,4 +1,5 @@
 mod header;
+mod module;
 
 use core::marker::Tuple;
 use core::mem;
@@ -7,6 +8,7 @@ use core::ptr::NonNull;
 use bitfield::bitfield;
 
 use crate::declare_types;
+pub use module::*;
 
 ///Currently, KernelSymbol holds size_of(usize) * 3 bytes
 ///Consider to remove

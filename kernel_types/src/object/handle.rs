@@ -1,0 +1,42 @@
+use core::marker::PhantomData;
+
+use crate::syscall;
+
+pub trait KernelObject: From<RawHandle> {}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct Handle<T: KernelObject>(RawHandle, PhantomData<T>);
+
+impl<T: KernelObject> Handle<T> {
+    pub fn to_owned(self) -> T {
+        self.0.into()
+    }
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct RawHandle(usize);
+
+impl RawHandle {
+    //value for syscall
+    pub unsafe fn syscall(&self) -> usize {
+        self.0
+    }
+}
+
+impl Drop for RawHandle {
+    fn drop(&mut self) {
+        let handle = self.0;
+
+        unsafe {
+            let _ = syscall!(
+                syscall::Request::FreeKernelObject,
+                edx: handle
+            )
+            .inspect_err(|cause| {
+                log::error!("Failed to release kernel object: {cause}");
+            });
+        }
+    }
+}
