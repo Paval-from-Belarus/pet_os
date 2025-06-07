@@ -17,6 +17,7 @@ pub enum Request {
 
     RegBlockDevice = MIN_MODULE_REQUEST_CODE,
     RegCharDevice,
+    RegFs,
 
     IoOperation,
 
@@ -54,6 +55,7 @@ pub enum SyscallError {
 
     InvalidQueueKind = 6,
     QueueIsEmpty = 7,
+    ModuleIsNotFound = 8,
 
     #[num_enum(default)]
     Failed = 0x42,

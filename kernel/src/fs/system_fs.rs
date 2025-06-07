@@ -83,7 +83,7 @@ impl SystemMountPoints {
             .read()
             .iter()
             .find(|fs| fs.id == id)
-            .map(|fs| fs.queue().as_raw())
+            .map(|fs| fs.queue().into_raw())
     }
 
     pub fn lookup_fs<PATH: AsRef<str>>(

@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(allocator_api)]
 
+use rt::module_task;
 pub use rt::ModuleOperations;
 
 pub mod fs;
@@ -37,7 +38,7 @@ macro_rules! module {
             match $ty::init() {
                 Ok(data) => {
                     unsafe { MODULE = Some(data) };
-                    $crate::complete();
+                    $crate::complete($ty::ops());
                 }
 
                 Err(cause) => {
@@ -86,13 +87,8 @@ pub fn exit(code: Option<ModuleError>) -> ! {
     }
 }
 
-pub fn complete() -> ! {
-    unsafe {
-        core::arch::asm! {
-            "int 82h",
-            options(noreturn, nostack)
-        }
-    }
+pub fn complete(ops: ModuleOperations) -> ! {
+    module_task(ops)
 }
 
 pub trait KernelModule: Sized {

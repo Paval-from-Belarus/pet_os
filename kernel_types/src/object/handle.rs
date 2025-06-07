@@ -14,11 +14,27 @@ impl<T: KernelObject> Handle<T> {
     }
 }
 
+impl RawHandle {
+    /// .
+    ///
+    /// # Safety
+    ///
+    /// .
+    pub unsafe fn new_unchecked(handle: usize) -> Self {
+        Self(handle)
+    }
+}
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct RawHandle(usize);
 
 impl RawHandle {
+    /// Returns the syscall of this [`RawHandle`].
+    ///
+    /// # Safety
+    ///
+    /// .
     //value for syscall
     pub unsafe fn syscall(&self) -> usize {
         self.0

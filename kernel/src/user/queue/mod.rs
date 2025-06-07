@@ -62,7 +62,7 @@ where
 
         self.lock.release();
 
-        runtime::notify(self.handle().as_raw());
+        runtime::notify(self.handle().into_raw());
     }
 
     pub fn try_push(&self, _data: SlabBox<T>) -> Result<(), ()> {

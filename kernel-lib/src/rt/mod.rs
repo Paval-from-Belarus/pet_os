@@ -1,7 +1,7 @@
 use core::mem::MaybeUninit;
 
 use kernel_types::{
-    drivers::{Module, ModuleQueue},
+    drivers::{Module, ModuleKind, ModuleQueue},
     fs::{
         self, FileOperation, FileOperations, FsOperation, SuperBlockOperations,
     },
@@ -33,6 +33,16 @@ impl From<block::Operations> for ModuleOperations {
 impl From<fs::SuperBlockOperations> for ModuleOperations {
     fn from(value: fs::SuperBlockOperations) -> Self {
         Self::Fs(value)
+    }
+}
+
+impl ModuleOperations {
+    pub fn kind(&self) -> ModuleKind {
+        match self {
+            ModuleOperations::Block(_) => ModuleKind::Block,
+            ModuleOperations::Fs(_) => ModuleKind::Fs,
+            ModuleOperations::Char(_) => ModuleKind::Char,
+        }
     }
 }
 

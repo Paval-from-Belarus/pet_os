@@ -1,4 +1,4 @@
-use core::marker::PhantomData;
+use core::{marker::PhantomData, mem::ManuallyDrop};
 
 use kernel_types::collections::{HashCode, HashKey};
 
@@ -50,8 +50,12 @@ impl<T: ObjectContainer> Handle<T> {
         self.0 as *const Object
     }
 
-    pub fn as_raw(&self) -> RawHandle {
-        self.0
+    pub fn into_raw(self) -> RawHandle {
+        let handle = self.0;
+
+        ManuallyDrop::new(self);
+
+        handle
     }
 }
 
@@ -102,7 +106,7 @@ impl<T: ObjectContainer> Drop for Handle<T> {
         } else if value == 1 {
             if let Some(parent) = object.parent {
                 //parent should drop object by itself
-                runtime::remove_child(self.as_raw(), parent);
+                runtime::remove_child(self.0, parent);
             }
         }
     }

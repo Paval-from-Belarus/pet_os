@@ -68,7 +68,7 @@ pub fn unregister_fs(id: FileSystemId) -> Result<(), ()> {
 pub fn open<T: AsRef<str>>(path: T) -> object::RawHandle {
     let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
 
-    fs.super_block().work(FsOperation::Open { name }).as_raw()
+    fs.super_block().work(FsOperation::Open { name }).into_raw()
 }
 
 pub fn read(

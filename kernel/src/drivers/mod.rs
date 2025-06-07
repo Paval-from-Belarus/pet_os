@@ -1,11 +1,8 @@
-use alloc::sync::Arc;
-use kernel_types::collections::LinkedList;
-use kernel_types::drivers::{DeviceId, DriverId};
-use module_info::Module;
-
 use crate::common::atomics::UnsafeLazyCell;
 use crate::current_task;
-use crate::memory::ProcessId;
+use alloc::sync::Arc;
+use kernel_types::collections::LinkedList;
+use kernel_types::drivers::{DeviceId, DriverId, ModuleId};
 
 pub mod api;
 mod auto_load;
@@ -29,7 +26,6 @@ use generated::STATIC_DRIVERS;
 //     Char(Queue<FileWork>),
 // }
 
-pub type ModuleId = ProcessId;
 pub const KERNEL_MODULE: usize = 0;
 
 pub struct ModuleManager {

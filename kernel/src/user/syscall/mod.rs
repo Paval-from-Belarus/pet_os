@@ -1,4 +1,5 @@
 use kernel_types::{
+    drivers::UserModule,
     fs::{FileOperation, FsOperation},
     io::{
         block::BlockDeviceInfo, char::CharDeviceInfo, IoOperation, MemoryRemap,
@@ -84,6 +85,9 @@ pub fn handle(
 
             unsafe { memory::switch_to_task(current_task!()) };
         }
+
+        Request::RegFs => {}
+
         Request::IoOperation => {
             let len = ecx;
             let _ = validate_ref::<IoOperation>(edx)?;
@@ -101,7 +105,21 @@ pub fn handle(
             io::end_op_tx();
         }
 
-        Request::GetModuleInfo => todo!(),
+        Request::GetModuleInfo => {
+            let ptr = edx as *mut UserModule;
+
+            unsafe { memory::switch_to_kernel() };
+
+            let Some(module) = drivers::current_module() else {
+                return Err(SyscallError::ModuleIsNotFound);
+            };
+
+            let module = module.as_user_module();
+
+            unsafe { memory::switch_to_task(current_task!()) };
+
+            unsafe { *ptr = module };
+        }
 
         Request::TerminateCurrentTask => {
             task::terminate(edx as i32);
@@ -112,30 +130,36 @@ pub fn handle(
         }
 
         Request::QueueBlockingGet => {
+            unsafe { memory::switch_to_kernel() };
+
             let queue: Handle<Queue<AnyObject>> =
                 Handle::from_raw(ecx).unwrap();
 
             match queue.kind() {
                 crate::object::Kind::BlockDeviceWork => unsafe {
-                    blocking_pop(&queue, |work: SlabBox<WorkObject>| {
+                    blocking_pop(&queue, |work: WorkObject| {
+                        memory::switch_to_task(current_task!());
                         let ptr = edx as *mut block::Request;
                         *ptr = work.request;
                     })?;
                 },
                 crate::object::Kind::FsWork => unsafe {
-                    blocking_pop(&queue, |work: SlabBox<FsWork>| {
+                    blocking_pop(&queue, |work: FsWork| {
+                        memory::switch_to_task(current_task!());
                         let ptr = edx as *mut FsOperation;
                         *ptr = work.op;
                     })?;
                 },
                 crate::object::Kind::FileWork => unsafe {
-                    blocking_pop(&queue, |work: SlabBox<FileWork>| {
+                    blocking_pop(&queue, |work: FileWork| {
+                        memory::switch_to_task(current_task!());
                         let ptr = edx as *mut FileOperation;
                         *ptr = work.op;
                     })?;
                 },
                 crate::object::Kind::IrqEvent => unsafe {
-                    blocking_pop(&queue, |event: SlabBox<IrqEvent>| {
+                    blocking_pop(&queue, |event: IrqEvent| {
+                        memory::switch_to_task(current_task!());
                         let ptr = edx as *mut IrqLine;
                         *ptr = event.line;
                     })?;
@@ -191,7 +215,7 @@ impl From<AllocError> for SyscallError {
         SyscallError::NoMemory
     }
 }
-unsafe fn blocking_pop<T: ObjectContainer, F: FnMut(SlabBox<T>)>(
+unsafe fn blocking_pop<T: ObjectContainer, F: FnMut(T)>(
     queue: &Queue<AnyObject>,
     mut op: F,
 ) -> Result<(), SyscallError> {
@@ -199,7 +223,7 @@ unsafe fn blocking_pop<T: ObjectContainer, F: FnMut(SlabBox<T>)>(
         return Err(SyscallError::QueueIsEmpty);
     };
 
-    op(data);
+    op(*data);
 
     Ok(())
 }

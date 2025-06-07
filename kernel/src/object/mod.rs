@@ -90,9 +90,9 @@ pub trait ObjectContainer: Sized + Slab + 'static {
     fn object_mut(&mut self) -> &mut Object;
 
     fn new_object<T: ObjectContainer>(parent: &Handle<T>) -> Object {
-        assert!(runtime::lookup(parent.as_raw()));
+        assert!(runtime::lookup(parent.clone().into_raw()));
 
-        Object::new_child(Self::KIND, parent.as_raw())
+        Object::new_child(Self::KIND, parent.clone().into_raw())
     }
 
     fn new_root_object() -> Object {
@@ -119,8 +119,10 @@ pub fn alloc_root_object<T: ObjectContainer + Slab + 'static>(
 }
 
 pub fn dealloc_root_object<T: ObjectContainer>(handle: Handle<T>) {
-    let Some(object) = runtime::unregister(handle.as_raw()) else {
-        panic!("No root object for handle: {:X}", handle.as_raw());
+    let handle_cloned = handle.clone();
+
+    let Some(object) = runtime::unregister(handle_cloned.into_raw()) else {
+        panic!("No root object for handle: {:X?}", handle.into_raw());
     };
 
     let container =
