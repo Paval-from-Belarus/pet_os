@@ -1,9 +1,5 @@
 pub use kernel_types::io::char::*;
-use kernel_types::{
-    fs::File,
-    io::{self, Error, UserBuf},
-    object::Handle,
-};
+use kernel_types::io::{self};
 
 pub fn register_device(_device: CharDeviceInfo) -> io::Result<()> {
     todo!()

@@ -1,33 +1,23 @@
+#![allow(unused)]
 use core::ffi::{c_char, CStr};
 
 use alloc::vec::Vec;
 use elf::{
-    abi::{ELFOSABI_FENIXOS, ET_EXEC},
-    endian::AnyEndian,
-    relocation::Rel,
-    section::{self, SectionHeader, SectionHeaderTable},
-    segment::SegmentTable,
-    symbol::Symbol,
-    ElfBytes,
+    endian::AnyEndian, relocation::Rel, section::SectionHeader,
+    segment::SegmentTable, symbol::Symbol, ElfBytes,
 };
 use fallible_collections::{FallibleVec, TryCollect};
-use kernel_types::{
-    collections::{BorrowingLinkedList, LinkedList},
-    drivers::DriverId,
-    string::MutString,
-};
+use kernel_types::{collections::LinkedList, string::MutString};
 
 use crate::{
     current_task,
     error::KernelError,
-    io, log_module,
+    io,
     memory::{
-        self, virtual_alloc, virtual_dealloc, MemoryMappingRegion,
-        MemoryRegion, MemoryRegionFlag, Page, PageMarker, Process, ProcessId,
+        self, MemoryRegion, MemoryRegionFlag, Process, ProcessId,
         SegmentSelector, VirtualAddress,
     },
-    task::{self, TASK_STACK_SIZE},
-    user,
+    task,
 };
 
 #[derive(Debug, thiserror_no_std::Error)]
@@ -125,7 +115,7 @@ fn get_symbol(
     }
 }
 
-fn lookup_symbol(symbol: &CStr) -> Option<VirtualAddress> {
+fn lookup_symbol(_symbol: &CStr) -> Option<VirtualAddress> {
     None
 }
 
@@ -177,7 +167,7 @@ pub fn load_in_memory(elf_data: &[u8]) -> Result<(), LoadError> {
 
 //execute entry point for driver
 //all system should be already initialized
-fn driver_probe(pid: ProcessId) -> Result<u32, LoadError> {
+fn driver_probe(_pid: ProcessId) -> Result<u32, LoadError> {
     Ok(0)
 }
 
@@ -285,7 +275,7 @@ impl<'a> Loader<'a> {
 
         let mut builder = Process::builder()?.switch_address_space();
 
-        for mut header in self.sections.iter_mut() {
+        for header in self.sections.iter_mut() {
             if header.sh_type == elf::abi::SHT_NOBITS {
                 if header.sh_size == 0 {
                     continue;

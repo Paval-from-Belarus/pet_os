@@ -36,7 +36,14 @@ impl<T: ObjectContainer> Handle<T> {
     }
 
     pub fn from_raw(raw_handle: RawHandle) -> Result<Self, ()> {
-        Ok(unsafe { Self::from_raw_unchecked(raw_handle) })
+        let handle = unsafe { Self::from_raw_unchecked(raw_handle) };
+
+        (*handle)
+            .object()
+            .ref_count
+            .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+
+        Ok(handle)
     }
 
     fn object(&self) -> *const Object {

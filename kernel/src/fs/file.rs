@@ -2,7 +2,10 @@ use core::{ptr::NonNull, sync::atomic::AtomicUsize};
 
 use kernel_types::{bitflags, collections::ListNode, fs::FileOperations};
 
-use crate::memory::Slab;
+use crate::{
+    memory::Slab,
+    object::{self, Object, ObjectContainer},
+};
 
 use super::{MountPoint, PathNode};
 
@@ -82,4 +85,25 @@ pub struct File {
     //the pointer to private data used, eg, by device driver
     data: *mut (),
     use_count: AtomicUsize,
+    object: Object,
+}
+
+impl Slab for File {
+    const NAME: &str = "file";
+}
+
+impl ObjectContainer for File {
+    const KIND: object::Kind = object::Kind::File;
+
+    fn container_of(object: *mut Object) -> *mut Self {
+        todo!()
+    }
+
+    fn object(&self) -> &Object {
+        todo!()
+    }
+
+    fn object_mut(&mut self) -> &mut Object {
+        todo!()
+    }
 }

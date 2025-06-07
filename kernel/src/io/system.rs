@@ -107,7 +107,7 @@ pub extern "C" fn handle_syscall() {
 }
 
 pub extern "x86-interrupt" fn terminate_process(_frame: InterruptStackFrame) {
-    task::terminate();
+    task::terminate(0);
 }
 
 pub extern "x86-interrupt" fn division_by_zero(_from: InterruptStackFrame) {
@@ -219,7 +219,7 @@ pub extern "x86-interrupt" fn page_fault(
             if let Err(cause) = state.resize_stack(new_stack_bottom) {
                 log::error!("User proccess cannot resize stack: {cause}");
                 drop(state);
-                user::terminate(process.id);
+                user::exit(12);
             }
 
             log::debug!("Stack resized to {:X?}", state.stack);

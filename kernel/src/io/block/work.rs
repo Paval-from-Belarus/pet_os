@@ -1,4 +1,4 @@
-use kernel_types::{container_of, io::block::BlockDeviceOperation};
+use kernel_types::{container_of, io::block::Request};
 
 use crate::{
     memory::Slab,
@@ -7,11 +7,11 @@ use crate::{
 
 pub struct WorkObject {
     object: object::Object,
-    pub work: BlockDeviceOperation,
+    pub request: Request,
 }
 
 impl ObjectContainer for WorkObject {
-    const KIND: object::Kind = object::Kind::IoWork;
+    const KIND: object::Kind = object::Kind::BlockDeviceWork;
 
     fn container_of(object: *mut object::Object) -> *mut Self {
         container_of!(object, WorkObject, object)

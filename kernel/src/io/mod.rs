@@ -20,6 +20,7 @@ use crate::memory::{
 use crate::task::TaskContext;
 use crate::{current_task, object};
 
+pub use irq::IrqEvent;
 pub use lock::InterruptableLazyCell;
 
 pub mod block;

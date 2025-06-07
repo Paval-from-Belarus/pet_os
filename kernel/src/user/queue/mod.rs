@@ -1,5 +1,3 @@
-mod api;
-
 use core::{cell::UnsafeCell, marker::PhantomData};
 
 use kernel_types::{collections::LinkedList, container_of};
@@ -8,19 +6,27 @@ use crate::{
     common::atomics::SpinLock,
     memory::{self, Slab, SlabBox},
     object::{
-        alloc_root_object, dealloc_root_object, runtime, Handle, Kind, Object,
-        ObjectContainer,
+        self, alloc_root_object, dealloc_root_object, runtime, AnyObject,
+        Handle, Kind, Object, ObjectContainer,
     },
 };
-
-#[allow(unused)]
-pub use api::*;
 
 pub struct Queue<T: 'static> {
     data: UnsafeCell<LinkedList<'static, Object>>,
     lock: SpinLock,
     object: Object,
+    kind: object::Kind,
     _marker: PhantomData<T>,
+}
+
+impl Queue<AnyObject> {
+    pub fn kind(&self) -> object::Kind {
+        self.kind
+    }
+
+    pub unsafe fn cast<T: ObjectContainer>(&self) -> &Queue<T> {
+        core::mem::transmute(self)
+    }
 }
 
 impl<T> Queue<T>
@@ -32,6 +38,7 @@ where
             object: Self::new_root_object(),
             data: UnsafeCell::new(LinkedList::empty()),
             lock: SpinLock::new(),
+            kind: T::KIND,
             _marker: PhantomData,
         })?;
 

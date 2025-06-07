@@ -52,6 +52,9 @@ pub enum SyscallError {
 
     NoMemory = 5,
 
+    InvalidQueueKind = 6,
+    QueueIsEmpty = 7,
+
     #[num_enum(default)]
     Failed = 0x42,
 }

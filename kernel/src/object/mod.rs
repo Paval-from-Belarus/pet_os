@@ -11,18 +11,20 @@ use crate::memory::{self, slab_alloc, Slab, SlabBox, VirtualAddress};
 
 pub use handle::*;
 
+pub struct AnyObject;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Kind {
-    IoWork,
+    BlockDeviceWork,
     FsWork,
     FileWork,
     IrqEvent,
 
-    File,
-
-    Mutex,
     Queue,
+
+    File,
+    Mutex,
     //rendevouz oneshot channel
     Exchange,
 }

@@ -230,7 +230,7 @@ pub fn submit_task(task: &'static mut RunningTask) {
     SCHEDULER.access_lock().push_task(task);
 }
 
-pub fn terminate() -> ! {
+pub fn terminate(_code: i32) -> ! {
     todo!()
 }
 
