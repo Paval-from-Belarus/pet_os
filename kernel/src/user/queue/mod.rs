@@ -16,6 +16,7 @@ pub struct Queue<T: 'static> {
     lock: SpinLock,
     object: Object,
     kind: object::Kind,
+    max_capacity: Option<usize>,
     _marker: PhantomData<T>,
 }
 
@@ -39,6 +40,7 @@ where
             data: UnsafeCell::new(LinkedList::empty()),
             lock: SpinLock::new(),
             kind: T::KIND,
+            max_capacity: None,
             _marker: PhantomData,
         })?;
 
@@ -46,9 +48,16 @@ where
     }
 
     pub fn new_bounded(
-        _capacity: usize,
+        capacity: usize,
     ) -> Result<Handle<Self>, memory::AllocError> {
-        todo!()
+        alloc_root_object(Self {
+            max_capacity: capacity.into(),
+            kind: T::KIND,
+            object: Self::new_root_object(),
+            data: UnsafeCell::new(LinkedList::empty()),
+            lock: SpinLock::new(),
+            _marker: PhantomData,
+        })
     }
 
     pub fn push(&self, data: &'static mut T) {
@@ -74,7 +83,7 @@ where
     }
 
     pub fn blocking_pop(&self) -> Option<SlabBox<T>> {
-        None
+        loop {}
     }
 }
 

@@ -96,7 +96,8 @@ impl Module {
             .map(|proc| proc.id)
             .unwrap_or(KERNEL_MODULE);
 
-        let concated_name = &name[..MAX_MODULE_NAME_LEN];
+        let len = usize::min(name.len(), MAX_MODULE_NAME_LEN);
+        let concated_name = &name[..len];
 
         Ok(Self {
             queue,
