@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy)]
-pub enum OperationStatus {
+pub enum OpStatus {
     Failed,
     InvalidResponse,
 }

@@ -1,7 +1,6 @@
 use kernel_types::{
     fs::{FileSystem, FileSystemKind, FsRequest, SuperBlockInfo},
     get_eax,
-    io::block,
 };
 
 use crate::{
@@ -30,7 +29,7 @@ pub fn init() -> fs::Result<()> {
 
     task::submit_task(fs_task);
 
-    unsafe { fs::mount_dev_fs() };
+    unsafe { fs::mount_dev_fs()? };
 
     Ok(())
 }
@@ -46,13 +45,16 @@ extern "C" fn fs_task() {
         };
 
         match work.request {
-            FsRequest::Mount { .. } => todo!(),
-            FsRequest::Unmount { fs } => todo!(),
-            FsRequest::LookupNode { fs, file, name } => todo!(),
-            FsRequest::CreateFile { fs, file, name } => todo!(),
-            FsRequest::CreateDirectory { fs, file, name } => todo!(),
-            FsRequest::FlushNode { fs, file } => todo!(),
-            FsRequest::DestroyNode { fs, file } => todo!(),
+            FsRequest::Mount { .. } => {
+                let sb_info = SuperBlockInfo {
+                    block_size: 512,
+                    queue_size: 3,
+                    context: core::ptr::null(),
+                };
+
+                work.send_response(sb_info.into());
+            }
+            FsRequest::Unmount { .. } => todo!(),
         }
     }
 

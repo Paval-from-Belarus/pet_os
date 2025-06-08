@@ -1,9 +1,9 @@
+use crate::common::atomics::UnsafeLazyCell;
 use crate::current_task;
-use crate::{common::atomics::UnsafeLazyCell, fs};
 use alloc::sync::Arc;
 use kernel_types::collections::LinkedList;
 pub use kernel_types::drivers::ModuleId;
-use kernel_types::drivers::{DeviceId, DriverId, ModuleKind};
+use kernel_types::drivers::ModuleKind;
 
 pub mod api;
 mod auto_load;

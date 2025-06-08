@@ -1,6 +1,10 @@
-use kernel_types::{container_of, io::block::Request};
+use kernel_types::{
+    container_of,
+    io::block::{Request, Response},
+};
 
 use crate::{
+    impl_work,
     memory::Slab,
     object::{self, ObjectContainer},
 };
@@ -8,24 +12,14 @@ use crate::{
 pub struct BlockWork {
     object: object::Object,
     pub request: Request,
+    response: Option<Response>,
 }
 
-impl ObjectContainer for BlockWork {
-    const KIND: object::Kind = object::Kind::BlockDeviceWork;
+impl_work! {
+    BlockWork,
+    req: Request,
+    res: Response,
 
-    fn container_of(object: *mut object::Object) -> *mut Self {
-        container_of!(object, BlockWork, object)
-    }
-
-    fn object(&self) -> &object::Object {
-        &self.object
-    }
-
-    fn object_mut(&mut self) -> &mut object::Object {
-        &mut self.object
-    }
-}
-
-impl Slab for BlockWork {
-    const NAME: &str = "io_work";
+    obj_kind: BlockDeviceWork,
+    slab: "io_work"
 }

@@ -3,17 +3,17 @@ use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, LinkedList, ListNode},
     drivers::{DeviceId, DriverId},
-    fs::{FileRequest, FileSystem, SuperBlockInfo},
+    fs::{FileLookupRequest, FileRequest, FileSystem, SuperBlockInfo},
 };
 
 use crate::{
     fs,
     memory::{self, slab_alloc, AllocError, SlabBox},
-    object::{self, ObjectContainer},
+    object::{self, Object, ObjectContainer},
     user::queue::Queue,
 };
 
-use super::{File, FileWork, FsRequest, FsWork, MountPoint};
+use super::{File, FileLookupWork, FileWork, FsRequest, FsWork, MountPoint};
 
 #[derive(ListNode)]
 pub struct FileSystemItem {
@@ -65,7 +65,7 @@ pub struct SuperBlock {
     pub files: LinkedList<'static, File>,
     pub block_size: usize,
 
-    pub queue: object::Handle<Queue<FileWork>>,
+    pub queue: object::Handle<Queue<FileLookupWork>>,
 }
 
 impl crate::memory::Slab for SuperBlock {
@@ -89,15 +89,13 @@ impl SuperBlock {
 
     pub fn work(
         &self,
-        work: FileRequest,
-    ) -> fs::Result<object::Handle<FileWork>> {
-        let queue = &self.queue;
-
-        let work = FileWork::new_boxed(work, queue)?;
+        work: FileLookupRequest,
+    ) -> fs::Result<object::Handle<FileLookupWork>> {
+        let work = FileLookupWork::new_boxed(work, &self.queue)?;
 
         let handle = work.handle();
 
-        queue.push(work);
+        self.queue.push(work);
 
         Ok(handle)
     }

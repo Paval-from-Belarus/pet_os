@@ -1,7 +1,9 @@
 use crate::{
     io::{KernelBuf, KernelBufMut},
-    object::{OperationStatus, RawHandle},
+    object::{OpStatus, RawHandle},
 };
+
+use super::FileId;
 
 pub enum FileRequest {
     Command { file: RawHandle, command: usize },
@@ -10,5 +12,15 @@ pub enum FileRequest {
 }
 
 pub enum FileResponse {
-    Status(OperationStatus),
+    File(FileId),
+    Status(OpStatus),
+}
+
+impl FileResponse {
+    pub fn file(self) -> Result<FileId, OpStatus> {
+        match self {
+            FileResponse::File(id) => Ok(id),
+            FileResponse::Status(status) => Err(status),
+        }
+    }
 }

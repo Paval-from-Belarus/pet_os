@@ -101,7 +101,10 @@ pub fn main() {
     task::submit_task(thread_3);
     task::submit_task(thread_4);
 
-    fs::open("/dev/vga");
+    // let file = fs::open("/dev/vga").wait().unwrap().file().unwrap();
+    //
+    // fs::write(file_handle, source, count)
+
     //
     // user::exec("/usr/sbin/init");
     task::run();

@@ -1,9 +1,11 @@
 mod file;
+mod file_lookup_op;
 mod file_op;
 mod fs_op;
 mod index_node;
 mod super_block;
 
+pub use file_lookup_op::*;
 pub use file_op::*;
 pub use fs_op::*;
 pub use index_node::*;

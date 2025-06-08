@@ -4,11 +4,12 @@ pub use file::*;
 pub use file_work::*;
 pub use fs_work::*;
 pub use index_node::*;
-use kernel_types::fs::{FileSystem, FsId, FsRequest};
+use kernel_types::fs::{FileLookupRequest, FileSystem, FsId, FsRequest};
 use kernel_types::object::RawHandle;
 pub use mount_point::*;
 pub use path::*;
 pub use super_block::*;
+pub use file_lookup_work::*;
 
 use kernel_types::declare_constants;
 use kernel_types::drivers::Device;
@@ -25,6 +26,7 @@ mod mount_point;
 mod path;
 mod super_block;
 mod system_fs;
+mod file_lookup_work;
 
 use system_fs::SystemMountPoints;
 
@@ -91,7 +93,7 @@ pub unsafe fn mount_dev_fs() -> Result<()> {
         })
         .expect("Failed to mount dev-fs");
 
-    let sb_info = work.exchange().unwrap().super_block().unwrap();
+    let sb_info = work.wait().unwrap().super_block().unwrap();
 
     let sb = SuperBlock::new_boxed(sb_info)?;
 
@@ -108,8 +110,13 @@ pub fn mount(path: &str, fs_name: &str, dev_name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn open<T: AsRef<str>>(path: T) -> object::Handle<FsWork> {
+pub fn open<T: AsRef<str>>(path: T) -> object::Handle<FileLookupWork> {
     let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
+
+    let sb = fs.super_block();
+
+    fs.super_block()
+        .work(FileLookupRequest::LookupNode { fs: (), file: (), name: () })
     todo!()
 }
 
@@ -133,7 +140,7 @@ pub fn read(
 }
 
 pub fn write(
-    file_handle: usize,
+    file_handle: FileId,
     _source: *const u8,
     _count: usize,
 ) -> Result<object::RawHandle> {

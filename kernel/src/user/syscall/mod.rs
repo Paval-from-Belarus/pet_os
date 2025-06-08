@@ -10,7 +10,7 @@ use kernel_types::{
 
 use crate::{
     current_task, drivers,
-    fs::{File, FileWork, FsWork},
+    fs::{File, FileLookupWork, FileWork, FsWork},
     io::{
         self,
         block::{self, BlockWork},
@@ -184,6 +184,11 @@ pub fn handle(
                 crate::object::Kind::FsWork => {
                     let _ = Handle::<FsWork>::from_raw_unchecked(raw_handle);
                 }
+                crate::object::Kind::FileLookupWork => {
+                    let _ = Handle::<FileLookupWork>::from_raw_unchecked(
+                        raw_handle,
+                    );
+                }
                 crate::object::Kind::FileWork => {
                     let _ = Handle::<FileWork>::from_raw_unchecked(raw_handle);
                 }
@@ -193,13 +198,11 @@ pub fn handle(
                 crate::object::Kind::File => {
                     let _ = Handle::<File>::from_raw_unchecked(raw_handle);
                 }
-
                 crate::object::Kind::Queue => {
                     let _ = Handle::<Queue<AnyObject>>::from_raw_unchecked(
                         raw_handle,
                     );
                 }
-
                 crate::object::Kind::Mutex => todo!(),
                 crate::object::Kind::Exchange => todo!(),
             }

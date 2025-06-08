@@ -1,7 +1,6 @@
-use core::usize;
-
 use kernel_types::object::{KernelObject, RawHandle};
 
+#[allow(unused)]
 pub struct IndexNode {
     handle: RawHandle,
 }

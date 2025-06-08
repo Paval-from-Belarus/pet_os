@@ -1,6 +1,7 @@
 mod event;
 mod handle;
 pub mod runtime;
+mod work;
 
 use core::{ptr::NonNull, sync::atomic::AtomicU16};
 
@@ -17,8 +18,11 @@ pub struct AnyObject;
 #[repr(u8)]
 pub enum Kind {
     BlockDeviceWork,
+
     FsWork,
+    FileLookupWork,
     FileWork,
+
     IrqEvent,
 
     Queue,

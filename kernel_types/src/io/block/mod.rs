@@ -28,3 +28,5 @@ pub struct BlockDeviceInfo {
     //deseriable queue size
     pub queue_size: usize,
 }
+
+pub enum Response {}

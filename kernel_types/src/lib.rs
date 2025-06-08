@@ -180,6 +180,17 @@ macro_rules! container_of {
     }};
 }
 
+#[macro_export]
+macro_rules! from_variant {
+    ($ty: ty, $variant: ident) => {
+        impl From<$variant> for $ty {
+            fn from(value: $variant) -> Self {
+                Self::$variant(value)
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     extern crate alloc;

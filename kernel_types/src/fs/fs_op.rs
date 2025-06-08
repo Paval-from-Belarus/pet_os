@@ -1,68 +1,29 @@
 use crate::{
-    object::{OperationStatus, RawHandle},
-    string::QuickString,
+    from_variant,
+    object::{OpStatus, RawHandle},
 };
 
-use super::{IndexNodeInfo, SuperBlockInfo};
+use super::SuperBlockInfo;
 
 pub enum FsRequest {
-    Mount {
-        device: RawHandle,
-    },
-
-    Unmount {
-        fs: RawHandle,
-    },
-
-    LookupNode {
-        fs: RawHandle,
-        file: RawHandle,
-        name: QuickString<'static>,
-    },
-
-    CreateFile {
-        fs: RawHandle,
-        file: RawHandle,
-        name: QuickString<'static>,
-    },
-
-    CreateDirectory {
-        fs: RawHandle,
-        file: RawHandle,
-        name: QuickString<'static>,
-    },
-
-    FlushNode {
-        fs: RawHandle,
-        file: RawHandle,
-    },
-
-    DestroyNode {
-        fs: RawHandle,
-        file: RawHandle,
-    },
+    Mount { device: RawHandle },
+    //super_block
+    Unmount { fs: RawHandle },
 }
 
 pub enum FsResponse {
-    SuperBlock(SuperBlockInfo),
-    IndexNode(IndexNodeInfo),
-    Status(OperationStatus),
+    SuperBlockInfo(SuperBlockInfo),
+    OpStatus(OpStatus),
 }
 
-impl FsResponse {
-    pub fn super_block(self) -> Result<SuperBlockInfo, OperationStatus> {
-        match self {
-            FsResponse::SuperBlock(block) => Ok(block),
-            FsResponse::Status(status) => Err(status),
-            FsResponse::IndexNode(_) => Err(OperationStatus::InvalidResponse),
-        }
-    }
+from_variant!(FsResponse, SuperBlockInfo);
+from_variant!(FsResponse, OpStatus);
 
-    pub fn index_node(self) -> Result<IndexNodeInfo, OperationStatus> {
+impl FsResponse {
+    pub fn super_block(self) -> Result<SuperBlockInfo, OpStatus> {
         match self {
-            FsResponse::IndexNode(node) => Ok(node),
-            FsResponse::Status(status) => Err(status),
-            FsResponse::SuperBlock(_) => Err(OperationStatus::InvalidResponse),
+            FsResponse::SuperBlockInfo(block) => Ok(block),
+            FsResponse::OpStatus(status) => Err(status),
         }
     }
 }
