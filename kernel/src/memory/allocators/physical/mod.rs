@@ -4,7 +4,7 @@ mod page;
 
 use core::{mem, ptr, slice};
 
-use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
+use kernel_types::collections::{LinkedList, ListNode};
 use kernel_types::declare_constants;
 
 use crate::log;

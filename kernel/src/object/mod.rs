@@ -77,11 +77,11 @@ impl Object {
         }
     }
 
-    fn handle<T: ObjectContainer>(&self) -> Handle<T> {
+    pub fn handle<T: ObjectContainer>(&self) -> Handle<T> {
         unsafe { Handle::from_addr_unchecked(self.raw_handle()) }
     }
 
-    fn raw_handle(&self) -> RawHandle {
+    pub fn raw_handle(&self) -> RawHandle {
         self as *const Object as VirtualAddress
     }
 }

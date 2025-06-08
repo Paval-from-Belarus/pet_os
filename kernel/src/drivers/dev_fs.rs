@@ -40,6 +40,7 @@ pub fn init() -> fs::Result<()> {
     Ok(())
 }
 
+#[allow(unused)]
 extern "C" fn fs_task() {
     let raw_handle = unsafe { get_eax!() };
     let queue =
@@ -63,7 +64,11 @@ extern "C" fn fs_task() {
             FsRequest::Unmount { .. } => todo!(),
             FsRequest::FsQueue { queue } => {
                 let arg = unsafe { queue.leak() as _ };
-                task::new_task(sb_task, arg, task::TaskPriority::Module(0));
+                let sb_task =
+                    task::new_task(sb_task, arg, task::TaskPriority::Module(0))
+                        .unwrap();
+
+                task::submit_task(sb_task);
             }
         }
     }

@@ -69,7 +69,7 @@ pub fn notify<T: ObjectContainer>(_handle: Handle<T>) {
 pub fn lookup<T: ObjectContainer>(handle: Handle<T>) -> bool {
     let objects = RUNTIME.objects.read();
 
-    objects.iter().any(|object| object.raw_handle() == handle)
+    objects.iter().any(|object| object.raw_handle() == handle.as_addr())
 }
 
 pub fn register(object: &'static mut Object) -> RawHandle {

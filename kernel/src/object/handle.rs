@@ -57,6 +57,10 @@ impl<T: ObjectContainer> Handle<T> {
         self.0 as *const Object
     }
 
+    pub fn as_addr(&self) -> RawHandle {
+        self.0
+    }
+
     pub fn into_addr(self) -> RawHandle {
         let handle = self.0;
 

@@ -1,5 +1,5 @@
 use kernel_macro::ListNode;
-use kernel_types::collections::{BorrowingLinkedList, LinkedList, ListNode};
+use kernel_types::collections::{LinkedList, ListNode};
 
 use crate::memory::VirtualAddress;
 

@@ -20,9 +20,11 @@ extern crate static_assertions;
 
 extern crate multiboot2;
 
+use alloc::sync::Arc;
 use common::logging;
 use kernel_types::get_eax;
 use memory::PagingProperties;
+use task::Mutex;
 
 use crate::task::TaskPriority;
 
@@ -82,28 +84,40 @@ pub fn main() {
 
     log::info!("Task switching is enabled");
 
-    let thread_1 =
-        task::new_task(task1, 51 as *mut (), TaskPriority::Module(0)).unwrap();
+    let mutex = Arc::new(Mutex::new(3usize));
 
-    let thread_2 =
-        task::new_task(task2, 52 as *mut (), TaskPriority::Kernel).unwrap();
+    let mutex_1 = mutex.clone();
 
-    let thread_3 =
-        task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(10))
-            .unwrap();
+    let thread_1 = task::new_task(
+        mutex_task,
+        Arc::into_raw(mutex) as _,
+        TaskPriority::Module(0),
+    )
+    .unwrap();
 
-    let thread_4 =
-        task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(5))
-            .unwrap();
+    let thread_2 = task::new_task(
+        mutex_task,
+        Arc::into_raw(mutex_1) as _,
+        TaskPriority::Kernel,
+    )
+    .unwrap();
+
+    // let thread_3 =
+    //     task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(10))
+    //         .unwrap();
+    //
+    // let thread_4 =
+    //     task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(5))
+    //         .unwrap();
 
     task::submit_task(thread_1);
     task::submit_task(thread_2);
-    task::submit_task(thread_3);
-    task::submit_task(thread_4);
+    // task::submit_task(thread_3);
+    // task::submit_task(thread_4);
 
-    let file = fs::open("/dev/vga").expect("Failed to open");
-
-    let _file = fs::resolve(file).expect("Failed to resolve file");
+    // let file = fs::open("/dev/vga").expect("Failed to open");
+    //
+    // let _file = fs::resolve(file).expect("Failed to resolve file");
 
     // fs::write(file_handle, source, count)
     // user::exec("/usr/sbin/init");
@@ -124,29 +138,27 @@ extern "C" fn task3() {
     }
 }
 
-extern "C" fn task1() {
+extern "C" fn mutex_task() {
+    let mutex = unsafe {
+        let ptr: *const Arc<Mutex<usize>> = get_eax!();
+        Arc::from_raw(ptr)
+    };
+
     let id = current_task!().id;
 
     log::info!("task {id} started");
 
     log::info!("Task {id} priority: {}", current_task!().priority);
 
-    loop {
-        task::sleep(300);
-        log::info!("task {id} awaken");
+    for _ in 0..10 {
+        let mut lock = mutex.lock();
+        log::debug!("Value taken: {} in task#{id}", *lock);
+        *lock += 1;
     }
-}
-
-extern "C" fn task2() {
-    let id = current_task!().id;
-
-    log::info!("task {id} started");
-
-    log::info!("Task {id} priority: {}", current_task!().priority);
 
     loop {
-        task::sleep(400);
-        log::info!("task {id} awaken");
+        task::sleep(10);
+        log::info!("Task#{id} is awaken");
     }
 }
 

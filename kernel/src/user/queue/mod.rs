@@ -1,9 +1,8 @@
-use core::{cell::UnsafeCell, marker::PhantomData};
+use core::{marker::PhantomData, ops::DerefMut};
 
 use kernel_types::{collections::LinkedList, container_of};
 
 use crate::{
-    common::atomics::SpinLock,
     memory::{self, Slab, SlabBox},
     object::{
         self, alloc_root_object, dealloc_root_object, runtime, AnyObject,
@@ -79,7 +78,18 @@ where
     }
 
     pub fn blocking_pop(&self) -> Option<SlabBox<T>> {
-        loop {}
+        loop {
+            let maybe_obj = self.data.lock().remove_first();
+            if let Some(obj) = maybe_obj {
+                let boxed = unsafe {
+                    &mut *T::container_of(obj.deref_mut() as *mut Object)
+                };
+
+                log::debug!("S: {:?}", obj.kind);
+
+                return Some(memory::into_boxed(boxed.into()));
+            }
+        }
     }
 }
 
