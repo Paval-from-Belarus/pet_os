@@ -9,11 +9,11 @@ use crate::{
         self, alloc_root_object, dealloc_root_object, runtime, AnyObject,
         Handle, Kind, Object, ObjectContainer,
     },
+    task::Mutex,
 };
 
 pub struct Queue<T: 'static> {
-    data: UnsafeCell<LinkedList<'static, Object>>,
-    lock: SpinLock,
+    data: Mutex<LinkedList<'static, Object>>,
     object: Object,
     kind: object::Kind,
     max_capacity: Option<usize>,
@@ -35,10 +35,11 @@ where
     T: ObjectContainer + 'static,
 {
     pub fn new_unbounded() -> Result<Handle<Self>, memory::AllocError> {
+        let data = Mutex::new(LinkedList::empty())?;
+
         let handle = alloc_root_object(Self {
             object: Self::new_root_object(),
-            data: UnsafeCell::new(LinkedList::empty()),
-            lock: SpinLock::new(),
+            data,
             kind: T::KIND,
             max_capacity: None,
             _marker: PhantomData,
@@ -50,12 +51,13 @@ where
     pub fn new_bounded(
         capacity: usize,
     ) -> Result<Handle<Self>, memory::AllocError> {
+        let data = Mutex::new(LinkedList::empty())?;
+
         alloc_root_object(Self {
             max_capacity: capacity.into(),
             kind: T::KIND,
             object: Self::new_root_object(),
-            data: UnsafeCell::new(LinkedList::empty()),
-            lock: SpinLock::new(),
+            data,
             _marker: PhantomData,
         })
     }
@@ -63,17 +65,9 @@ where
     pub fn push(&self, data: SlabBox<T>) {
         let data = unsafe { &mut *SlabBox::into_raw(data) };
 
-        self.lock.acquire();
+        self.data.lock().push_back(data.object_mut());
 
-        {
-            let list = unsafe { &mut *self.data.get() };
-
-            list.push_back(data.object_mut());
-        }
-
-        self.lock.release();
-
-        runtime::notify(self.handle().into_addr());
+        runtime::notify(self.handle());
     }
 
     pub fn try_push(&self, _data: SlabBox<T>) -> Result<(), ()> {

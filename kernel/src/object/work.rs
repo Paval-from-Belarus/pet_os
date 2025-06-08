@@ -30,6 +30,7 @@ macro_rules! impl_work {
             }
 
             pub fn send_response(self, response: $res) {
+
                 todo!()
             }
         }

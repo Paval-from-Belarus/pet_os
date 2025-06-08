@@ -116,9 +116,9 @@ pub fn init() {
 
     MODULES.set(ModuleManager::from_modules(LinkedList::empty()));
 
-    auto_load::spawn_task().expect("Failed to init autoload task");
-
-    dev_fs::init().expect("Failed to init dev fs");
+    // auto_load::spawn_task().expect("Failed to init autoload task");
+    //
+    // dev_fs::init().expect("Failed to init dev fs");
 }
 
 // extern "Rust" {

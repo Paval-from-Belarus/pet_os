@@ -1,65 +1,89 @@
-#![allow(unused)]
-use core::{cell::UnsafeCell, sync::atomic::AtomicBool};
-
-use kernel_types::container_of;
-
-use crate::{
-    memory::Slab,
-    object::{self, Object, ObjectContainer},
+use core::{
+    cell::UnsafeCell,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
-//the actual objech which implemets logic of mutex
-pub struct MutexObject {
-    object: Object,
-    lock: AtomicBool,
-}
+use crate::{
+    impl_container,
+    memory::AllocError,
+    object::{self, runtime, Handle, Object, ObjectContainer},
+};
 
 pub struct Mutex<T: Sized> {
     data: UnsafeCell<T>,
-    mutex: MutexObject,
+    mutex: Handle<MutexObject>,
+}
+
+pub struct MutexObject {
+    locked: AtomicBool,
+    object: Object,
+}
+
+impl_container! {
+    MutexObject,
+    obj_kind: Mutex,
+    slab: "futex"
 }
 
 pub struct MutexGuard<'a, T: Sized + 'a> {
     lock: &'a Mutex<T>,
 }
 
+impl<T: Sized> core::ops::Deref for MutexGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.lock.data.get() }
+    }
+}
+
+impl<T: Sized> core::ops::DerefMut for MutexGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.lock.data.get() }
+    }
+}
+
 unsafe impl<T: Sized + Send> Sync for Mutex<T> {}
 unsafe impl<T: Sized + Send> Send for Mutex<T> {}
 
-impl Slab for MutexObject {
-    const NAME: &str = "futex";
-}
-
-impl ObjectContainer for MutexObject {
-    const KIND: object::Kind = object::Kind::Mutex;
-
-    fn container_of(object: *mut object::Object) -> *mut Self {
-        container_of!(object, MutexObject, object)
-    }
-
-    fn object(&self) -> &object::Object {
-        &self.object
-    }
-
-    fn object_mut(&mut self) -> &mut object::Object {
-        &mut self.object
-    }
-}
-
 impl<T: Sized> Mutex<T> {
-    pub fn new(_value: T) -> Self {
-        todo!()
+    pub fn new(value: T) -> Result<Mutex<T>, AllocError> {
+        let mutex = object::alloc_root_object(MutexObject {
+            object: MutexObject::new_root_object(),
+            locked: AtomicBool::new(false),
+        })?;
+
+        Ok(Self {
+            mutex,
+            data: UnsafeCell::new(value),
+        })
     }
 
-    pub fn handle(&self) -> object::RawHandle {
-        todo!()
+    pub fn handle(&self) -> Handle<MutexObject> {
+        self.mutex.handle()
     }
 
-    pub fn try_lock(&self) {
-        todo!()
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
+        let is_locked = self
+            .mutex
+            .locked
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err();
+
+        if is_locked {
+            None
+        } else {
+            Some(MutexGuard { lock: self })
+        }
     }
 
-    pub fn lock(&self) {
-        todo!()
+    pub fn lock(&self) -> MutexGuard<'_, T> {
+        loop {
+            if let Some(guard) = self.try_lock() {
+                break guard;
+            }
+
+            runtime::block_on(self.handle()).expect("Failed to block on mutex")
+        }
     }
 }

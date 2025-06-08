@@ -93,7 +93,7 @@ pub trait ObjectContainer: Sized + Slab + 'static {
     fn object_mut(&mut self) -> &mut Object;
 
     fn new_object<T: ObjectContainer>(parent: &Handle<T>) -> Object {
-        assert!(runtime::lookup(parent.clone().into_addr()));
+        assert!(runtime::lookup(parent.clone()));
 
         Object::new_child(Self::KIND, parent.clone().into_addr())
     }

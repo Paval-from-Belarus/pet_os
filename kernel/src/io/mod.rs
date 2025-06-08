@@ -21,7 +21,7 @@ use crate::task::TaskContext;
 use crate::{current_task, object};
 
 pub use irq::IrqEvent;
-pub use lock::InterruptableLazyCell;
+pub use lock::{InterruptableLazyCell, InterruptableLock};
 
 pub mod block;
 pub mod char;

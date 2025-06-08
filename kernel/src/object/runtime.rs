@@ -2,7 +2,7 @@ use kernel_types::collections::LinkedList;
 
 use crate::task::SCHEDULER;
 
-use super::{Object, RawHandle, Status};
+use super::{Handle, Object, ObjectContainer, RawHandle, Status};
 
 struct Runtime {
     pub objects: spin::RwLock<LinkedList<'static, Object>>,
@@ -36,15 +36,16 @@ impl Runtime {
     }
 }
 
-#[allow(unused)]
-pub fn block_on(handle: RawHandle) -> Result<(), ()> {
+pub fn block_on<T: ObjectContainer>(handle: Handle<T>) -> Result<(), ()> {
+    let handle = handle.into_addr();
+
     let mut objects = RUNTIME.objects.write();
 
     let Some(object) = objects
         .iter_mut()
         .find(|object| object.raw_handle() == handle)
     else {
-        return Err(());
+        todo!()
     };
 
     if object.status == Status::Completed {
@@ -60,12 +61,12 @@ pub fn block_on(handle: RawHandle) -> Result<(), ()> {
     Ok(())
 }
 
-pub fn notify(_handle: RawHandle) {
+pub fn notify<T: ObjectContainer>(_handle: Handle<T>) {
     //todo: add logic to wake up all tasks
     //waiting on object
 }
 
-pub fn lookup(handle: RawHandle) -> bool {
+pub fn lookup<T: ObjectContainer>(handle: Handle<T>) -> bool {
     let objects = RUNTIME.objects.read();
 
     objects.iter().any(|object| object.raw_handle() == handle)

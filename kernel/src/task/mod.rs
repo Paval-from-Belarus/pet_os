@@ -31,6 +31,7 @@ mod state;
 
 pub use context::*;
 pub use fs::*;
+pub use mutex::*;
 pub use priority::*;
 pub use state::*;
 
