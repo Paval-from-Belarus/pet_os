@@ -32,12 +32,18 @@ impl<T: ObjectContainer> HashKey for Handle<T> {
 }
 
 impl<T: ObjectContainer> Handle<T> {
-    pub unsafe fn from_raw_unchecked(raw_handle: RawHandle) -> Self {
+    pub unsafe fn from_addr_unchecked(raw_handle: VirtualAddress) -> Self {
         Self(raw_handle, PhantomData)
     }
 
-    pub fn from_raw(raw_handle: RawHandle) -> Result<Self, ()> {
-        let handle = unsafe { Self::from_raw_unchecked(raw_handle) };
+    pub fn from_raw(handle: kernel_types::object::RawHandle) -> Self {
+        let handle = ManuallyDrop::new(handle);
+
+        unsafe { Self::from_addr_unchecked(handle.syscall()) }
+    }
+
+    pub fn from_addr(raw_handle: RawHandle) -> Result<Self, ()> {
+        let handle = unsafe { Self::from_addr_unchecked(raw_handle) };
 
         (*handle)
             .object()
@@ -51,12 +57,17 @@ impl<T: ObjectContainer> Handle<T> {
         self.0 as *const Object
     }
 
-    pub fn into_raw(self) -> RawHandle {
+    pub fn into_addr(self) -> RawHandle {
         let handle = self.0;
 
         let _ = ManuallyDrop::new(self);
 
         handle
+    }
+    pub fn into_raw(self) -> kernel_types::object::RawHandle {
+        let handle = self.into_addr();
+
+        unsafe { kernel_types::object::RawHandle::new_unchecked(handle) }
     }
 }
 

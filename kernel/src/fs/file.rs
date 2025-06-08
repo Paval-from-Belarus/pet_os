@@ -9,6 +9,8 @@ use crate::{
 
 use super::{MountPoint, PathNode};
 
+pub use kernel_types::fs::FilePermissions;
+
 bitflags::bitflags! {
     pub struct FileRenameFlag: u8 {
         //if target is exist then no replacement can occurred
@@ -20,13 +22,6 @@ bitflags::bitflags! {
 
 ///consider to implement prefix-tree
 pub struct FileName([u8]);
-
-bitflags! {
-    pub FilePermissions(u8),
-    EXECUTABLE = 0x01,
-    WRITABLE = 0x02,
-    READABLE = 0x04,
-}
 
 bitflags::bitflags! {
     #[derive(PartialEq, Eq, Clone, Copy)]

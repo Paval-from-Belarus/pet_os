@@ -3,41 +3,23 @@ use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, ListNode},
     container_of,
+    fs::{FileRequest, IndexNodeInfo, NodeId, NodeKind},
 };
 
 use crate::{
     common::time::Timestamp,
-    memory::{self, Slab, SlabBox},
-    object::{self, Object, ObjectContainer},
+    impl_container,
+    memory::{self, AllocError, Slab, SlabBox},
+    object::{self, Handle, Object, ObjectContainer},
+    user::queue::Queue,
 };
 
-use super::{Device, FilePermissions, NodeKind, SuperBlock};
-
-pub struct IndexNodeBox {
-    item: SlabBox<IndexNodeItem>,
-}
-
-#[derive(ListNode)]
-#[repr(C)]
-pub struct IndexNodeItem {
-    #[list_pivots]
-    node: ListNode<IndexNodeItem>,
-    object: Object,
-    pub lock: Arc<spin::RwLock<IndexNode>>,
-}
-
-impl Slab for IndexNodeItem {
-    const NAME: &str = "index_node";
-}
-
-//the unique id of the node
-pub type FileId = usize;
+use super::{Device, FilePermissions, FileWork, SuperBlock};
 
 ///the i-node implementation
 #[repr(C)]
 pub struct IndexNode {
-    parent: Arc<spin::RwLock<SuperBlock>>,
-    id: FileId,
+    pub id: NodeId,
     permissions: FilePermissions,
     // type: u8,//file type?
     size: usize,
@@ -51,48 +33,47 @@ pub struct IndexNode {
     kind: NodeKind,
     //where file is storing
     device: Device,
+    queue: Handle<Queue<FileWork>>,
+
+    object: Object,
 }
 
 impl IndexNode {
-    pub fn super_block<'a>(
-        &'a self,
-    ) -> impl core::ops::Deref<Target = SuperBlock> + 'a {
-        self.parent.read()
-    }
+    pub fn new(
+        inode: IndexNodeInfo,
+        parent: &Handle<SuperBlock>,
+    ) -> Result<SlabBox<IndexNode>, AllocError> {
+        let IndexNodeInfo {
+            queue_size,
+            id,
+            super_block,
+            size,
+            kind,
+            permissions,
+        } = inode;
 
-    pub fn id(&self) -> FileId {
-        self.id
+        let queue = Queue::new_bounded(inode.queue_size)?;
+        let object = Self::new_object(parent);
+
+        crate::memory::slab_alloc(Self {
+            id,
+            size,
+            kind,
+            device: Device::new(0, 0),
+            permissions,
+
+            access_time: Default::default(),
+            change_time: Default::default(),
+            modify_time: Default::default(),
+
+            queue,
+            object,
+        })
     }
 }
 
-impl IndexNodeBox {
-    pub fn into_node(self) -> &'static mut ListNode<IndexNodeItem> {
-        unsafe { &mut *SlabBox::into_raw(self.item) }.as_node()
-    }
-}
-
-impl BoxedNode for IndexNodeItem {
-    type Target = IndexNodeBox;
-
-    fn into_boxed(node: &mut Self::Item) -> Self::Target {
-        let item = memory::into_boxed(node.into());
-
-        Self::Target { item }
-    }
-}
-
-impl ObjectContainer for IndexNodeItem {
-    const KIND: object::Kind = object::Kind::File;
-
-    fn container_of(object: *mut Object) -> *mut Self {
-        container_of!(object, IndexNodeItem, object)
-    }
-
-    fn object(&self) -> &Object {
-        &self.object
-    }
-
-    fn object_mut(&mut self) -> &mut Object {
-        &mut self.object
-    }
+impl_container! {
+    IndexNode,
+    obj_kind: File,
+    slab: "inode"
 }

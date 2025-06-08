@@ -10,29 +10,24 @@ use super::IndexNodeInfo;
 pub enum FileLookupRequest {
     LookupNode {
         fs: RawHandle,
-        file: RawHandle,
-        name: QuickString<'static>,
+        name: alloc::string::String,
     },
 
     CreateFile {
         fs: RawHandle,
-        file: RawHandle,
         name: QuickString<'static>,
     },
 
     CreateDirectory {
         fs: RawHandle,
-        file: RawHandle,
         name: QuickString<'static>,
     },
 
     FlushNode {
-        fs: RawHandle,
         file: RawHandle,
     },
 
     DestroyNode {
-        fs: RawHandle,
         file: RawHandle,
     },
 }
@@ -46,7 +41,7 @@ pub enum FileLookupResponse {
 from_variant!(FileLookupResponse, IndexNodeInfo);
 
 impl FileLookupResponse {
-    pub fn index_node(self) -> Result<IndexNodeInfo, OpStatus> {
+    pub fn inode(self) -> Result<IndexNodeInfo, OpStatus> {
         match self {
             FileLookupResponse::IndexNodeInfo(node) => Ok(node),
             FileLookupResponse::Completed => Err(OpStatus::InvalidResponse),

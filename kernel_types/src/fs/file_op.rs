@@ -3,7 +3,7 @@ use crate::{
     object::{OpStatus, RawHandle},
 };
 
-use super::FileId;
+use super::NodeId;
 
 pub enum FileRequest {
     Command { file: RawHandle, command: usize },
@@ -12,12 +12,12 @@ pub enum FileRequest {
 }
 
 pub enum FileResponse {
-    File(FileId),
+    File(NodeId),
     Status(OpStatus),
 }
 
 impl FileResponse {
-    pub fn file(self) -> Result<FileId, OpStatus> {
+    pub fn file(self) -> Result<NodeId, OpStatus> {
         match self {
             FileResponse::File(id) => Ok(id),
             FileResponse::Status(status) => Err(status),

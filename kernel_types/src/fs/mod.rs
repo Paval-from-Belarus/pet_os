@@ -29,7 +29,7 @@ bitflags::bitflags! {
     }
 }
 
-pub type FileId = u32;
+pub type NodeId = u32;
 
 pub struct MountedDevice {
     pub lba_offset: u32,

@@ -1,13 +1,18 @@
 use alloc::boxed::Box;
 use kernel_macro::ListNode;
-use kernel_types::collections::{BoxedNode, ListNode};
+use kernel_types::{
+    collections::{BoxedNode, ListNode},
+    fs::{FileLookupRequest, SuperBlockInfo},
+    string::QuickString,
+};
 
 use crate::{
     common::atomics::SpinLock,
     memory::{AllocError, Slab, SlabBox},
+    object::{Handle, Object, ObjectContainer},
 };
 
-use super::{FileSystemItem, SuperBlock};
+use super::{File, FileLookupWork, FileSystemItem, Result, SuperBlock};
 
 pub struct MountPointBox {
     mount_point: SlabBox<MountPoint>,
@@ -20,7 +25,7 @@ pub struct MountPoint {
     node: ListNode<MountPoint>,
 
     lock: SpinLock,
-    super_block: spin::RwLock<SlabBox<SuperBlock>>,
+    sb: Handle<SuperBlock>,
     // parent_mount: Option<NonNull<MountPoint>>,
     // //the vfs' root doesn't have parent
     // //child_mounts: LinkedList<'static, MountPoint>,
@@ -34,11 +39,11 @@ unsafe impl Send for MountPoint {}
 unsafe impl Sync for MountPoint {}
 
 impl MountPoint {
-    pub fn new_boxed(
-        sb: SlabBox<SuperBlock>,
-    ) -> Result<MountPointBox, AllocError> {
+    pub fn new_boxed(sb_info: SuperBlockInfo) -> Result<MountPointBox> {
+        let super_block = SuperBlock::new(sb_info)?;
+
         let mount_point = crate::memory::slab_alloc(Self {
-            super_block: spin::RwLock::new(sb),
+            sb: super_block,
             lock: SpinLock::new(),
             node: ListNode::empty(),
         })?;
@@ -46,10 +51,15 @@ impl MountPoint {
         Ok(MountPointBox { mount_point })
     }
 
-    pub fn super_block<'a>(
-        &'a self,
-    ) -> impl core::ops::Deref<Target = SlabBox<SuperBlock>> + 'a {
-        self.super_block.read()
+    pub fn open(
+        &self,
+        name: alloc::string::String
+    ) -> Result<Handle<FileLookupWork>> {
+        let fs = self.sb.clone().into_raw();
+
+        let req = FileLookupRequest::LookupNode { fs, name };
+
+        self.sb.send_request(req)
     }
 }
 

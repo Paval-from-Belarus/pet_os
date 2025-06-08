@@ -1,15 +1,16 @@
 #![allow(unused)]
 
 pub use file::*;
+pub use file_lookup_work::*;
 pub use file_work::*;
 pub use fs_work::*;
 pub use index_node::*;
 use kernel_types::fs::{FileLookupRequest, FileSystem, FsId, FsRequest};
 use kernel_types::object::RawHandle;
+use kernel_types::string::QuickString;
 pub use mount_point::*;
 pub use path::*;
 pub use super_block::*;
-pub use file_lookup_work::*;
 
 use kernel_types::declare_constants;
 use kernel_types::drivers::Device;
@@ -19,6 +20,7 @@ use crate::object::{self, Handle};
 use crate::user::queue::Queue;
 
 mod file;
+mod file_lookup_work;
 mod file_work;
 mod fs_work;
 mod index_node;
@@ -26,11 +28,11 @@ mod mount_point;
 mod path;
 mod super_block;
 mod system_fs;
-mod file_lookup_work;
 
 use system_fs::SystemMountPoints;
 
 pub type Result<T> = core::result::Result<T, FsError>;
+pub type FileId = usize;
 
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum FsError {
@@ -46,8 +48,14 @@ pub enum FsError {
     #[error("Operation is not supported")]
     NotSupported,
 
+    #[error("FS is not responding")]
+    FsIsDead,
+
     #[error("Invalid file handle")]
     InvalidFileHandle,
+
+    #[error("The process has reached max files limit")]
+    MaxOpenedFiles,
 }
 
 declare_constants!(
@@ -55,16 +63,6 @@ declare_constants!(
     MAX_FILE_NAME_LEN = 255, "The maximal length for file name";
     MAX_FILES_COUNT = 15, "The count of files for process";
 );
-
-bitflags::bitflags! {
-    #[derive(Debug, Clone, Copy)]
-    #[repr(C)]
-    pub struct NodeKind: usize {
-        const FILE = 0x01;
-        const BLOCK = 0x02;
-        const CHAR = 0x04;
-    }
-}
 
 static FILE_SYSTEMS: SystemMountPoints = SystemMountPoints::new();
 
@@ -95,9 +93,7 @@ pub unsafe fn mount_dev_fs() -> Result<()> {
 
     let sb_info = work.wait().unwrap().super_block().unwrap();
 
-    let sb = SuperBlock::new_boxed(sb_info)?;
-
-    let mount_point = MountPoint::new_boxed(sb)?;
+    let mount_point = MountPoint::new_boxed(sb_info)?;
 
     FILE_SYSTEMS.set_dev_fs(mount_point.into_node());
 
@@ -110,14 +106,30 @@ pub fn mount(path: &str, fs_name: &str, dev_name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn open<T: AsRef<str>>(path: T) -> object::Handle<FileLookupWork> {
+pub fn resolve(handle: Handle<FileLookupWork>) -> Result<usize> {
+    let Some(res) = handle.wait() else {
+        return Err(FsError::FsIsDead);
+    };
+
+    let Some(file_index) = current_task!().opened_files.alloc_index() else {
+        return Err(FsError::MaxOpenedFiles);
+    };
+
+    let inode_info = res.inode().unwrap();
+
+    let sb = handle.sb.clone();
+
+    let file_handle = sb.resolve(inode_info)?;
+
+    current_task!().opened_files.set(file_index, file_handle);
+
+    Ok(file_index)
+}
+
+pub fn open<T: AsRef<str>>(path: T) -> Result<Handle<FileLookupWork>> {
     let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
 
-    let sb = fs.super_block();
-
-    fs.super_block()
-        .work(FileLookupRequest::LookupNode { fs: (), file: (), name: () })
-    todo!()
+    fs.open(name)
 }
 
 pub fn read(
@@ -140,7 +152,7 @@ pub fn read(
 }
 
 pub fn write(
-    file_handle: FileId,
+    file_handle: usize,
     _source: *const u8,
     _count: usize,
 ) -> Result<object::RawHandle> {

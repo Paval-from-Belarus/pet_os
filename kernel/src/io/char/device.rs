@@ -1,10 +1,7 @@
-use kernel_types::{collections::LinkedList, drivers::Device};
+use kernel_types::drivers::Device;
 
 use crate::{
-    fs::{FileWork, IndexNodeItem},
-    memory::ProcessId,
-    object::Handle,
-    user::queue::Queue,
+    fs::FileWork, memory::ProcessId, object::Handle, user::queue::Queue,
 };
 
 //that's a
@@ -14,8 +11,6 @@ pub struct CharDevice {
     module: ProcessId,
     //to easily create IndexNode
     count: usize,
-    //the list of files opened on device
-    inodes: LinkedList<'static, IndexNodeItem>,
     //the count of minor devices uses the device
     // count: usize,
     // currently, there is no need in several minor devices for device;

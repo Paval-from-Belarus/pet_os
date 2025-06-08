@@ -1,9 +1,15 @@
 use kernel_types::fs::{FileLookupRequest, FileLookupResponse};
 
-use crate::{impl_work, object::Object};
+use crate::{
+    impl_work,
+    object::{Handle, Object},
+};
+
+use super::SuperBlock;
 
 pub struct FileLookupWork {
     pub request: FileLookupRequest,
+    pub sb: Handle<SuperBlock>,
     response: Option<FileLookupResponse>,
     object: Object,
 }
@@ -14,5 +20,6 @@ impl_work! {
     res: FileLookupResponse,
 
     obj_kind: FileLookupWork,
-    slab: "f_lup_work"
+    slab: "f_lup_work",
+    args: [sb: Handle<SuperBlock> ]
 }

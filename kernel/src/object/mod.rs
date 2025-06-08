@@ -18,7 +18,6 @@ pub struct AnyObject;
 #[repr(u8)]
 pub enum Kind {
     BlockDeviceWork,
-
     FsWork,
     FileLookupWork,
     FileWork,
@@ -26,7 +25,7 @@ pub enum Kind {
     IrqEvent,
 
     Queue,
-
+    SuperBlock,
     File,
     Mutex,
     //rendevouz oneshot channel
@@ -79,7 +78,7 @@ impl Object {
     }
 
     fn handle<T: ObjectContainer>(&self) -> Handle<T> {
-        unsafe { Handle::from_raw_unchecked(self.raw_handle()) }
+        unsafe { Handle::from_addr_unchecked(self.raw_handle()) }
     }
 
     fn raw_handle(&self) -> RawHandle {
@@ -94,9 +93,9 @@ pub trait ObjectContainer: Sized + Slab + 'static {
     fn object_mut(&mut self) -> &mut Object;
 
     fn new_object<T: ObjectContainer>(parent: &Handle<T>) -> Object {
-        assert!(runtime::lookup(parent.clone().into_raw()));
+        assert!(runtime::lookup(parent.clone().into_addr()));
 
-        Object::new_child(Self::KIND, parent.clone().into_raw())
+        Object::new_child(Self::KIND, parent.clone().into_addr())
     }
 
     fn new_root_object() -> Object {
@@ -119,14 +118,14 @@ pub fn alloc_root_object<T: ObjectContainer + Slab + 'static>(
 
     let raw_handle = runtime::register(leaked_object.object_mut());
 
-    unsafe { Ok(Handle::from_raw_unchecked(raw_handle)) }
+    unsafe { Ok(Handle::from_addr_unchecked(raw_handle)) }
 }
 
 pub fn dealloc_root_object<T: ObjectContainer>(handle: Handle<T>) {
     let handle_cloned = handle.clone();
 
-    let Some(object) = runtime::unregister(handle_cloned.into_raw()) else {
-        panic!("No root object for handle: {:X?}", handle.into_raw());
+    let Some(object) = runtime::unregister(handle_cloned.into_addr()) else {
+        panic!("No root object for handle: {:X?}", handle.into_addr());
     };
 
     let container =

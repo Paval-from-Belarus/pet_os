@@ -109,10 +109,10 @@ impl Module {
         let queue_handle = self.queue.clone();
 
         let (raw_handle, kind) = match queue_handle {
-            ModuleQueue::Fs(handle) => (handle.into_raw(), ModuleKind::Fs),
-            ModuleQueue::Char(handle) => (handle.into_raw(), ModuleKind::Char),
+            ModuleQueue::Fs(handle) => (handle.into_addr(), ModuleKind::Fs),
+            ModuleQueue::Char(handle) => (handle.into_addr(), ModuleKind::Char),
             ModuleQueue::Block(handle) => {
-                (handle.into_raw(), ModuleKind::Block)
+                (handle.into_addr(), ModuleKind::Block)
             }
         };
 

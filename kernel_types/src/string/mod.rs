@@ -20,6 +20,7 @@ impl<'a> QuickString<'a> {
         // let data = NonNull::from(data);
         Self { data, hash_code }
     }
+
     ///recalculate the HashCode via data
     pub fn rehash<T: FastHasher>(&mut self, state: &mut T) {
         self.data.hash(state);

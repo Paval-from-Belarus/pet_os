@@ -210,6 +210,23 @@ impl<'data, T: Sized + ListNodeData> LinkedList<'data, T> {
 
         self.last = raw_node.as_ptr();
     }
+
+    pub fn push_front<K: Into<&'data mut ListNode<T>>>(&mut self, node: K) {
+        let node = node.into();
+
+        let raw_node = NonNull::from(node);
+
+        unsafe {
+            if self.is_empty() {
+                self.first_link(raw_node);
+                return;
+            }
+
+            self.insert_after_last(raw_node);
+        }
+
+        self.first = raw_node.as_ptr();
+    }
     /// .
     ///
     /// # Safety

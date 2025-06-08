@@ -101,11 +101,11 @@ pub fn main() {
     task::submit_task(thread_3);
     task::submit_task(thread_4);
 
-    // let file = fs::open("/dev/vga").wait().unwrap().file().unwrap();
-    //
-    // fs::write(file_handle, source, count)
+    let file = fs::open("/dev/vga").expect("Failed to open");
 
-    //
+    let _file = fs::resolve(file).expect("Failed to resolve file");
+
+    // fs::write(file_handle, source, count)
     // user::exec("/usr/sbin/init");
     task::run();
 }

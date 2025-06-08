@@ -22,7 +22,7 @@ pub fn init() -> fs::Result<()> {
 
     let fs_task = task::new_task(
         fs_task,
-        queue.into_raw() as _,
+        queue.into_addr() as _,
         task::TaskPriority::Module(1),
     )
     .expect("Failed to spawn dev-fs task");
@@ -37,7 +37,7 @@ pub fn init() -> fs::Result<()> {
 extern "C" fn fs_task() {
     let raw_handle = unsafe { get_eax!() };
     let queue =
-        unsafe { Handle::<Queue<FsWork>>::from_raw_unchecked(raw_handle) };
+        unsafe { Handle::<Queue<FsWork>>::from_addr_unchecked(raw_handle) };
 
     loop {
         let Some(work) = queue.blocking_pop() else {

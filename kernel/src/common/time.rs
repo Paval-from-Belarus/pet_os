@@ -1,5 +1,6 @@
 use kernel_types::declare_constants;
 
+#[derive(Default)]
 pub struct Timestamp {
     secs: u64,
 }

@@ -1,18 +1,35 @@
 #![allow(unused)]
 
-use crate::fs::{File, IndexNode, MAX_FILES_COUNT};
+use crate::{
+    fs::{File, IndexNode, MAX_FILES_COUNT},
+    object::Handle,
+};
 
 #[derive(Default)]
 #[repr(C)]
 pub struct FilePool {
     opened_files_count: usize,
     //the next index of file
-    next_index: Option<usize>,
-    files: [Option<File>; MAX_FILES_COUNT],
+    next_index: usize,
+    files: [Option<Handle<IndexNode>>; MAX_FILES_COUNT],
 }
 
 impl FilePool {
-    pub fn get(&self, index: usize) -> Option<&'static IndexNode> {
-        todo!()
+    pub fn get(&self, index: usize) -> Option<&Handle<IndexNode>> {
+        self.files[index].as_ref()
+    }
+
+    pub fn set(&mut self, index: usize, handle: Handle<IndexNode>) {
+        self.files[index] = handle.into()
+    }
+
+    pub fn alloc_index(&mut self) -> Option<usize> {
+        (self.next_index < self.files.len()).then(|| {
+            let index = self.next_index;
+
+            self.next_index += 1;
+
+            index.into()
+        })
     }
 }

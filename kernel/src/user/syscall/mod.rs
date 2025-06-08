@@ -133,7 +133,7 @@ pub fn handle(
             unsafe { memory::switch_to_kernel() };
 
             let queue: Handle<Queue<AnyObject>> =
-                Handle::from_raw(ecx).unwrap();
+                Handle::from_addr(ecx).unwrap();
 
             match queue.kind() {
                 crate::object::Kind::BlockDeviceWork => unsafe {
@@ -177,32 +177,34 @@ pub fn handle(
 
             match kind {
                 crate::object::Kind::BlockDeviceWork => {
-                    let _ = Handle::<block::BlockWork>::from_raw_unchecked(
+                    let _ = Handle::<block::BlockWork>::from_addr_unchecked(
                         raw_handle,
                     );
                 }
                 crate::object::Kind::FsWork => {
-                    let _ = Handle::<FsWork>::from_raw_unchecked(raw_handle);
+                    let _ = Handle::<FsWork>::from_addr_unchecked(raw_handle);
                 }
                 crate::object::Kind::FileLookupWork => {
-                    let _ = Handle::<FileLookupWork>::from_raw_unchecked(
+                    let _ = Handle::<FileLookupWork>::from_addr_unchecked(
                         raw_handle,
                     );
                 }
                 crate::object::Kind::FileWork => {
-                    let _ = Handle::<FileWork>::from_raw_unchecked(raw_handle);
+                    let _ = Handle::<FileWork>::from_addr_unchecked(raw_handle);
                 }
                 crate::object::Kind::IrqEvent => {
-                    let _ = Handle::<IrqEvent>::from_raw_unchecked(raw_handle);
+                    let _ = Handle::<IrqEvent>::from_addr_unchecked(raw_handle);
                 }
                 crate::object::Kind::File => {
-                    let _ = Handle::<File>::from_raw_unchecked(raw_handle);
+                    let _ = Handle::<File>::from_addr_unchecked(raw_handle);
                 }
                 crate::object::Kind::Queue => {
-                    let _ = Handle::<Queue<AnyObject>>::from_raw_unchecked(
+                    let _ = Handle::<Queue<AnyObject>>::from_addr_unchecked(
                         raw_handle,
                     );
                 }
+
+                crate::object::Kind::SuperBlock => todo!(),
                 crate::object::Kind::Mutex => todo!(),
                 crate::object::Kind::Exchange => todo!(),
             }

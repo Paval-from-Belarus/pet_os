@@ -3,17 +3,22 @@ use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, LinkedList, ListNode},
     drivers::{DeviceId, DriverId},
-    fs::{FileLookupRequest, FileRequest, FileSystem, SuperBlockInfo},
+    fs::{
+        FileLookupRequest, FileRequest, FileSystem, FsId, IndexNodeInfo,
+        SuperBlockInfo,
+    },
 };
 
 use crate::{
-    fs,
-    memory::{self, slab_alloc, AllocError, SlabBox},
-    object::{self, Object, ObjectContainer},
+    fs, impl_container,
+    memory::{self, slab_alloc, AllocError, Slab, SlabBox},
+    object::{self, alloc_root_object, Handle, Object, ObjectContainer},
     user::queue::Queue,
 };
 
-use super::{File, FileLookupWork, FileWork, FsRequest, FsWork, MountPoint};
+use super::{
+    File, FileLookupWork, FileWork, FsRequest, FsWork, IndexNode, MountPoint,
+};
 
 #[derive(ListNode)]
 pub struct FileSystemItem {
@@ -56,42 +61,34 @@ impl FileSystemItem {
     }
 }
 
-#[derive(ListNode)]
 #[repr(C)]
 pub struct SuperBlock {
-    #[list_pivots]
-    node: ListNode<SuperBlock>,
-
-    pub files: LinkedList<'static, File>,
+    pub files: spin::Mutex<LinkedList<'static, Object>>,
     pub block_size: usize,
 
-    pub queue: object::Handle<Queue<FileLookupWork>>,
-}
-
-impl crate::memory::Slab for SuperBlock {
-    const NAME: &str = "super_ops";
+    queue: object::Handle<Queue<FileLookupWork>>,
+    object: Object,
 }
 
 impl SuperBlock {
-    pub fn new_boxed(
-        info: SuperBlockInfo,
-    ) -> Result<SlabBox<SuperBlock>, AllocError> {
+    pub fn new(info: SuperBlockInfo) -> Result<Handle<SuperBlock>, AllocError> {
         let queue = Queue::new_bounded(info.queue_size)?;
 
-        slab_alloc(SuperBlock {
+        alloc_root_object(Self {
             queue,
             block_size: info.block_size,
-            node: ListNode::empty(),
-
-            files: LinkedList::empty(),
+            files: spin::Mutex::new(LinkedList::empty()),
+            object: Self::new_root_object(),
         })
     }
 
-    pub fn work(
+    pub fn send_request(
         &self,
-        work: FileLookupRequest,
-    ) -> fs::Result<object::Handle<FileLookupWork>> {
-        let work = FileLookupWork::new_boxed(work, &self.queue)?;
+        req: FileLookupRequest,
+    ) -> fs::Result<Handle<FileLookupWork>> {
+        let sb_handle = self.handle();
+
+        let work = FileLookupWork::new_boxed(req, &self.queue, sb_handle)?;
 
         let handle = work.handle();
 
@@ -99,14 +96,28 @@ impl SuperBlock {
 
         Ok(handle)
     }
+
+    pub fn resolve(
+        &self,
+        inode: IndexNodeInfo,
+    ) -> fs::Result<Handle<IndexNode>> {
+        let inode = IndexNode::new(inode, &self.handle())?;
+
+        let handle = inode.handle();
+
+        let inode = unsafe { &mut *SlabBox::into_raw(inode) };
+
+        self.files
+            .try_lock()
+            .unwrap()
+            .push_front(inode.object_mut());
+
+        Ok(handle)
+    }
 }
 
-impl BoxedNode for SuperBlock {
-    type Target = SlabBox<SuperBlock>;
-
-    fn into_boxed(
-        node: &mut <SuperBlock as kernel_types::collections::TinyListNodeData>::Item,
-    ) -> Self::Target {
-        memory::into_boxed(node.into())
-    }
+impl_container! {
+    SuperBlock,
+    obj_kind: SuperBlock,
+    slab: "super_block"
 }
