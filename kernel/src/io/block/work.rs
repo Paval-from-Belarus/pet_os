@@ -5,16 +5,16 @@ use crate::{
     object::{self, ObjectContainer},
 };
 
-pub struct WorkObject {
+pub struct BlockWork {
     object: object::Object,
     pub request: Request,
 }
 
-impl ObjectContainer for WorkObject {
+impl ObjectContainer for BlockWork {
     const KIND: object::Kind = object::Kind::BlockDeviceWork;
 
     fn container_of(object: *mut object::Object) -> *mut Self {
-        container_of!(object, WorkObject, object)
+        container_of!(object, BlockWork, object)
     }
 
     fn object(&self) -> &object::Object {
@@ -26,6 +26,6 @@ impl ObjectContainer for WorkObject {
     }
 }
 
-impl Slab for WorkObject {
+impl Slab for BlockWork {
     const NAME: &str = "io_work";
 }

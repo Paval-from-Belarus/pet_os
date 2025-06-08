@@ -1,11 +1,11 @@
 #![allow(unused)]
 
-pub use error::*;
 pub use file::*;
 pub use file_work::*;
 pub use fs_work::*;
 pub use index_node::*;
-use kernel_types::fs::{FileSystem, FsOperation};
+use kernel_types::fs::{FileSystem, FsId, FsRequest};
+use kernel_types::object::RawHandle;
 pub use mount_point::*;
 pub use path::*;
 pub use super_block::*;
@@ -14,9 +14,9 @@ use kernel_types::declare_constants;
 use kernel_types::drivers::Device;
 
 use crate::current_task;
-use crate::object::{self};
+use crate::object::{self, Handle};
+use crate::user::queue::Queue;
 
-mod error;
 mod file;
 mod file_work;
 mod fs_work;
@@ -26,7 +26,27 @@ mod path;
 mod super_block;
 mod system_fs;
 
-use system_fs::{FileSystemId, SystemMountPoints};
+use system_fs::SystemMountPoints;
+
+pub type Result<T> = core::result::Result<T, FsError>;
+
+#[derive(Debug, thiserror_no_std::Error)]
+pub enum FsError {
+    #[error("Failed to alloc memory")]
+    AllocError(#[from] core::alloc::AllocError),
+
+    #[error("Out of memory: {0}")]
+    NoMemory(#[from] crate::memory::AllocError),
+
+    #[error("File is not found")]
+    NotFound,
+
+    #[error("Operation is not supported")]
+    NotSupported,
+
+    #[error("Invalid file handle")]
+    InvalidFileHandle,
+}
 
 declare_constants!(
     pub usize,
@@ -48,34 +68,56 @@ static FILE_SYSTEMS: SystemMountPoints = SystemMountPoints::new();
 
 pub fn init() {}
 
-pub fn register_fs(fs: FileSystem) -> Result<FileSystemId, ()> {
+pub fn register_fs(fs: FileSystem) -> Result<FsId> {
     let fs_id = FILE_SYSTEMS.register(fs)?;
 
     Ok(fs_id)
 }
 
-pub fn fs_queue(id: FileSystemId) -> Result<object::RawHandle, ()> {
-    match FILE_SYSTEMS.fs_queue(id) {
-        Some(h) => Ok(h),
-        None => Err(()),
-    }
+pub fn fs_queue(id: FsId) -> Option<Handle<Queue<FsWork>>> {
+    FILE_SYSTEMS.fs_queue(id)
 }
 
-pub fn unregister_fs(id: FileSystemId) -> Result<(), ()> {
+pub fn unregister_fs(id: FsId) -> Result<()> {
     FILE_SYSTEMS.unregister(id)
 }
 
-pub fn open<T: AsRef<str>>(path: T) -> object::RawHandle {
-    let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
+pub unsafe fn mount_dev_fs() -> Result<()> {
+    let work = FILE_SYSTEMS
+        .fs_by_name("dev-fs", move |fs| {
+            fs.send_request(FsRequest::Mount {
+                device: RawHandle::null(),
+            })
+        })
+        .expect("Failed to mount dev-fs");
 
-    fs.super_block().work(FsOperation::Open { name }).into_raw()
+    let sb_info = work.exchange().unwrap().super_block().unwrap();
+
+    let sb = SuperBlock::new_boxed(sb_info)?;
+
+    let mount_point = MountPoint::new_boxed(sb)?;
+
+    FILE_SYSTEMS.set_dev_fs(mount_point.into_node());
+
+    Ok(())
+}
+
+pub fn mount(path: &str, fs_name: &str, dev_name: &str) -> Result<()> {
+    FILE_SYSTEMS.fs_by_name(fs_name.as_ref(), |fs| Ok(()))?;
+
+    Ok(())
+}
+
+pub fn open<T: AsRef<str>>(path: T) -> object::Handle<FsWork> {
+    let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
+    todo!()
 }
 
 pub fn read(
     file_handle: usize,
     _dest: *mut u8,
     _count: usize,
-) -> Result<object::RawHandle, FsError> {
+) -> Result<object::Handle<FileWork>> {
     let Some(_file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
@@ -94,7 +136,7 @@ pub fn write(
     file_handle: usize,
     _source: *const u8,
     _count: usize,
-) -> Result<object::RawHandle, FsError> {
+) -> Result<object::RawHandle> {
     let Some(_file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
@@ -109,7 +151,7 @@ pub fn write(
     // Ok(op_handle.as_raw())
 }
 
-pub fn close(file_handle: usize) -> Result<object::RawHandle, FsError> {
+pub fn close(file_handle: usize) -> Result<object::RawHandle> {
     let Some(_file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };

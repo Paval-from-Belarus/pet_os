@@ -1,6 +1,6 @@
 use kernel_types::{
     drivers::UserModule,
-    fs::{FileOperation, FsOperation},
+    fs::{FileRequest, FsRequest},
     io::{
         block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, MemoryRemap,
     },
@@ -13,7 +13,7 @@ use crate::{
     fs::{File, FileWork, FsWork},
     io::{
         self,
-        block::{self, WorkObject},
+        block::{self, BlockWork},
         IrqEvent, IrqLine,
     },
     log_module,
@@ -137,7 +137,7 @@ pub fn handle(
 
             match queue.kind() {
                 crate::object::Kind::BlockDeviceWork => unsafe {
-                    blocking_pop(&queue, |work: WorkObject| {
+                    blocking_pop(&queue, |work: BlockWork| {
                         memory::switch_to_task(current_task!());
                         let ptr = edx as *mut block::Request;
                         *ptr = work.request;
@@ -146,15 +146,15 @@ pub fn handle(
                 crate::object::Kind::FsWork => unsafe {
                     blocking_pop(&queue, |work: FsWork| {
                         memory::switch_to_task(current_task!());
-                        let ptr = edx as *mut FsOperation;
-                        *ptr = work.op;
+                        let ptr = edx as *mut FsRequest;
+                        *ptr = work.request;
                     })?;
                 },
                 crate::object::Kind::FileWork => unsafe {
                     blocking_pop(&queue, |work: FileWork| {
                         memory::switch_to_task(current_task!());
-                        let ptr = edx as *mut FileOperation;
-                        *ptr = work.op;
+                        let ptr = edx as *mut FileRequest;
+                        *ptr = work.request;
                     })?;
                 },
                 crate::object::Kind::IrqEvent => unsafe {
@@ -177,7 +177,7 @@ pub fn handle(
 
             match kind {
                 crate::object::Kind::BlockDeviceWork => {
-                    let _ = Handle::<block::WorkObject>::from_raw_unchecked(
+                    let _ = Handle::<block::BlockWork>::from_raw_unchecked(
                         raw_handle,
                     );
                 }

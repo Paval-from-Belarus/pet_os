@@ -3,16 +3,17 @@ use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, LinkedList, ListNode},
     drivers::{DeviceId, DriverId},
-    fs::FileSystem,
+    fs::{FileRequest, FileSystem, SuperBlockInfo},
 };
 
 use crate::{
-    memory::{self, slab_alloc, SlabBox},
+    fs,
+    memory::{self, slab_alloc, AllocError, SlabBox},
     object::{self, ObjectContainer},
     user::queue::Queue,
 };
 
-use super::{File, FsWork, MountPoint, FsOperation};
+use super::{File, FileWork, FsRequest, FsWork, MountPoint};
 
 #[derive(ListNode)]
 pub struct FileSystemItem {
@@ -20,7 +21,7 @@ pub struct FileSystemItem {
     node: ListNode<FileSystemItem>,
     fs: Arc<FileSystem>,
     pub id: usize,
-    queue: object::Handle<Queue<FsWork>>,
+    pub queue: object::Handle<Queue<FsWork>>,
 }
 
 impl FileSystemItem {
@@ -40,6 +41,19 @@ impl FileSystemItem {
     pub fn queue(&self) -> object::Handle<Queue<FsWork>> {
         self.queue.clone()
     }
+
+    pub fn send_request(
+        &self,
+        request: FsRequest,
+    ) -> fs::Result<object::Handle<FsWork>> {
+        let work = FsWork::new_boxed(request, &self.queue)?;
+
+        let handle = work.handle();
+
+        self.queue.push(work);
+
+        Ok(handle)
+    }
 }
 
 #[derive(ListNode)]
@@ -47,19 +61,11 @@ impl FileSystemItem {
 pub struct SuperBlock {
     #[list_pivots]
     node: ListNode<SuperBlock>,
-    //to find context to switch
-    pub driver_id: DriverId,
-    pub device_id: DeviceId,
 
     pub files: LinkedList<'static, File>,
-    //mount points where fs for super block is placed
-    pub mounts: LinkedList<'static, MountPoint>,
-    //the size of elementary block in file system (for hard drive communication)
-    //consider to add block_size_bits
     pub block_size: usize,
-    pub file_system: Arc<FileSystem>,
 
-    pub queue: object::Handle<Queue<FsWork>>,
+    pub queue: object::Handle<Queue<FileWork>>,
 }
 
 impl crate::memory::Slab for SuperBlock {
@@ -68,37 +74,32 @@ impl crate::memory::Slab for SuperBlock {
 
 impl SuperBlock {
     pub fn new_boxed(
-        file_system: Arc<FileSystem>,
-        queue: object::Handle<Queue<FsWork>>,
-        device_id: u32,
-        driver_id: u16,
-    ) -> SlabBox<SuperBlock> {
+        info: SuperBlockInfo,
+    ) -> Result<SlabBox<SuperBlock>, AllocError> {
+        let queue = Queue::new_bounded(info.queue_size)?;
+
         slab_alloc(SuperBlock {
             queue,
+            block_size: info.block_size,
             node: ListNode::empty(),
-            device_id: DeviceId(device_id),
-            driver_id: DriverId::new(driver_id),
-            file_system,
 
             files: LinkedList::empty(),
-            mounts: LinkedList::empty(),
-            block_size: 512,
         })
-        .unwrap()
     }
 
-    pub fn work(&self, work: FsOperation) -> object::Handle<FsWork> {
+    pub fn work(
+        &self,
+        work: FileRequest,
+    ) -> fs::Result<object::Handle<FileWork>> {
         let queue = &self.queue;
 
-        let work = FsWork::new_boxed(work, queue);
+        let work = FileWork::new_boxed(work, queue)?;
 
         let handle = work.handle();
 
-        let leaked = unsafe { &mut *Box::into_raw(work) };
+        queue.push(work);
 
-        queue.push(leaked);
-
-        handle
+        Ok(handle)
     }
 }
 

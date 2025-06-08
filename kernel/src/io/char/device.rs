@@ -1,10 +1,11 @@
-use core::ptr::NonNull;
+use kernel_types::{collections::LinkedList, drivers::Device};
 
-use kernel_types::{
-    collections::LinkedList, drivers::Device, fs::FileOperations,
+use crate::{
+    fs::{FileWork, IndexNodeItem},
+    memory::ProcessId,
+    object::Handle,
+    user::queue::Queue,
 };
-
-use crate::{fs::IndexNodeItem, memory::ProcessId};
 
 //that's a
 pub struct CharDevice {
@@ -12,7 +13,6 @@ pub struct CharDevice {
     device: Device,
     module: ProcessId,
     //to easily create IndexNode
-    fs_ops: NonNull<FileOperations>,
     count: usize,
     //the list of files opened on device
     inodes: LinkedList<'static, IndexNodeItem>,
@@ -20,6 +20,7 @@ pub struct CharDevice {
     // count: usize,
     // currently, there is no need in several minor devices for device;
     // therefore, for the CharDevice only on IndexNode exists
+    pub queue: Handle<Queue<FileWork>>,
 }
 
 impl CharDevice {}

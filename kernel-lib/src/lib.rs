@@ -66,7 +66,7 @@ macro_rules! module {
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum ModuleError {
     #[error("Io Op failed: {0}")]
-    Io(#[from] io::Error),
+    Io(#[from] io::IoError),
 
     #[error("Fs Op failed: {0}")]
     Fs(#[from] fs::FsError),

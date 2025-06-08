@@ -4,16 +4,19 @@ use core::{
 };
 
 use alloc::{boxed::Box, string::ToString};
-use kernel_types::{collections::LinkedList, fs::FileSystem};
+use kernel_types::{
+    collections::{LinkedList, ListNode},
+    fs::{FileSystem, FsId},
+};
+
+use crate::{fs, user::queue::Queue};
 
 use crate::{
     common::{atomics::SpinLock, SpinBox},
-    object,
+    object::{self, Handle},
 };
 
-use super::{FileSystemItem, MountPoint};
-
-pub type FileSystemId = usize;
+use super::{FileSystemItem, FsError, FsWork, MountPoint};
 
 pub struct SystemMountPoints {
     mounts: UnsafeCell<LinkedList<'static, MountPoint>>,
@@ -39,9 +42,9 @@ impl SystemMountPoints {
         }
     }
 
-    pub fn register(&self, fs: FileSystem) -> Result<usize, ()> {
+    pub fn register(&self, fs: FileSystem) -> fs::Result<usize> {
         let Ok(fs) = Box::try_new(FileSystemItem::new(fs)) else {
-            return Err(());
+            return Err(FsError::NotFound);
         };
 
         let id = self.fs_id.fetch_add(1, Ordering::SeqCst);
@@ -54,8 +57,8 @@ impl SystemMountPoints {
         Ok(id)
     }
 
-    pub fn unregister(&self, _id: FileSystemId) -> Result<(), ()> {
-        Ok(())
+    pub fn unregister(&self, _id: FsId) -> fs::Result<()> {
+        todo!()
     }
 
     pub unsafe fn set_root_fs(&self, fs: &'static mut MountPoint) {
@@ -69,6 +72,28 @@ impl SystemMountPoints {
         self.mounts_lock.release();
     }
 
+    pub unsafe fn set_dev_fs(&self, fs: &'static mut ListNode<MountPoint>) {
+        todo!()
+    }
+
+    pub fn fs_by_name<F, T>(&self, name: &str, mut action: F) -> fs::Result<T>
+    where
+        F: FnMut(&FileSystemItem) -> fs::Result<T>,
+    {
+        let maybe_fs =
+            self.fs.read().iter().find(|item| item.fs().name.eq(name));
+
+        let Some(fs) = maybe_fs else {
+            return Err(FsError::NotFound);
+        };
+
+        action(fs)
+    }
+
+    pub fn dev_fs(&self) -> SpinBox<'_, &FileSystemItem> {
+        todo!()
+    }
+
     pub fn root_fs(&self) -> SpinBox<'_, &MountPoint> {
         self.mounts_lock.acquire();
 
@@ -78,12 +103,12 @@ impl SystemMountPoints {
         SpinBox::new_locked(&self.mounts_lock, root_fs)
     }
 
-    pub fn fs_queue(&self, id: FileSystemId) -> Option<object::RawHandle> {
+    pub fn fs_queue(&self, id: FsId) -> Option<Handle<Queue<FsWork>>> {
         self.fs
             .read()
             .iter()
             .find(|fs| fs.id == id)
-            .map(|fs| fs.queue().into_raw())
+            .map(|fs| fs.queue())
     }
 
     pub fn lookup_fs<PATH: AsRef<str>>(

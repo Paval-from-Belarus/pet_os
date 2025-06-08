@@ -1,5 +1,3 @@
-use crate::syscall::SyscallError;
-
 #[derive(Debug, Clone)]
 pub enum MemoryOperation {
     Write {},
@@ -99,17 +97,4 @@ impl KernelBufMut {
     pub fn remaining_capacity(&self) -> usize {
         self.size
     }
-}
-
-//какие типы операций могут быть:
-//из одного куска памяти в другой (memcopy)
-//из порта в какой-то один кусок памяти (один раз)
-//из порта в какой-то кусок памяти (много раз), увеличение буфера
-
-#[derive(Debug, thiserror_no_std::Error)]
-pub enum Error {
-    #[error("Not Supported Operation")]
-    NotSupported,
-    #[error("Syscall is failed")]
-    SyscallFailed(#[from] SyscallError),
 }

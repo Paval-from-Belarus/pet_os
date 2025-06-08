@@ -71,7 +71,7 @@ pub struct Module {
 pub enum ModuleQueue {
     Fs(Handle<Queue<FsWork>>),
     Char(Handle<Queue<FileWork>>),
-    Block(Handle<Queue<block::WorkObject>>),
+    Block(Handle<Queue<block::BlockWork>>),
 }
 
 impl Module {

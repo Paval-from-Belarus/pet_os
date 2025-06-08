@@ -2,5 +2,5 @@
 mod device;
 mod work;
 
-pub use kernel_types::io::block::{Operations, Request};
-pub use work::WorkObject;
+pub use kernel_types::io::block::Request;
+pub use work::BlockWork;

@@ -60,7 +60,9 @@ where
         })
     }
 
-    pub fn push(&self, data: &'static mut T) {
+    pub fn push(&self, data: SlabBox<T>) {
+        let data = unsafe { &mut *SlabBox::into_raw(data) };
+
         self.lock.acquire();
 
         {

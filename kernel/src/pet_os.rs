@@ -100,6 +100,8 @@ pub fn main() {
     task::submit_task(thread_2);
     task::submit_task(thread_3);
     task::submit_task(thread_4);
+
+    fs::open("/dev/vga");
     //
     // user::exec("/usr/sbin/init");
     task::run();

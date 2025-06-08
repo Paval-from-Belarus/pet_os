@@ -1,22 +1,68 @@
-use alloc::string::String;
+use crate::{
+    object::{OperationStatus, RawHandle},
+    string::QuickString,
+};
 
-use super::FileId;
+use super::{IndexNodeInfo, SuperBlockInfo};
 
-pub enum FsOperation {
-    Open {
-        name: String,
+pub enum FsRequest {
+    Mount {
+        device: RawHandle,
     },
-    Close {
-        file: FileId,
+
+    Unmount {
+        fs: RawHandle,
     },
-    Read {
-        file: FileId,
-        buffer: *mut u8,
-        count: usize,
+
+    LookupNode {
+        fs: RawHandle,
+        file: RawHandle,
+        name: QuickString<'static>,
     },
-    Write {
-        file: FileId,
-        buffer: *const u8,
-        count: usize,
+
+    CreateFile {
+        fs: RawHandle,
+        file: RawHandle,
+        name: QuickString<'static>,
     },
+
+    CreateDirectory {
+        fs: RawHandle,
+        file: RawHandle,
+        name: QuickString<'static>,
+    },
+
+    FlushNode {
+        fs: RawHandle,
+        file: RawHandle,
+    },
+
+    DestroyNode {
+        fs: RawHandle,
+        file: RawHandle,
+    },
+}
+
+pub enum FsResponse {
+    SuperBlock(SuperBlockInfo),
+    IndexNode(IndexNodeInfo),
+    Status(OperationStatus),
+}
+
+impl FsResponse {
+    pub fn super_block(self) -> Result<SuperBlockInfo, OperationStatus> {
+        match self {
+            FsResponse::SuperBlock(block) => Ok(block),
+            FsResponse::Status(status) => Err(status),
+            FsResponse::IndexNode(_) => Err(OperationStatus::InvalidResponse),
+        }
+    }
+
+    pub fn index_node(self) -> Result<IndexNodeInfo, OperationStatus> {
+        match self {
+            FsResponse::IndexNode(node) => Ok(node),
+            FsResponse::Status(status) => Err(status),
+            FsResponse::SuperBlock(_) => Err(OperationStatus::InvalidResponse),
+        }
+    }
 }

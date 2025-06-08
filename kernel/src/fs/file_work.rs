@@ -1,13 +1,37 @@
-use kernel_types::{container_of, fs::FileOperation};
+use kernel_types::{
+    container_of,
+    fs::{FileRequest, FileResponse},
+};
 
 use crate::{
-    memory::Slab,
-    object::{self, Object, ObjectContainer},
+    memory::{slab_alloc, AllocError, Slab, SlabBox},
+    object::{self, Handle, Object, ObjectContainer},
+    user::queue::Queue,
 };
 
 pub struct FileWork {
-    pub op: FileOperation,
+    pub request: FileRequest,
+    pub response: Option<FileResponse>,
     object: Object,
+}
+
+impl FileWork {
+    pub fn new_boxed(
+        request: FileRequest,
+        parent: &Handle<Queue<FileWork>>,
+    ) -> Result<SlabBox<Self>, AllocError> {
+        slab_alloc(Self {
+            request,
+            response: None,
+            object: Self::new_object(parent),
+        })
+    }
+}
+
+impl FileWork {
+    pub fn exchange(&self) -> Option<FileResponse> {
+        todo!()
+    }
 }
 
 impl Slab for FileWork {

@@ -1,6 +1,6 @@
 use core::{ptr::NonNull, sync::atomic::AtomicUsize};
 
-use kernel_types::{bitflags, collections::ListNode, fs::FileOperations};
+use kernel_types::{bitflags, collections::ListNode};
 
 use crate::{
     memory::Slab,
@@ -80,9 +80,6 @@ pub struct File {
     pub mode: FileOpenMode,
     #[list_pivots]
     node: ListNode<File>,
-    //copy of the IndexNode file operations
-    operations: NonNull<FileOperations>,
-    //the pointer to private data used, eg, by device driver
     data: *mut (),
     use_count: AtomicUsize,
     object: Object,

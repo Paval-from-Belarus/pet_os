@@ -1,7 +1,4 @@
-mod device;
-
-use crate::io::{Error, KernelBuf, KernelBufMut};
-pub use device::*;
+use crate::io::{KernelBuf, KernelBufMut};
 
 #[derive(Debug)]
 pub enum Work {
@@ -30,14 +27,4 @@ pub struct BlockDeviceInfo {
     pub sector_size: usize,
     //deseriable queue size
     pub queue_size: usize,
-}
-
-//todo: handle hardware and software request
-//separately
-#[derive(Debug, Clone)]
-pub struct Operations {
-    pub open: fn(),
-    pub close: fn(),
-    pub ioctl: fn(),
-    pub request: fn(Request) -> Result<(), Error>,
 }

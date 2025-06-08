@@ -2,36 +2,38 @@ use core::mem::MaybeUninit;
 
 use kernel_types::{
     drivers::{ModuleKind, UserModule},
-    fs::{
-        self, FileOperation, FileOperations, FsOperation, SuperBlockOperations,
-    },
+    fs::{FileRequest, FsRequest},
     io::block,
     object::Queue,
     syscall,
 };
 
-use crate::process;
+use crate::{
+    fs::{FileOperations, FsError, SuperBlockOperations},
+    io::block::Operations,
+    process,
+};
 
 pub enum ModuleOperations {
-    Block(block::Operations),
-    Fs(fs::SuperBlockOperations),
-    Char(fs::FileOperations),
+    Block(Operations),
+    Fs(SuperBlockOperations),
+    Char(FileOperations),
 }
 
-impl From<fs::FileOperations> for ModuleOperations {
-    fn from(value: fs::FileOperations) -> Self {
+impl From<FileOperations> for ModuleOperations {
+    fn from(value: FileOperations) -> Self {
         Self::Char(value)
     }
 }
 
-impl From<block::Operations> for ModuleOperations {
-    fn from(value: block::Operations) -> Self {
+impl From<Operations> for ModuleOperations {
+    fn from(value: Operations) -> Self {
         Self::Block(value)
     }
 }
 
-impl From<fs::SuperBlockOperations> for ModuleOperations {
-    fn from(value: fs::SuperBlockOperations) -> Self {
+impl From<SuperBlockOperations> for ModuleOperations {
+    fn from(value: SuperBlockOperations) -> Self {
         Self::Fs(value)
     }
 }
@@ -87,10 +89,10 @@ pub fn module_task(ops: ModuleOperations) -> ! {
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum HandleError {
     #[error("Fs operation is failed: {0}")]
-    FsError(#[from] fs::FsError),
+    FsError(#[from] FsError),
 }
 
-pub fn handle_char_module(queue: Queue<FileOperation>, _ops: FileOperations) {
+pub fn handle_char_module(queue: Queue<FileRequest>, _ops: FileOperations) {
     loop {
         let Some(_) = queue.blocking_recv() else {
             break;
@@ -104,7 +106,7 @@ pub fn handle_char_module(queue: Queue<FileOperation>, _ops: FileOperations) {
     }
 }
 
-pub fn handle_fs_module(queue: Queue<FsOperation>, _ops: SuperBlockOperations) {
+pub fn handle_fs_module(queue: Queue<FsRequest>, _ops: SuperBlockOperations) {
     loop {
         let Some(_op) = queue.blocking_recv() else {
             break;
@@ -112,10 +114,7 @@ pub fn handle_fs_module(queue: Queue<FsOperation>, _ops: SuperBlockOperations) {
     }
 }
 
-pub fn handle_block_module(
-    queue: Queue<block::Request>,
-    _ops: block::Operations,
-) {
+pub fn handle_block_module(queue: Queue<block::Request>, _ops: Operations) {
     loop {
         let Some(_request) = queue.blocking_recv() else {
             break;

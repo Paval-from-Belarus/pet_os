@@ -10,6 +10,17 @@ pub fn register_module(device: CharModuleInfo) -> syscall::Result<()> {
     }
 }
 
+//same as file operations
+#[derive(Debug, Clone)]
+pub struct Operations {
+    // pub open: fn(Handle<IndexNode>, Handle<File>),
+    // //performs read operation for file
+    // //blocks until not complete reading whole buffer
+    // pub read: fn(Handle<File>, UserBufMut) -> Result<(), Error>,
+    // //performs read operation for file
+    // pub write: fn(Handle<File>, UserBuf) -> Result<(), Error>,
+}
+
 // Нерешённые задачи:
 //  1. Как вернуть ответ пользователю
 //  2. Как предотвратить исполнение?

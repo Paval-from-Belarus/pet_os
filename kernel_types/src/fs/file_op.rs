@@ -1,21 +1,14 @@
 use crate::{
     io::{KernelBuf, KernelBufMut},
-    object::Handle,
+    object::{OperationStatus, RawHandle},
 };
 
-use super::File;
+pub enum FileRequest {
+    Command { file: RawHandle, command: usize },
+    Read { file: RawHandle, buf: KernelBufMut },
+    Write { file: RawHandle, buf: KernelBuf },
+}
 
-pub enum FileOperation {
-    Command {
-        file: Handle<File>,
-        command: usize,
-    },
-    Read {
-        file: Handle<File>,
-        buf: KernelBufMut,
-    },
-    Write {
-        file: Handle<File>,
-        buf: KernelBuf,
-    },
+pub enum FileResponse {
+    Status(OperationStatus),
 }

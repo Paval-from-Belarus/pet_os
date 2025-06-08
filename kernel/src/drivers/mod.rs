@@ -1,5 +1,5 @@
-use crate::common::atomics::UnsafeLazyCell;
 use crate::current_task;
+use crate::{common::atomics::UnsafeLazyCell, fs};
 use alloc::sync::Arc;
 use kernel_types::collections::LinkedList;
 pub use kernel_types::drivers::ModuleId;
@@ -7,6 +7,7 @@ use kernel_types::drivers::{DeviceId, DriverId, ModuleKind};
 
 pub mod api;
 mod auto_load;
+mod dev_fs;
 mod error;
 mod generated;
 mod loader;
@@ -14,12 +15,6 @@ mod module_info;
 
 pub use error::*;
 pub use module_info::*;
-
-// mod disk;
-// mod keyboard;
-// mod memory;
-// mod network;
-// mod vga;
 
 use generated::STATIC_DRIVERS;
 
@@ -109,6 +104,8 @@ pub fn init() {
     MODULES.set(ModuleManager::from_modules(LinkedList::empty()));
 
     auto_load::spawn_task().expect("Failed to init autoload task");
+
+    dev_fs::init().expect("Failed to init dev fs");
 }
 
 // extern "Rust" {

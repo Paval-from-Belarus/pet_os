@@ -1,26 +1,37 @@
-use alloc::boxed::Box;
-use kernel_types::{container_of, fs::FsOperation};
+use kernel_types::{
+    container_of,
+    fs::{FsRequest, FsResponse},
+};
 
 use crate::{
-    memory::Slab,
+    memory::{slab_alloc, AllocError, Slab, SlabBox},
     object::{self, Object, ObjectContainer},
     user::queue::Queue,
 };
 
 //handle is the address of object
 pub struct FsWork {
-    pub op: FsOperation,
+    pub request: FsRequest,
+    pub response: Option<FsResponse>,
     object: Object,
 }
 
 impl FsWork {
     pub fn new_boxed(
-        work: FsOperation,
+        request: FsRequest,
         parent: &object::Handle<Queue<FsWork>>,
-    ) -> Box<Self> {
+    ) -> Result<SlabBox<Self>, AllocError> {
         let object = Self::new_object(parent);
 
-        Box::new(Self { op: work, object })
+        slab_alloc(Self {
+            request,
+            response: None,
+            object,
+        })
+    }
+
+    pub fn exchange(&self) -> Option<FsResponse> {
+        todo!()
     }
 }
 

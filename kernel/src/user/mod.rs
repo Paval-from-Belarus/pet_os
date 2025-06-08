@@ -1,5 +1,4 @@
 pub mod channel;
-mod exchange;
 pub mod queue;
 pub mod syscall;
 

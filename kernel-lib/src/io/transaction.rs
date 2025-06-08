@@ -1,7 +1,9 @@
 use kernel_types::{
-    io::{self, IoOperation, KernelBufMut, PortOperation, UserBufMut},
+    io::{IoOperation, KernelBufMut, PortOperation, UserBufMut},
     syscall,
 };
+
+use crate::io;
 
 #[repr(C)]
 #[must_use]

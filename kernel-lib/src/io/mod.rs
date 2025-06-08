@@ -1,14 +1,18 @@
 pub mod block;
 pub mod char;
+mod error;
 pub mod spin;
 mod transaction;
 
 pub use kernel_types::io::op::*;
 use kernel_types::io::MemoryRemap;
-pub use kernel_types::io::Result;
 use kernel_types::syscall;
 use kernel_types::syscall::Request;
 pub use transaction::*;
+
+pub use error::*;
+
+pub type Result<T> = core::result::Result<T, IoError>;
 
 #[repr(C)]
 pub struct FileOperations {

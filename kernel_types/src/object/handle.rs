@@ -1,12 +1,6 @@
-use core::marker::PhantomData;
-
 use crate::syscall;
 
 pub trait KernelObject: From<RawHandle> {}
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct Handle<T: KernelObject>(RawHandle, PhantomData<T>);
 
 impl RawHandle {
     /// .
@@ -28,11 +22,15 @@ impl RawHandle {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
 pub struct RawHandle(usize);
 
 impl RawHandle {
+    pub const fn null() -> Self {
+        Self(0)
+    }
+
     /// Returns the syscall of this [`RawHandle`].
     ///
     /// # Safety
@@ -47,6 +45,10 @@ impl RawHandle {
 impl Drop for RawHandle {
     fn drop(&mut self) {
         let handle = self.0;
+
+        if handle == 0 {
+            return;
+        }
 
         unsafe {
             let _ = syscall!(

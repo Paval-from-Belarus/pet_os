@@ -1,11 +1,11 @@
 use kernel_types::{
-    fs::{FileOperation, FsOperation},
+    fs::{FileRequest, FsRequest},
     io::block,
-    object::{Handle, Queue},
+    object::Queue,
 };
 
 pub enum ModuleQueue {
-    Fs(Handle<Queue<FsOperation>>),
-    Char(Handle<Queue<FileOperation>>),
-    Block(Handle<Queue<block::Request>>),
+    Fs(Queue<FsRequest>),
+    Char(Queue<FileRequest>),
+    Block(Queue<block::Request>),
 }
