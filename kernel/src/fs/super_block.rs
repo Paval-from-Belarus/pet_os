@@ -66,7 +66,7 @@ pub struct SuperBlock {
     pub files: spin::Mutex<LinkedList<'static, Object>>,
     pub block_size: usize,
 
-    queue: object::Handle<Queue<FileLookupWork>>,
+    pub queue: object::Handle<Queue<FileLookupWork>>,
     object: Object,
 }
 

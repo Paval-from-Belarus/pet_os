@@ -9,7 +9,6 @@ use super::IndexNodeInfo;
 
 pub enum FileLookupRequest {
     LookupNode {
-        fs: RawHandle,
         name: alloc::string::String,
     },
 
@@ -39,6 +38,7 @@ pub enum FileLookupResponse {
 }
 
 from_variant!(FileLookupResponse, IndexNodeInfo);
+from_variant!(FileLookupResponse, OpStatus);
 
 impl FileLookupResponse {
     pub fn inode(self) -> Result<IndexNodeInfo, OpStatus> {

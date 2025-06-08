@@ -1,5 +1,3 @@
-use crate::object::RawHandle;
-
 use super::NodeId;
 
 #[repr(C)]
@@ -7,7 +5,6 @@ pub struct IndexNodeInfo {
     pub queue_size: usize,
 
     pub id: NodeId,
-    pub super_block: RawHandle,
     pub size: usize,
     pub kind: NodeKind,
     pub permissions: FilePermissions,
@@ -23,8 +20,10 @@ bitflags::bitflags! {
     #[derive(Debug, Clone, Copy)]
     #[repr(C)]
     pub struct FilePermissions: u8 {
-        const EXECUTABLE = 0x01;
-        const WRITABLE = 0x02;
-        const READABLE = 0x04;
+        const EXEC = 0x01;
+        const WRITE = 0x02;
+        const READ = 0x04;
+
+        const READ_WRITE = Self::READ.bits() | Self::WRITE.bits();
     }
 }

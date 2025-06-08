@@ -10,12 +10,21 @@ use crate::{
     common::atomics::SpinLock,
     memory::{AllocError, Slab, SlabBox},
     object::{Handle, Object, ObjectContainer},
+    user::queue::Queue,
 };
 
 use super::{File, FileLookupWork, FileSystemItem, Result, SuperBlock};
 
 pub struct MountPointBox {
     mount_point: SlabBox<MountPoint>,
+}
+
+impl core::ops::Deref for MountPointBox {
+    type Target = MountPoint;
+
+    fn deref(&self) -> &Self::Target {
+        &self.mount_point
+    }
 }
 
 #[derive(ListNode)]
@@ -51,13 +60,15 @@ impl MountPoint {
         Ok(MountPointBox { mount_point })
     }
 
+    pub fn queue(&self) -> Handle<Queue<FileLookupWork>> {
+        self.sb.queue.clone()
+    }
+
     pub fn open(
         &self,
-        name: alloc::string::String
+        name: alloc::string::String,
     ) -> Result<Handle<FileLookupWork>> {
-        let fs = self.sb.clone().into_raw();
-
-        let req = FileLookupRequest::LookupNode { fs, name };
+        let req = FileLookupRequest::LookupNode { name };
 
         self.sb.send_request(req)
     }

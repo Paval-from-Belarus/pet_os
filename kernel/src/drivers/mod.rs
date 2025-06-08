@@ -40,6 +40,15 @@ impl ModuleManager {
             .map(|item| item.state.clone())
     }
 
+    pub fn find_module_by_name(&self, name: &str) -> Option<Arc<Module>> {
+        self.modules
+            .try_lock()
+            .unwrap()
+            .iter()
+            .find(|item| item.state.name.eq(name))
+            .map(|item| item.state.clone())
+    }
+
     pub fn add_module(&self, module: Module) -> Result<(), ModuleError> {
         let item = ModuleItem::new_boxed(module)?;
 
@@ -57,6 +66,10 @@ impl ModuleManager {
 
         Ok(())
     }
+}
+
+pub fn find_by_name<T: AsRef<str>>(name: T) -> Option<Arc<Module>> {
+    MODULES.get().find_module_by_name(name.as_ref())
 }
 
 pub fn current_module() -> Option<Arc<Module>> {

@@ -95,6 +95,16 @@ pub unsafe fn mount_dev_fs() -> Result<()> {
 
     let mount_point = MountPoint::new_boxed(sb_info)?;
 
+    let queue = mount_point.queue().into_raw();
+
+    let work = FILE_SYSTEMS
+        .fs_by_name("dev-fs", |fs| {
+            fs.send_request(FsRequest::FsQueue { queue })
+        })
+        .unwrap();
+
+    work.wait().unwrap().status().unwrap();
+
     FILE_SYSTEMS.set_dev_fs(mount_point.into_node());
 
     Ok(())

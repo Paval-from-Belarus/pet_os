@@ -9,11 +9,14 @@ pub enum FsRequest {
     Mount { device: RawHandle },
     //super_block
     Unmount { fs: RawHandle },
+
+    FsQueue { queue: RawHandle },
 }
 
 pub enum FsResponse {
     SuperBlockInfo(SuperBlockInfo),
     OpStatus(OpStatus),
+    Completed,
 }
 
 from_variant!(FsResponse, SuperBlockInfo);
@@ -24,6 +27,15 @@ impl FsResponse {
         match self {
             FsResponse::SuperBlockInfo(block) => Ok(block),
             FsResponse::OpStatus(status) => Err(status),
+            FsResponse::Completed => Err(OpStatus::InvalidResponse),
+        }
+    }
+
+    pub fn status(self) -> Result<(), OpStatus> {
+        match self {
+            FsResponse::SuperBlockInfo(_) => Err(OpStatus::InvalidResponse),
+            FsResponse::OpStatus(status) => Err(status),
+            FsResponse::Completed => Ok(()),
         }
     }
 }

@@ -1,3 +1,5 @@
+use core::mem::ManuallyDrop;
+
 use crate::syscall;
 
 pub trait KernelObject: From<RawHandle> {}
@@ -19,6 +21,20 @@ impl RawHandle {
     /// .
     pub unsafe fn cast<T: KernelObject>(self) -> T {
         self.into()
+    }
+
+    /// This method leak underlying address
+    /// preventing syscall to be call
+    ///
+    /// # Safety
+    ///
+    /// .
+    pub unsafe fn leak(self) -> usize {
+        let addr = self.0;
+
+        let _ = ManuallyDrop::new(self);
+
+        addr
     }
 }
 
@@ -49,6 +65,8 @@ impl Drop for RawHandle {
         if handle == 0 {
             return;
         }
+
+        log::debug!("Syscall to release handle");
 
         unsafe {
             let _ = syscall!(

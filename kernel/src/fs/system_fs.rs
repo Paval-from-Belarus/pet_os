@@ -78,7 +78,7 @@ impl SystemMountPoints {
 
     pub fn fs_by_name<F, T>(&self, name: &str, mut action: F) -> fs::Result<T>
     where
-        F: FnMut(&FileSystemItem) -> fs::Result<T>,
+        F: FnOnce(&FileSystemItem) -> fs::Result<T>,
     {
         let maybe_fs =
             self.fs.read().iter().find(|item| item.fs().name.eq(name));

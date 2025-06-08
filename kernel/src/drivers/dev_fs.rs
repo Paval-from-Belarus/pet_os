@@ -1,10 +1,16 @@
 use kernel_types::{
-    fs::{FileSystem, FileSystemKind, FsRequest, SuperBlockInfo},
+    drivers::ModuleKind,
+    fs::{
+        FileLookupRequest, FilePermissions, FileSystem, FileSystemKind,
+        FsRequest, IndexNodeInfo, NodeKind, SuperBlockInfo,
+    },
     get_eax,
+    object::OpStatus,
 };
 
 use crate::{
-    fs::{self, FsWork},
+    drivers,
+    fs::{self, FileLookupWork, FsWork},
     object::Handle,
     task,
     user::queue::Queue,
@@ -55,8 +61,58 @@ extern "C" fn fs_task() {
                 work.send_response(sb_info.into());
             }
             FsRequest::Unmount { .. } => todo!(),
+            FsRequest::FsQueue { queue } => {
+                let arg = unsafe { queue.leak() as _ };
+                task::new_task(sb_task, arg, task::TaskPriority::Module(0));
+            }
         }
     }
 
     log::info!("Dev fs task is completed...");
+}
+
+extern "C" fn sb_task() {
+    let raw_handle = unsafe { get_eax!() };
+    let queue = unsafe {
+        Handle::<Queue<FileLookupWork>>::from_addr_unchecked(raw_handle)
+    };
+
+    loop {
+        let Some(work) = queue.blocking_pop() else {
+            break;
+        };
+
+        match &work.request {
+            FileLookupRequest::LookupNode { name } => {
+                if let Some(module) = drivers::find_by_name(name) {
+                    let node_kind = match module.kind() {
+                        ModuleKind::Fs => {
+                            work.send_response(OpStatus::NotFound.into());
+                            continue;
+                        }
+
+                        ModuleKind::Char => NodeKind::Char,
+                        ModuleKind::Block => NodeKind::Block,
+                    };
+
+                    let inode_info = IndexNodeInfo {
+                        id: module.id as _,
+                        size: 0,
+                        kind: node_kind,
+                        queue_size: 10,
+                        permissions: FilePermissions::READ_WRITE,
+                    };
+
+                    work.send_response(inode_info.into());
+                } else {
+                    work.send_response(OpStatus::NotFound.into());
+                }
+            }
+
+            FileLookupRequest::FlushNode { .. } => todo!(),
+            FileLookupRequest::DestroyNode { .. } => todo!(),
+            FileLookupRequest::CreateFile { .. } => todo!(),
+            FileLookupRequest::CreateDirectory { .. } => todo!(),
+        }
+    }
 }

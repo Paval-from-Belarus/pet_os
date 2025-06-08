@@ -46,7 +46,6 @@ impl IndexNode {
         let IndexNodeInfo {
             queue_size,
             id,
-            super_block,
             size,
             kind,
             permissions,

@@ -67,6 +67,16 @@ pub struct Module {
     pub queue: ModuleQueue,
 }
 
+impl Module {
+    pub fn kind(&self) -> ModuleKind {
+        match self.queue {
+            ModuleQueue::Fs(_) => ModuleKind::Fs,
+            ModuleQueue::Char(_) => ModuleKind::Char,
+            ModuleQueue::Block(_) => ModuleKind::Block,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum ModuleQueue {
     Fs(Handle<Queue<FsWork>>),
