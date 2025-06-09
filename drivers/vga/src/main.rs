@@ -5,8 +5,7 @@ use core::mem::MaybeUninit;
 
 use kernel_lib::{
     fs::{self, not_supported_read, File, FileOperations},
-    io::{self, char::register_module, IoTransaction, KernelBuf, KernelBufMut},
-    object::Handle,
+    io::{self, char::register_module, IoTransaction, KernelBuf},
     KernelModule, ModuleError, ModuleOperations,
 };
 
@@ -125,7 +124,7 @@ impl VgaWriter {
     }
 }
 
-pub fn write(_file: Handle<File>, _buf: KernelBuf) -> fs::Result<()> {
+pub fn write(_file: File, _buf: KernelBuf) -> fs::Result<()> {
     Ok(())
 }
 

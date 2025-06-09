@@ -5,7 +5,7 @@ use crate::{impl_work, object::Object};
 //handle is the address of object
 pub struct FsWork {
     pub request: FsRequest,
-    response: Option<FsResponse>,
+    response: spin::Mutex<Option<FsResponse>>,
     object: Object,
 }
 

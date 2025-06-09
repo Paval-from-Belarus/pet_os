@@ -56,14 +56,10 @@ unsafe impl<T: Sized + Send> Send for Mutex<T> {}
 
 impl<T: Sized> Mutex<T> {
     pub fn new(value: T) -> Result<Mutex<T>, AllocError> {
-        log::debug!("Allocatig new mutex");
-
         let mutex = object::alloc_root_object(MutexObject {
             object: MutexObject::new_root_object(),
             locked: AtomicBool::new(false),
         })?;
-
-        log::debug!("New mutex: {mutex:?}");
 
         Ok(Self {
             mutex,

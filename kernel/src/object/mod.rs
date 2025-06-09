@@ -40,20 +40,21 @@ pub struct Object {
     pub parent: Option<RawHandle>,
 
     pub kind: Kind,
-    pub status: Status,
+    pub status: AtomicStatus,
 
     pub ref_count: AtomicU16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[atomic_enum::atomic_enum]
+#[derive(PartialEq, Eq)]
 #[repr(u8)]
 pub enum Status {
     //the corresponding operation is ready
-    Completed,
+    Completed = 1,
     //the operation when no block is performed
-    Working,
+    Working = 2,
     //the
-    Blocked,
+    Blocked = 3,
 }
 
 impl Object {
@@ -62,7 +63,7 @@ impl Object {
             kind,
             parent: None,
             ref_count: AtomicU16::new(0),
-            status: Status::Working,
+            status: AtomicStatus::new(Status::Working),
             node: ListNode::empty(),
         }
     }
@@ -72,7 +73,7 @@ impl Object {
             kind,
             parent: parent.into(),
             ref_count: AtomicU16::new(0),
-            status: Status::Working,
+            status: AtomicStatus::new(Status::Working),
             node: ListNode::empty(),
         }
     }

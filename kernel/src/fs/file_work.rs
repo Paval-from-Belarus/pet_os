@@ -4,7 +4,7 @@ use crate::{impl_work, object::Object};
 
 pub struct FileWork {
     pub request: FileRequest,
-    response: Option<FileResponse>,
+    response: spin::Mutex<Option<FileResponse>>,
     object: Object,
 }
 

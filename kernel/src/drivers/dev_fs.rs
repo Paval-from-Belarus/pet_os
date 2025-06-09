@@ -16,7 +16,7 @@ use crate::{
     user::queue::Queue,
 };
 
-pub fn init() -> fs::Result<()> {
+pub fn spawn_task() -> fs::Result<()> {
     let fs_info = FileSystem {
         name: "dev-fs".into(),
         kind: FileSystemKind::READ_ONLY,
@@ -34,8 +34,6 @@ pub fn init() -> fs::Result<()> {
     .expect("Failed to spawn dev-fs task");
 
     task::submit_task(fs_task);
-
-    unsafe { fs::mount_dev_fs()? };
 
     Ok(())
 }

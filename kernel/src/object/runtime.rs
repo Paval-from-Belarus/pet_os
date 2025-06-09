@@ -37,26 +37,13 @@ impl Runtime {
 }
 
 pub fn block_on<T: ObjectContainer>(handle: Handle<T>) -> Result<(), ()> {
-    let handle = handle.into_addr();
+    use core::sync::atomic::Ordering;
 
-    let mut objects = RUNTIME.objects.write();
+    let object = unsafe { &*handle.object() };
 
-    let Some(object) = objects
-        .iter_mut()
-        .find(|object| object.raw_handle() == handle)
-    else {
-        todo!()
-    };
+    object.status.store(Status::Blocked, Ordering::SeqCst);
 
-    if object.status == Status::Completed {
-        return Ok(());
-    }
-
-    object.status = Status::Blocked;
-
-    let _ = objects;
-
-    SCHEDULER.switch_lock().block_on(handle);
+    SCHEDULER.switch_lock().block_on(handle.into_addr());
 
     Ok(())
 }

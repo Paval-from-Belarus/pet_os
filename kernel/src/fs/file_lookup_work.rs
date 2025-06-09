@@ -10,7 +10,7 @@ use super::SuperBlock;
 pub struct FileLookupWork {
     pub request: FileLookupRequest,
     pub sb: Handle<SuperBlock>,
-    response: Option<FileLookupResponse>,
+    response: spin::Mutex<Option<FileLookupResponse>>,
     object: Object,
 }
 

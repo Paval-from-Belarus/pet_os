@@ -12,7 +12,7 @@ use crate::{
 pub struct BlockWork {
     object: object::Object,
     pub request: Request,
-    response: Option<Response>,
+    response: spin::Mutex<Option<Response>>,
 }
 
 impl_work! {

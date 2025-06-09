@@ -92,11 +92,11 @@ pub enum HandleError {
     FsError(#[from] FsError),
 }
 
-pub fn handle_char_module(queue: Queue<FileRequest>, _ops: FileOperations) {
+pub fn handle_char_module(_queue: Queue<FileRequest>, _ops: FileOperations) {
     loop {
-        let Some(_) = queue.blocking_recv() else {
-            break;
-        };
+        // let Some(_) = queue.blocking_recv() else {
+        //     break;
+        // };
 
         // match op {
         //     FileOperation::Command { file, command } => todo!(),

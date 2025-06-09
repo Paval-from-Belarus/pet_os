@@ -53,7 +53,7 @@ impl<T: ObjectContainer> Handle<T> {
         Ok(handle)
     }
 
-    fn object(&self) -> *const Object {
+    pub fn object(&self) -> *const Object {
         self.0 as *const Object
     }
 
@@ -68,6 +68,7 @@ impl<T: ObjectContainer> Handle<T> {
 
         handle
     }
+
     pub fn into_raw(self) -> kernel_types::object::RawHandle {
         let handle = self.into_addr();
 
@@ -105,11 +106,12 @@ impl<T: ObjectContainer> Clone for Handle<T> {
 
 impl<T: ObjectContainer> Drop for Handle<T> {
     fn drop(&mut self) {
-        log::debug!("Droping object handle");
-
         use core::sync::atomic::Ordering;
 
         let object = unsafe { &*self.object() };
+
+        log::debug!("Droping object handle: {object:?}");
+
         let prev_value = object.ref_count.fetch_sub(1, Ordering::SeqCst);
 
         let value = prev_value - 1;

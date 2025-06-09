@@ -99,10 +99,10 @@ impl From<RawHandle> for File {
 
 impl KernelObject for File {}
 
-// pub type FnRead = fn(Handle<File>, KernelBufMut) -> fs::Result<()>;
-// pub type FnWrite = fn(Handle<File>, KernelBuf) -> fs::Result<()>;
+pub type FnRead = fn(File, KernelBufMut) -> Result<()>;
+pub type FnWrite = fn(File, KernelBuf) -> Result<()>;
 
 pub struct FileOperations {
-    // pub write: FnWrite,
-    // pub read: FnRead,
+    pub write: FnWrite,
+    pub read: FnRead,
 }

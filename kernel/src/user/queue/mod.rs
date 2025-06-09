@@ -69,8 +69,9 @@ where
         runtime::notify(self.handle());
     }
 
-    pub fn try_push(&self, _data: SlabBox<T>) -> Result<(), ()> {
-        Ok(())
+    pub fn try_push(&self, data: SlabBox<T>) -> Result<(), ()> {
+        let _ = data;
+        todo!()
     }
 
     pub fn try_pop(&self) -> Option<SlabBox<T>> {
@@ -81,9 +82,7 @@ where
         loop {
             let maybe_obj = self.data.lock().remove_first();
             if let Some(obj) = maybe_obj {
-                let boxed = unsafe {
-                    &mut *T::container_of(obj.deref_mut() as *mut Object)
-                };
+                let boxed = unsafe { &mut *T::container_of(obj.deref_mut()) };
 
                 log::debug!("S: {:?}", obj.kind);
 

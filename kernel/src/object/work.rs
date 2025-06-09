@@ -19,19 +19,40 @@ macro_rules! impl_work {
 
                 $crate::memory::slab_alloc(Self {
                     request,
-                    response: None,
+                    response: spin::Mutex::new(None),
                     object,
                   $( $($field,)+ )?
                 })
             }
 
             pub fn wait(&self) -> Option<$res> {
-                todo!()
+                use $crate::object::ObjectContainer;
+
+                match $crate::object::runtime::block_on(self.handle()) {
+                    Ok(()) => {
+                        let mut lock = self.response.try_lock().unwrap();
+                        let response = lock.take().expect("No response");
+                        return response.into();
+                    }
+
+                    Err(cause) => {
+                        log::warn!("Failed to wake up after blocking");
+                        return None;
+                    }
+                }
             }
 
-            pub fn send_response(self, response: $res) {
+            pub fn send_response(&self, response: $res) {
+                use $crate::object::ObjectContainer;
 
-                todo!()
+                let mut lock = self.response.try_lock().unwrap();
+                assert!(lock.is_none());
+
+                *lock = Some(response);
+
+                drop(lock);
+
+                $crate::object::runtime::notify(self.handle());
             }
         }
 

@@ -78,30 +78,30 @@ pub fn main() {
 
     fs::init();
 
-    drivers::init();
-
     memory::enable_task_switching();
 
     log::info!("Task switching is enabled");
 
-    let mutex = Arc::new(Mutex::new(3usize).unwrap());
+    drivers::init();
 
-    let mutex_1 = mutex.clone();
-
-    let thread_1 = task::new_task(
-        mutex_task,
-        Arc::into_raw(mutex) as _,
-        TaskPriority::Kernel,
-    )
-    .unwrap();
-
-    let thread_2 = task::new_task(
-        mutex_task,
-        Arc::into_raw(mutex_1) as _,
-        TaskPriority::Kernel,
-    )
-    .unwrap();
-
+    // let mutex = Arc::new(Mutex::new(3usize).unwrap());
+    //
+    // let mutex_1 = mutex.clone();
+    //
+    // let thread_1 = task::new_task(
+    //     mutex_task,
+    //     Arc::into_raw(mutex) as _,
+    //     TaskPriority::Kernel,
+    // )
+    // .unwrap();
+    //
+    // let thread_2 = task::new_task(
+    //     mutex_task,
+    //     Arc::into_raw(mutex_1) as _,
+    //     TaskPriority::Module(0),
+    // )
+    // .unwrap();
+    //
     // let thread_3 =
     //     task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(10))
     //         .unwrap();
@@ -109,11 +109,25 @@ pub fn main() {
     // let thread_4 =
     //     task::new_task(task3, core::ptr::null_mut(), TaskPriority::User(5))
     //         .unwrap();
-
-    task::submit_task(thread_1);
-    task::submit_task(thread_2);
+    //
+    // task::submit_task(thread_1);
+    // task::submit_task(thread_2);
     // task::submit_task(thread_3);
     // task::submit_task(thread_4);
+
+    let init_task =
+        task::new_task(init_task, core::ptr::null_mut(), TaskPriority::Kernel)
+            .unwrap();
+
+    task::submit_task(init_task);
+
+    task::run();
+}
+
+extern "C" fn init_task() {
+    log::debug!("Init task is started");
+
+    unsafe { fs::mount_dev_fs() }.expect("Failed to mount dev-fs");
 
     // let file = fs::open("/dev/vga").expect("Failed to open");
     //
@@ -121,7 +135,6 @@ pub fn main() {
 
     // fs::write(file_handle, source, count)
     // user::exec("/usr/sbin/init");
-    task::run();
 }
 
 #[allow(unused)]
@@ -134,10 +147,11 @@ extern "C" fn task3() {
             log::info!("Task {task_id} #{i}");
         }
 
-        // task::sleep(10);
+        task::sleep(10);
     }
 }
 
+#[allow(unused)]
 extern "C" fn mutex_task() {
     let mutex = unsafe {
         let ptr: *const Mutex<usize> = get_eax!();
