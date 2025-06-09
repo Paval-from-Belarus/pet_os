@@ -34,11 +34,11 @@ impl<'a> Drop for SchedulerGuard<'a> {
             && !ptr::eq(self.old_context, self.current.context_ptr())
         {
             {
-                log::debug!("Task switching");
+                log::trace!("Task switching");
                 let frame: &TaskContext = unsafe { &*self.old_context };
-                log::debug!("Old context: {:?}", frame);
+                log::trace!("Old context: {:?}", frame);
                 let frame: &TaskContext = self.current.context();
-                log::debug!("New context: {:?}", frame);
+                log::trace!("New context: {:?}", frame);
             }
 
             unsafe { self.lock.switch(self.old_context, self.current) }

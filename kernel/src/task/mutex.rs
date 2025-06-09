@@ -14,6 +14,7 @@ pub struct Mutex<T: Sized> {
     mutex: Handle<MutexObject>,
 }
 
+#[derive(Debug)]
 pub struct MutexObject {
     locked: AtomicBool,
     object: Object,
@@ -27,6 +28,13 @@ impl_container! {
 
 pub struct MutexGuard<'a, T: Sized + 'a> {
     lock: &'a Mutex<T>,
+}
+
+impl<T: Sized> Drop for MutexGuard<'_, T> {
+    fn drop(&mut self) {
+        self.lock.mutex.locked.store(false, Ordering::SeqCst);
+        runtime::notify(self.lock.mutex.handle());
+    }
 }
 
 impl<T: Sized> core::ops::Deref for MutexGuard<'_, T> {
@@ -48,10 +56,14 @@ unsafe impl<T: Sized + Send> Send for Mutex<T> {}
 
 impl<T: Sized> Mutex<T> {
     pub fn new(value: T) -> Result<Mutex<T>, AllocError> {
+        log::debug!("Allocatig new mutex");
+
         let mutex = object::alloc_root_object(MutexObject {
             object: MutexObject::new_root_object(),
             locked: AtomicBool::new(false),
         })?;
+
+        log::debug!("New mutex: {mutex:?}");
 
         Ok(Self {
             mutex,

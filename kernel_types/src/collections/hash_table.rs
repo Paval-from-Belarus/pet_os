@@ -1,6 +1,5 @@
 use core::hash::Hasher;
 use core::marker::PhantomData;
-use core::mem::MaybeUninit;
 
 use core::ptr;
 
@@ -29,13 +28,8 @@ impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData>
     HashTable<'a, V, N>
 {
     pub fn new() -> Self {
-        let raw_table: [MaybeUninit<TinyLinkedList<'a, V>>; N] =
-            MaybeUninit::uninit().transpose();
+        let table = core::array::from_fn(|_| TinyLinkedList::empty());
 
-        let table = raw_table.map(|mut raw_bucket| {
-            raw_bucket.write(TinyLinkedList::empty());
-            unsafe { raw_bucket.assume_init() }
-        });
         Self {
             table,
             _marker: PhantomData,
@@ -54,6 +48,7 @@ impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData>
             self.find(key, |found| ptr::eq(found, node as &V)).is_none(),
             "Failed to put already present entry"
         );
+
         let bucket = self.find_bucket(key);
         bucket.push_front(node);
     }
@@ -106,6 +101,7 @@ impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData>
         V: HashData<Item<'b> = K>,
     {
         let index = self.calc_bucket_index(key);
+
         &mut self.table[index]
     }
 
@@ -113,7 +109,7 @@ impl<'a, const N: usize, V: TinyListNodeData<Item = V> + HashData>
     where
         K: HashKey,
     {
-        (key.hash_code() as usize) / self.size()
+        (key.hash_code() as usize) % self.size()
     }
 }
 

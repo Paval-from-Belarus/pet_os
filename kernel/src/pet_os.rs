@@ -84,14 +84,14 @@ pub fn main() {
 
     log::info!("Task switching is enabled");
 
-    let mutex = Arc::new(Mutex::new(3usize));
+    let mutex = Arc::new(Mutex::new(3usize).unwrap());
 
     let mutex_1 = mutex.clone();
 
     let thread_1 = task::new_task(
         mutex_task,
         Arc::into_raw(mutex) as _,
-        TaskPriority::Module(0),
+        TaskPriority::Kernel,
     )
     .unwrap();
 
@@ -140,7 +140,10 @@ extern "C" fn task3() {
 
 extern "C" fn mutex_task() {
     let mutex = unsafe {
-        let ptr: *const Arc<Mutex<usize>> = get_eax!();
+        let ptr: *const Mutex<usize> = get_eax!();
+
+        log::debug!("Mutex: {ptr:?}");
+
         Arc::from_raw(ptr)
     };
 
@@ -150,8 +153,11 @@ extern "C" fn mutex_task() {
 
     log::info!("Task {id} priority: {}", current_task!().priority);
 
-    for _ in 0..10 {
+    for _ in 0..100_000 {
+        log::debug!("Before mutex taken task#{id}");
+
         let mut lock = mutex.lock();
+
         log::debug!("Value taken: {} in task#{id}", *lock);
         *lock += 1;
     }

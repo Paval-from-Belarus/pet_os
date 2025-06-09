@@ -1,4 +1,4 @@
-use kernel_types::collections::{BorrowingLinkedList, LinkedList};
+use kernel_types::collections::LinkedList;
 
 use crate::memory::AllocError;
 

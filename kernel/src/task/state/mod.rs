@@ -63,11 +63,20 @@ pub struct ProccessTask {
     node: ListNode<ProccessTask>,
 }
 
+impl BlockedTask {
+    pub fn block_reason(&self) -> &object::RawHandle {
+        match &self.status {
+            TaskStatus::Blocked(handle) => handle,
+            _ => unreachable!("Blocked task without reason"),
+        }
+    }
+}
+
 impl HashData for BlockedTask {
     type Item<'a> = object::RawHandle;
 
     fn key<'a>(&self) -> &Self::Item<'a> {
-        todo!()
+        self.block_reason()
     }
 }
 

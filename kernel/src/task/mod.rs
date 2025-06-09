@@ -56,15 +56,6 @@ pub enum TaskStatus {
     Killed,
 }
 
-impl TaskStatus {
-    pub fn blocking_reason(&self) -> Option<&object::RawHandle> {
-        match self {
-            TaskStatus::Blocked(handle) => Some(handle),
-            _ => None,
-        }
-    }
-}
-
 bitflags!(
     pub TaskSignalMask(u8),
     NO_USER1 = TaskSignal::User1 as u8
@@ -285,15 +276,15 @@ fn on_timer(
     let new_context = current_task!().context_ptr();
 
     if !ptr::eq(old_context, new_context) {
-        log::debug!("Interrupt switching");
+        log::trace!("Interrupt switching");
 
         unsafe {
-            log::debug!("Old context: {:?}", &*old_context);
+            log::trace!("Old context: {:?}", &*old_context);
             {
                 let frame: &TaskContext = &**frame;
-                log::debug!("Current context: {:?}", frame);
+                log::trace!("Current context: {:?}", frame);
             }
-            log::debug!("New context: {:?}", &*new_context);
+            log::trace!("New context: {:?}", &*new_context);
 
             (**frame).copy_to(&mut *old_context);
 
@@ -301,7 +292,7 @@ fn on_timer(
 
             *frame = new_context;
 
-            log::debug!("IRET Frame After: {:?}", &**frame);
+            log::trace!("IRET Frame After: {:?}", &**frame);
         }
     }
 

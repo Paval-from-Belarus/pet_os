@@ -105,6 +105,8 @@ impl<T: ObjectContainer> Clone for Handle<T> {
 
 impl<T: ObjectContainer> Drop for Handle<T> {
     fn drop(&mut self) {
+        log::debug!("Droping object handle");
+
         use core::sync::atomic::Ordering;
 
         let object = unsafe { &*self.object() };

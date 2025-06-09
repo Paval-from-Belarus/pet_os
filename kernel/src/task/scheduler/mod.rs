@@ -29,9 +29,7 @@ pub struct TaskScheduler {
     delayed: &'static mut TaskQueue,
     running: &'static mut TaskQueue,
 
-    //todo: replace blocked task array
-    blocked: HashTable<'static, BlockedTask, 16>,
-
+    blocked: LinkedList<'static, BlockedTask>,
     sleeping: LinkedList<'static, RunningTask>,
 
     current: &'static mut RunningTask,
@@ -48,7 +46,7 @@ impl TaskScheduler {
             running: TaskQueue::new_leaked(),
             delayed: TaskQueue::new_leaked(),
             sleeping: LinkedList::empty(),
-            blocked: HashTable::new(),
+            blocked: LinkedList::empty(),
             idle_tasks: LinkedList::empty(),
         }
     }
@@ -61,16 +59,18 @@ impl TaskScheduler {
         task.metrics.base_duration = task.priority.static_duration();
 
         if task.priority == TaskPriority::Idle {
-            log::debug!("Pushing idle task");
+            log::trace!("Pushing idle task");
             self.idle_tasks.push_back(task);
         } else {
-            log::debug!("Pushing task#{}", task.id);
+            log::trace!("Pushing task#{}", task.id);
             self.delayed.push(task);
         }
     }
 
     /// block the current task on object handle
     pub fn block_on(&mut self, handle: object::RawHandle) {
+        log::debug!("Blocking: {handle:?}");
+
         let mut next_task = self
             .running
             .take_next()
@@ -80,16 +80,42 @@ impl TaskScheduler {
 
         let mut blocked_task = next_task.into_blocked(handle);
 
-        self.blocked.insert(blocked_task.as_node());
+        assert!(!self
+            .blocked
+            .iter()
+            .any(|task| task.id == blocked_task.id
+                && *task.block_reason() == handle));
+
+        self.blocked.push_back(blocked_task);
     }
 
     pub fn unblock_on(&mut self, handle: object::RawHandle) {
+        log::debug!("Unblocking: {handle:?}");
+
+        let mut max_priority = Option::<TaskPriority>::None;
+
+        let maybe_task_id = self
+            .blocked
+            .iter()
+            .filter(|task| task.block_reason().eq(&handle))
+            .max_by_key(|task| task.priority.into_raw())
+            .map(|task| task.id);
+
+        let Some(task_id) = maybe_task_id else {
+            log::debug!("No tasks to unblock on {handle:X?}");
+            return;
+        };
+
+        log::debug!("task#{task_id} will be unblocked");
+
         let unblocked_task = self
             .blocked
-            .remove(&handle)
-            .expect("Unknown object to unblock");
+            .remove_by(|task| task.id == task_id)
+            .expect("no task for existing id")
+            .into_running();
 
         if unblocked_task.priority > self.current.priority {
+            log::debug!("Swapping task to unblock");
             let mut displaced_task = unblocked_task;
 
             mem::swap(&mut self.current, &mut displaced_task);
@@ -226,7 +252,7 @@ impl TaskScheduler {
     /// and return current next task
     #[must_use]
     fn reschedule(&mut self) -> &'static mut RunningTask {
-        log::debug!("Rescheduling");
+        log::trace!("Rescheduling");
 
         mem::swap(&mut self.delayed, &mut self.running);
 
