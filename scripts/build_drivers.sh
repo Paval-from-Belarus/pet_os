@@ -1,8 +1,8 @@
 #!/bin/bash
 
 if [ -z "${DRIVERS}" ]; then
-  echo "PROVIDE \$DRIVERS!"
-  exit 1
+  echo "!!!No drivers provided!!!"
+  exit 0
 fi
 
 if [ -z "${DRIVERS_OUT}" ]; then
