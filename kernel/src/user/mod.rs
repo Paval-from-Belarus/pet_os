@@ -1,4 +1,5 @@
 pub mod channel;
+pub mod kernel_buf;
 pub mod queue;
 pub mod syscall;
 

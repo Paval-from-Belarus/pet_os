@@ -9,6 +9,7 @@ use crate::{
     object::{self, runtime, Handle, Object, ObjectContainer},
 };
 
+#[derive(Debug)]
 pub struct Mutex<T: Sized> {
     data: UnsafeCell<T>,
     mutex: Handle<MutexObject>,

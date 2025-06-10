@@ -1,17 +1,11 @@
+use talc::*;
+
 #[cfg(feature = "driver")]
 mod driver;
 
-pub struct UserSpaceAllocator;
-
-unsafe impl core::alloc::GlobalAlloc for UserSpaceAllocator {
-    unsafe fn alloc(&self, _layout: core::alloc::Layout) -> *mut u8 {
-        todo!()
-    }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: core::alloc::Layout) {
-        todo!()
-    }
-}
+static mut ARENA: [u8; 10_000] = [0; 10_000];
 
 #[global_allocator]
-static USER_SPACE_ALLOCATOR: UserSpaceAllocator = UserSpaceAllocator;
+static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> =
+    Talc::new(unsafe { ClaimOnOom::new(Span::from_array(&raw mut ARENA)) })
+        .lock();

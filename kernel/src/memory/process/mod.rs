@@ -259,13 +259,13 @@ impl ProcessState {
         &mut self,
         range: Range<VirtualAddress>,
     ) -> Option<&MemoryRegion> {
-        let option_region = self.find_region_mut(range.start);
-        if let Some(region) = option_region
-            && region.range.end < range.end
-        {
-            return Some(region);
+        let region = self.find_region_mut(range.start)?;
+
+        if region.range.end < range.end {
+            Some(region)
+        } else {
+            None
         }
-        None
     }
 }
 

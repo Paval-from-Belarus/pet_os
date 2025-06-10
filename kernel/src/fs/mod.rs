@@ -5,7 +5,9 @@ pub use file_lookup_work::*;
 pub use file_work::*;
 pub use fs_work::*;
 pub use index_node::*;
-use kernel_types::fs::{FileLookupRequest, FileSystem, FsId, FsRequest};
+use kernel_types::fs::{
+    FileLookupRequest, FileRequest, FileSystem, FsId, FsRequest,
+};
 use kernel_types::object::RawHandle;
 use kernel_types::string::QuickString;
 pub use mount_point::*;
@@ -17,6 +19,7 @@ use kernel_types::drivers::Device;
 
 use crate::current_task;
 use crate::object::{self, Handle};
+use crate::user::kernel_buf::KernelBuf;
 use crate::user::queue::Queue;
 
 mod file;
@@ -163,21 +166,17 @@ pub fn read(
 
 pub fn write(
     file_handle: usize,
-    _source: *const u8,
-    _count: usize,
-) -> Result<object::RawHandle> {
-    let Some(_file) = current_task!().opened_files.get(file_handle) else {
+    buf: Handle<KernelBuf>,
+) -> Result<Handle<FileWork>> {
+    let Some(file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
-    todo!()
 
-    // let op_handle = file.super_block().work(FsOperation::Write {
-    //     file: file.id(),
-    //     buffer: source,
-    //     count,
-    // });
-    //
-    // Ok(op_handle.as_raw())
+    let req = FileRequest::Write {
+        buf: buf.into_raw(),
+    };
+
+    file.send_request(req)
 }
 
 pub fn close(file_handle: usize) -> Result<object::RawHandle> {

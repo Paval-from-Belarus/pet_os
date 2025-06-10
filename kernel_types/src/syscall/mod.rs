@@ -1,4 +1,8 @@
+mod file_op;
+
 use crate::declare_constants;
+
+pub use file_op::*;
 
 pub type Result<T> = core::result::Result<T, SyscallError>;
 
@@ -19,7 +23,12 @@ pub enum Request {
     RegCharDevice,
     RegFs,
 
+    CloneHandle,
+
     IoOperation,
+
+    KernelCopy,
+    UserCopy,
 
     GetModuleInfo,
 

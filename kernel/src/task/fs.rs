@@ -15,8 +15,8 @@ pub struct FilePool {
 }
 
 impl FilePool {
-    pub fn get(&self, index: usize) -> Option<&Handle<IndexNode>> {
-        self.files[index].as_ref()
+    pub fn get(&self, index: usize) -> Option<Handle<IndexNode>> {
+        self.files[index].clone()
     }
 
     pub fn set(&mut self, index: usize, handle: Handle<IndexNode>) {
@@ -29,7 +29,7 @@ impl FilePool {
 
             self.next_index += 1;
 
-            index.into()
+            index
         })
     }
 }

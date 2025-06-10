@@ -5,7 +5,8 @@ use core::mem::MaybeUninit;
 
 use kernel_lib::{
     fs::{self, not_supported_read, File, FileOperations},
-    io::{self, char::register_module, IoTransaction, KernelBuf},
+    io::{self, char::register_module, IoTransaction},
+    object::{KernelBuf, UserBuf},
     KernelModule, ModuleError, ModuleOperations,
 };
 
@@ -124,7 +125,7 @@ impl VgaWriter {
     }
 }
 
-pub fn write(_file: File, _buf: KernelBuf) -> fs::Result<()> {
+pub fn write(_file: File, buf: UserBuf) -> fs::Result<()> {
     Ok(())
 }
 
@@ -140,7 +141,7 @@ impl KernelModule for VgaDriver {
             unsafe { VgaWriter::new_unchecked(&raw mut VGA_BUFFER) };
 
         writer.clear();
-        writer.put_string("Hello from vga");
+        writer.put_string("Hello from vga\n");
         writer.update_cursor();
 
         log::info!("Vga driver is initialized");

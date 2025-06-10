@@ -2,10 +2,11 @@ use kernel_types::{
     drivers::UserModule,
     fs::{FileRequest, FsRequest},
     io::{
-        block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, MemoryRemap,
+        block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, MemBuf,
+        MemoryRemap,
     },
     string::MutString,
-    syscall::{Request, SyscallError},
+    syscall::{FileOperation, Request, SyscallError},
 };
 
 use crate::{
@@ -18,11 +19,11 @@ use crate::{
     },
     log_module,
     memory::{self, AllocError, VirtualAddress},
-    object::{AnyObject, Handle, Object, ObjectContainer},
+    object::{AnyObject, Handle, Object, ObjectContainer, UserHandle},
     task, user,
 };
 
-use super::queue::Queue;
+use super::{kernel_buf::KernelBuf, queue::Queue};
 
 pub fn validate_ref<'a, T: Sized>(
     offset: VirtualAddress,
@@ -47,6 +48,7 @@ pub fn handle(
 
             log_module!("{string}");
         }
+
         Request::MemRemap => {
             let remap = validate_ref::<MemoryRemap>(edx)?;
 
@@ -85,9 +87,7 @@ pub fn handle(
 
             unsafe { memory::switch_to_task(current_task!()) };
         }
-
         Request::RegFs => {}
-
         Request::IoOperation => {
             let len = ecx;
             let _ = validate_ref::<IoOperation>(edx)?;
@@ -104,7 +104,6 @@ pub fn handle(
 
             io::end_op_tx();
         }
-
         Request::GetModuleInfo => {
             let ptr = edx as *mut UserModule;
 
@@ -120,15 +119,12 @@ pub fn handle(
 
             unsafe { *ptr = module };
         }
-
         Request::TerminateCurrentTask => {
             task::terminate(edx as i32);
         }
-
         Request::TerminateCurrentProcess => {
             user::exit(edx as i32);
         }
-
         Request::QueueBlockingGet => {
             unsafe { memory::switch_to_kernel() };
 
@@ -153,8 +149,11 @@ pub fn handle(
                 crate::object::Kind::FileWork => unsafe {
                     blocking_pop(&queue, |work: FileWork| {
                         memory::switch_to_task(current_task!());
-                        let ptr = edx as *mut FileRequest;
-                        *ptr = work.request;
+                        let ptr = edx as *mut FileOperation;
+                        *ptr = FileOperation {
+                            file: work.inode.into_raw(),
+                            request: work.request,
+                        };
                     })?;
                 },
                 crate::object::Kind::IrqEvent => unsafe {
@@ -169,7 +168,6 @@ pub fn handle(
                 }
             }
         }
-
         Request::FreeKernelObject => unsafe {
             let raw_object = edx as *const Object;
             let raw_handle = edx;
@@ -203,12 +201,34 @@ pub fn handle(
                         raw_handle,
                     );
                 }
-
                 crate::object::Kind::SuperBlock => todo!(),
                 crate::object::Kind::Mutex => todo!(),
                 crate::object::Kind::Exchange => todo!(),
+                crate::object::Kind::KernelBuf => todo!(),
             }
         },
+        Request::CloneHandle => {
+            let handle = unsafe { Handle::<FsWork>::from_addr_unchecked(edx) };
+            let cloned_handle = Handle.clone();
+
+            let _ = handle.into_raw();
+            let _ = cloned_handle;
+        }
+
+        Request::KernelCopy => {
+            let kernel_buf =
+                unsafe { UserHandle::<KernelBuf>::from_addr_unchecked(edx) };
+
+            let mem_buf: &MemBuf = validate_ref(ecx)?;
+
+            let bytes = unsafe {
+                core::slice::from_raw_parts_mut(mem_buf.ptr, mem_buf.len)
+            };
+
+            kernel_buf.copy_to(bytes);
+        }
+        Request::UserCopy => todo!(),
+
         Request::QueueTryGet => todo!(),
     }
 

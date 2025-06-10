@@ -11,7 +11,11 @@ pub mod io;
 pub mod logging;
 
 #[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(feature = "alloc")]
 pub mod alloc;
+
 pub mod drivers;
 pub mod object;
 pub mod process;

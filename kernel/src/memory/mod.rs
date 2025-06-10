@@ -65,6 +65,8 @@ pub enum AllocError {
     OverlappingRegions,
     #[error("Rust allocator failed: {0}")]
     AllocationFailed(#[from] alloc::alloc::AllocError),
+    #[error("Rust collection allocator failed: {0}")]
+    VecAllocFailed(#[from] alloc::collections::TryReserveError),
     #[error("Failed to take lock")]
     InvalidContext(#[from] context::LockError),
 }

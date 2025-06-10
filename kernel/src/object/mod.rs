@@ -1,6 +1,7 @@
 mod event;
 mod handle;
 pub mod runtime;
+mod user_handle;
 mod work;
 
 use core::{ptr::NonNull, sync::atomic::AtomicU16};
@@ -11,6 +12,7 @@ use kernel_types::collections::ListNode;
 use crate::memory::{self, slab_alloc, Slab, SlabBox, VirtualAddress};
 
 pub use handle::*;
+pub use user_handle::*;
 
 pub struct AnyObject;
 
@@ -28,6 +30,8 @@ pub enum Kind {
     SuperBlock,
     File,
     Mutex,
+
+    KernelBuf,
     //rendevouz oneshot channel
     Exchange,
 }

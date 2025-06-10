@@ -11,6 +11,7 @@ use kernel_types::{
 use crate::{
     fs::{FileOperations, FsError, SuperBlockOperations},
     io::block::Operations,
+    object::{KernelBuf, UserBuf},
     process,
 };
 
@@ -92,17 +93,24 @@ pub enum HandleError {
     FsError(#[from] FsError),
 }
 
-pub fn handle_char_module(_queue: Queue<FileRequest>, _ops: FileOperations) {
+pub fn handle_char_module(queue: Queue<FileRequest>, ops: FileOperations) {
     loop {
-        // let Some(_) = queue.blocking_recv() else {
-        //     break;
-        // };
+        let Some(op) = queue.blocking_recv() else {
+            break;
+        };
 
-        // match op {
-        //     FileOperation::Command { file, command } => todo!(),
-        //     FileOperation::Read { file, buf } => (ops.read)(file, buf),
-        //     FileOperation::Write { file, buf } => todo!(),
-        // }
+        match op {
+            FileRequest::Command { command } => todo!(),
+            FileRequest::Read { buf } => todo!(),
+            FileRequest::Write { buf } => {
+                let buf = KernelBuf::from(buf);
+
+                let mut user_buf = UserBuf::new(buf.len());
+                buf.copy_to(&mut user_buf);
+
+                // (ops.write)()
+            }
+        }
     }
 }
 

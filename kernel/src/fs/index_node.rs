@@ -14,6 +14,8 @@ use crate::{
     user::queue::Queue,
 };
 
+use crate::fs;
+
 use super::{Device, FilePermissions, FileWork, SuperBlock};
 
 ///the i-node implementation
@@ -68,6 +70,21 @@ impl IndexNode {
             queue,
             object,
         })
+    }
+
+    pub fn send_request(
+        &self,
+        req: FileRequest,
+    ) -> fs::Result<Handle<FileWork>> {
+        let inode = self.handle();
+
+        let work = FileWork::new_boxed(req, &self.queue, inode)?;
+
+        let handle = work.handle();
+
+        self.queue.push(work);
+
+        Ok(handle)
     }
 }
 

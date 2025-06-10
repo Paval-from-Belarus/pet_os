@@ -9,6 +9,7 @@ heapless = { version = "0.7", default-features = false }
 kernel-types = { workspace = true }
 log = { version = "0.4" }
 spin.workspace = true
+talc = "4.4.2"
 thiserror-no-std.workspace = true
 typenum = "1.18.0"
 

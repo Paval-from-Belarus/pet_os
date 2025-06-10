@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 #![crate_name = "kernel"]
-#![feature(let_chains)]
 #![feature(const_trait_impl)]
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
@@ -11,6 +10,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(hasher_prefixfree_extras)]
 #![feature(naked_functions)]
+#![feature(try_with_capacity)]
 
 extern crate alloc;
 extern crate fallible_collections;
@@ -20,13 +20,12 @@ extern crate static_assertions;
 
 extern crate multiboot2;
 
+use crate::task::TaskPriority;
 use alloc::sync::Arc;
 use common::logging;
 use kernel_types::get_eax;
 use memory::PagingProperties;
 use task::Mutex;
-
-use crate::task::TaskPriority;
 
 #[cfg(not(target_arch = "x86"))]
 compile_error!("Operation system is suitable for x86 CPU only");
@@ -129,11 +128,16 @@ extern "C" fn init_task() {
 
     unsafe { fs::mount_dev_fs() }.expect("Failed to mount dev-fs");
 
-    // let file = fs::open("/dev/vga").expect("Failed to open");
-    //
-    // let _file = fs::resolve(file).expect("Failed to resolve file");
+    let file = fs::open("/dev/vga").expect("Failed to open");
 
-    // fs::write(file_handle, source, count)
+    let file = fs::resolve(file).expect("Failed to resolve file");
+
+    let buf = "Kernel Buf is cool".try_into().unwrap();
+
+    let work = fs::write(file, buf).unwrap();
+
+    let response = work.wait().unwrap();
+    log::debug!("work response: {response:?}");
     // user::exec("/usr/sbin/init");
 }
 

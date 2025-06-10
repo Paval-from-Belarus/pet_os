@@ -80,6 +80,8 @@ extern "C" fn sb_task() {
         Handle::<Queue<FileLookupWork>>::from_addr_unchecked(raw_handle)
     };
 
+    log::debug!("dev sb task is started");
+
     loop {
         let Some(work) = queue.blocking_pop() else {
             break;

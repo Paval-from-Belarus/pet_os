@@ -8,7 +8,10 @@ use kernel_types::{
     object::{KernelObject, RawHandle},
 };
 
-use crate::io::block::BlockDevice;
+use crate::{
+    io::block::BlockDevice,
+    object::{UserBuf, UserBufMut},
+};
 
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum FsError {
@@ -29,11 +32,11 @@ pub fn noop_write(_file: File, _buf: KernelBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn not_supported_write(_file: File, _buf: KernelBuf) -> Result<()> {
+pub fn not_supported_write(_file: File, _buf: UserBuf) -> Result<()> {
     Err(FsError::NotSupported)
 }
 
-pub fn not_supported_read(_file: File, _buf: KernelBufMut) -> Result<()> {
+pub fn not_supported_read(_file: File, _buf: UserBufMut) -> Result<()> {
     Err(FsError::NotSupported)
 }
 
@@ -99,8 +102,8 @@ impl From<RawHandle> for File {
 
 impl KernelObject for File {}
 
-pub type FnRead = fn(File, KernelBufMut) -> Result<()>;
-pub type FnWrite = fn(File, KernelBuf) -> Result<()>;
+pub type FnRead = fn(File, UserBufMut) -> Result<()>;
+pub type FnWrite = fn(File, UserBuf) -> Result<()>;
 
 pub struct FileOperations {
     pub write: FnWrite,

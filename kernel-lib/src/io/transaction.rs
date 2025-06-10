@@ -1,9 +1,12 @@
 use kernel_types::{
-    io::{IoOperation, KernelBufMut, PortOperation, UserBufMut},
+    io::{IoOperation, PortOperation},
     syscall,
 };
 
-use crate::io;
+use crate::{
+    io,
+    object::{KernelBuf, UserBuf},
+};
 
 #[repr(C)]
 #[must_use]
@@ -13,6 +16,7 @@ pub struct IoTransaction<Kind: IoKind, const N: usize> {
 }
 
 pub trait IoKind {}
+
 pub struct Read;
 pub struct Write;
 
@@ -34,14 +38,6 @@ impl<const N: usize> IoTransaction<Read, N> {
     }
 
     pub fn port_u16(self, _port: u16) -> io::Result<u16> {
-        todo!()
-    }
-
-    pub fn port_to_buf(
-        self,
-        _port: u16,
-        _buffer: &mut KernelBufMut,
-    ) -> io::Result<()> {
         todo!()
     }
 }
@@ -82,13 +78,5 @@ impl<const N: usize> IoTransaction<Write, N> {
         }
 
         Ok(())
-    }
-
-    pub fn slice_to_buf(
-        &mut self,
-        _slice: &[u8],
-        _buf: &mut UserBufMut,
-    ) -> &mut Self {
-        self
     }
 }
