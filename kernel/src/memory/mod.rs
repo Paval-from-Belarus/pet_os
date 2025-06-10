@@ -147,6 +147,7 @@ pub fn init_kernel_space(boot_config: &mut PagingProperties) {
 
     KERNEL_MARKER.get().load();
 
+    unsafe { PHYSICAL_ALLOCATOR.get().init() };
     unsafe { SYSTEM_ALLOCATOR.get().init() };
 }
 

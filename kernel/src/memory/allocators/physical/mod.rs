@@ -12,7 +12,7 @@ use crate::memory::allocators::physical::page::BuddyPage;
 use crate::memory::paging::{BootAllocator, MemoryKind, PageMarkerError};
 use crate::memory::AllocError::NoMemory;
 use crate::memory::{
-    AllocError, Page, PageFlag, PhysicalAddress, VirtualAddress,
+    AllocError, ContextLock, Page, PageFlag, PhysicalAddress, VirtualAddress,
     MEMORY_MAP_SIZE,
 };
 
@@ -36,7 +36,7 @@ pub type BuddyArray = [LinkedList<'static, Page>; MAX_UNIT_POWER + 1];
 ///All methods are thread-safe
 ///todo: allocator should works as buddy allocator
 pub struct PhysicalAllocator {
-    buddies: spin::Mutex<BuddyArray>, //all atomic operations should be atomic in system scope
+    buddies: ContextLock<BuddyArray>, //all atomic operations should be atomic in system scope
 }
 
 unsafe impl Send for PhysicalAllocator {}
@@ -170,7 +170,7 @@ impl PhysicalAllocator {
         let buddies = unsafe { collect_buddies(boot_allocator) };
 
         Self {
-            buddies: spin::Mutex::new(buddies),
+            buddies: ContextLock::new(buddies),
         }
     }
 
@@ -180,7 +180,7 @@ impl PhysicalAllocator {
             !pages.is_empty() && (pages.len() % 2 == 0 || pages.len() == 1)
         );
 
-        let mut lock = self.buddies.lock();
+        let mut lock = self.buddies.lock().unwrap();
 
         let buddies = lock.as_mut_slice();
 
@@ -257,7 +257,7 @@ impl PhysicalAllocator {
         page.release();
 
         if !page.is_used() {
-            let mut lock = self.buddies.try_lock().unwrap();
+            let mut lock = self.buddies.lock().unwrap();
             let last_list = lock.last_mut().unwrap();
             last_list.push_back(page.as_node());
         }
@@ -317,7 +317,7 @@ impl PhysicalAllocator {
 
         assert!(index <= MAX_UNIT_POWER, "Buddy with too huge power");
 
-        let mut lock = self.buddies.lock();
+        let mut lock = self.buddies.lock()?;
         let buddies = lock.as_mut_slice();
 
         let mut maybe_head = buddies[index].remove_first();
@@ -371,7 +371,7 @@ impl PhysicalAllocator {
     ) -> Result<LinkedList<'static, Page>, AllocError> {
         assert!(count > 0);
 
-        let mut lock = self.buddies.lock();
+        let mut lock = self.buddies.lock()?;
         let mut last_head = lock.last_mut().unwrap();
         let mut longest = 0; //the current longest count of pages in same sequence
 
@@ -450,7 +450,7 @@ impl PhysicalAllocator {
         &self,
         count: usize,
     ) -> Result<LinkedList<'static, Page>, AllocError> {
-        let mut lock = self.buddies.lock();
+        let mut lock = self.buddies.lock()?;
         let pages = lock.last_mut().unwrap();
         // let mut page_iter = unsafe { pages.leak().iter_mut() };
         let mut page_iter = pages.iter_mut();
@@ -464,6 +464,10 @@ impl PhysicalAllocator {
             list.push_back(page);
         }
         Ok(list)
+    }
+
+    pub unsafe fn init(&self) {
+        self.buddies.init().unwrap();
     }
 }
 
