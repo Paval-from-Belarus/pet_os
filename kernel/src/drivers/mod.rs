@@ -87,9 +87,15 @@ pub fn init_module(
     kind: ModuleKind,
     capacity: usize,
 ) -> Result<(), ModuleError> {
+    log::debug!("new module detected: {name}");
+
     let module = Module::new(name, kind, capacity)?;
 
-    MODULES.get().add_module(module)
+    MODULES.get().add_module(module)?;
+
+    log::debug!("new module added: {name}");
+
+    Ok(())
 }
 
 unsafe impl Send for ModuleManager {}

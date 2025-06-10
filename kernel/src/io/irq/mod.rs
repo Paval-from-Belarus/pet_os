@@ -22,7 +22,9 @@ pub struct ModuleIrqContext {
     pub queue: Handle<Queue<IrqEvent>>,
 }
 
-fn start_irq(_module_id: ModuleId) {}
+fn start_irq(_module_id: ModuleId) {
+    todo!()
+}
 
 fn complete_irq(_module_id: ModuleId) {}
 
@@ -56,6 +58,7 @@ pub fn module_irq(
     }
 
     pic::complete(context.line.into());
+
     complete_irq(context.module_id);
 
     true

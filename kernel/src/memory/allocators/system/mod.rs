@@ -9,7 +9,9 @@ use allocator::SlabAllocator;
 use kernel_types::declare_constants;
 use tree::SlabTree;
 
-use crate::memory::{AllocError, Page, PhysicalAllocator, VirtualAddress};
+use crate::memory::{
+    AllocError, ContextLock, Page, PhysicalAllocator, VirtualAddress,
+};
 
 pub type SlabName = &'static str;
 pub const MAX_SLAB_OBJECT_SIZE: usize = u16::MAX as usize;
@@ -57,8 +59,8 @@ pub struct SlabAlloc {
 }
 
 pub struct SystemAllocator {
-    tree: spin::Mutex<SlabTree>,
-    allocator: spin::Mutex<SlabAllocator>,
+    tree: ContextLock<SlabTree>,
+    allocator: ContextLock<SlabAllocator>,
 }
 
 unsafe impl Send for SystemAllocator {}
@@ -82,9 +84,14 @@ impl SystemAllocator {
         let tree = SlabTree::new();
 
         Ok(Self {
-            tree: spin::Mutex::new(tree),
-            allocator: spin::Mutex::new(allocator),
+            tree: ContextLock::new(tree),
+            allocator: ContextLock::new(allocator),
         })
+    }
+
+    pub unsafe fn init(&self) {
+        self.tree.init().unwrap();
+        self.allocator.init().unwrap();
     }
 
     pub fn alloc_slab(
@@ -93,19 +100,22 @@ impl SystemAllocator {
     ) -> Result<*mut u8, AllocError> {
         log::debug!("Allocating slab {:?}", allocation);
 
-        let mut tree = self.tree.try_lock().unwrap();
+        let mut tree = self.tree.lock()?;
 
         let head = tree.find_head_or_alloc(allocation.name, || {
-            let mut allocator = self.allocator.try_lock().unwrap();
+            let mut allocator = self.allocator.lock()?;
 
             allocator.alloc_slab_head(&allocation)
         })?;
 
+        log::debug!("Stage 2");
+
         match head.try_alloc() {
             Some(offset) => Ok(offset as *mut u8),
             None => {
+                log::debug!("Stage 3");
                 let entries = {
-                    let mut allocator = self.allocator.try_lock().unwrap();
+                    let mut allocator = self.allocator.lock()?;
 
                     allocator.alloc_slab_entries(1, allocation.size)?
                 };
@@ -123,7 +133,7 @@ impl SystemAllocator {
     pub fn dealloc_slab(&'static self, name: SlabName, ptr: *mut u8) {
         let offset = ptr as VirtualAddress;
 
-        let mut tree = self.tree.try_lock().unwrap();
+        let mut tree = self.tree.lock().unwrap();
 
         let Some(head) = tree.find_head(name) else {
             panic!("Unknown slab with name = {name}");
@@ -141,7 +151,7 @@ impl SystemAllocator {
 
         let pages_count = Page::upper_bound(bytes);
 
-        let mut allocator = self.allocator.try_lock().unwrap();
+        let mut allocator = self.allocator.lock()?;
 
         allocator.virtual_alloc(pages_count, flags)
     }
@@ -153,7 +163,7 @@ impl SystemAllocator {
     ) {
         let pages_count = Page::upper_bound(size_in_bytes);
 
-        let mut allocator = self.allocator.try_lock().unwrap();
+        let mut allocator = self.allocator.lock().unwrap();
 
         allocator.virtual_dealloc(offset, pages_count);
     }

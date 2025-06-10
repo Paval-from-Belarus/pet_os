@@ -23,12 +23,14 @@ use crate::task::{Task, TaskState};
 
 mod allocators;
 mod arch;
+mod context;
 mod mapping;
 mod page;
 mod paging;
 mod process;
 mod region;
 
+pub use context::{start_irq, ContextLock};
 pub use mapping::*;
 pub use page::*;
 pub use process::*;
@@ -63,6 +65,8 @@ pub enum AllocError {
     OverlappingRegions,
     #[error("Rust allocator failed: {0}")]
     AllocationFailed(#[from] alloc::alloc::AllocError),
+    #[error("Failed to take lock")]
+    InvalidContext(#[from] context::LockError),
 }
 
 extern "C" {
@@ -142,6 +146,8 @@ pub fn init_kernel_space(boot_config: &mut PagingProperties) {
         .unmap_range(0..kernel_virtual_offset(), true);
 
     KERNEL_MARKER.get().load();
+
+    unsafe { SYSTEM_ALLOCATOR.get().init() };
 }
 
 #[allow(static_mut_refs)]
@@ -161,6 +167,8 @@ pub fn enable_task_switching() {
     log::debug!("Task state: {task:?}");
 
     unsafe { GDT.load_task(task) };
+
+    unsafe { context::init() };
 }
 
 fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
@@ -208,28 +216,6 @@ pub fn kernel_physical_offset() -> usize {
 pub fn stack_size() -> usize {
     unsafe { &KERNEL_STACK_SIZE as *const usize as VirtualAddress }
 }
-
-pub fn kernel_regions() -> LinkedList<'static, MemoryRegion> {
-    todo!()
-}
-
-// pub type AllocHandler = fn(usize) -> Option<LinkedList<'static, Page>>;
-
-pub trait AllocHandler:
-    Fn(usize) -> Option<LinkedList<'static, Page>> + 'static
-{
-}
-
-impl<T> AllocHandler for T where
-    T: Fn(usize) -> Option<LinkedList<'static, Page>> + 'static
-{
-}
-
-pub trait DeallocHandler: Fn(&'static mut Page) + 'static {}
-
-impl<T> DeallocHandler for T where T: Fn(&'static mut Page) + 'static {}
-
-// pub type DeallocHandler = fn(&'static mut Page);
 
 pub type TaskRoutine = extern "C" fn();
 

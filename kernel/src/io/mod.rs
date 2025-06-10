@@ -382,7 +382,9 @@ pub unsafe extern "C" fn interceptor_stub() {
         .expect("Busy loop on interrupts")
         .unwrap()[index];
 
-    chain.dispatch(&mut frame_ptr);
+    memory::start_irq(|| {
+        chain.dispatch(&mut frame_ptr);
+    });
 
     set_eax!(frame_ptr)
 }

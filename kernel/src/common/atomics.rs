@@ -85,9 +85,12 @@ impl<T> UnsafeLazyCell<T> {
     pub fn get(&self) -> &T {
         let option = unsafe { &*self.cell.get() };
         if let Some(value) = option {
-            &value
+            value
         } else {
-            unreachable!("The lazy cell is not initialized");
+            unreachable!(
+                "The lazy cell is not initialized: {}",
+                core::any::type_name::<T>()
+            );
         }
     }
 }
