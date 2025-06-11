@@ -94,15 +94,19 @@ where
 
     pub fn blocking_pop(&self) -> Option<Handle<T>> {
         loop {
+            log::debug!("Trying to fetch new object");
             let maybe_obj = self.data.lock().remove_first();
 
             if let Some(obj) = maybe_obj {
-                log::debug!("Fetch from queue: {:?}", obj.kind);
+                log::debug!("Fetched new object");
+                // log::debug!("Fetch from queue: {:?}", obj.kind);
 
                 obj.parent = None;
 
                 return Some(obj.handle());
             }
+
+            runtime::block_on(self.handle()).expect("Failed to block on queue");
         }
     }
 }

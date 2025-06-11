@@ -1,8 +1,12 @@
+use crate::object::RawHandle;
+
 use super::NodeId;
 
 #[repr(C)]
 pub struct IndexNodeInfo {
-    pub queue_size: usize,
+    //this handle should be allocated for kernel
+    //it directly converted to KernelHandle (!! not UserHandle)
+    pub queue: RawHandle,
 
     pub id: NodeId,
     pub size: usize,

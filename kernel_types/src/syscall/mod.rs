@@ -29,6 +29,7 @@ pub enum Request {
     UserCopy,
 
     GetModuleInfo,
+    GetObjectInfo,
 
     TerminateCurrentTask,
     TerminateCurrentProcess,

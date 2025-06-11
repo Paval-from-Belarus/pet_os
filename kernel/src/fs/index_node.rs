@@ -10,7 +10,7 @@ use crate::{
     common::time::Timestamp,
     impl_container,
     memory::{self, AllocError, Slab, SlabBox},
-    object::{self, Handle, Object, ObjectContainer},
+    object::{self, Handle, Object, ObjectContainer, UserHandle},
     user::queue::Queue,
 };
 
@@ -46,14 +46,14 @@ impl IndexNode {
         parent: &Handle<SuperBlock>,
     ) -> Result<SlabBox<IndexNode>, AllocError> {
         let IndexNodeInfo {
-            queue_size,
+            queue,
             id,
             size,
             kind,
             permissions,
         } = inode;
 
-        let queue = Queue::new_bounded(inode.queue_size)?;
+        let queue = Handle::from_raw(queue);
         let object = Self::new_object(parent);
 
         crate::memory::slab_alloc(Self {

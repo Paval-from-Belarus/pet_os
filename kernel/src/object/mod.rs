@@ -63,6 +63,7 @@ pub enum Status {
 }
 
 impl Object {
+
     fn new_root(kind: Kind) -> Self {
         Self {
             kind,

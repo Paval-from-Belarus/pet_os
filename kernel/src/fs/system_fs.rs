@@ -62,7 +62,7 @@ impl SystemMountPoints {
     }
 
     pub unsafe fn set_dev_fs(&self, fs: &'static mut ListNode<MountPoint>) {
-        todo!()
+        self.mounts.lock().push_back(fs);
     }
 
     pub fn fs_by_name<F, T>(&self, name: &str, mut action: F) -> fs::Result<T>

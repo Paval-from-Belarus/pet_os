@@ -1,16 +1,17 @@
+use alloc::boxed::Box;
 use kernel_types::{
     drivers::ModuleKind,
     fs::{
         FileLookupRequest, FilePermissions, FileSystem, FileSystemKind,
-        FsRequest, IndexNodeInfo, NodeKind, SuperBlockInfo,
+        FsRequest, FsResponse, IndexNodeInfo, NodeKind, SuperBlockInfo,
     },
     get_eax,
-    object::OpStatus,
+    object::{OpStatus, RawHandle},
 };
 
 use crate::{
-    drivers,
-    fs::{self, FileLookupWork, FsWork},
+    current_task, drivers,
+    fs::{self, FileLookupWork, FsWork, SuperBlock},
     object::Handle,
     task,
     user::queue::Queue,
@@ -38,7 +39,11 @@ pub fn spawn_task() -> fs::Result<()> {
     Ok(())
 }
 
-#[allow(unused)]
+pub struct InitMessage {
+    work: Handle<FsWork>,
+    queue: RawHandle,
+}
+
 extern "C" fn fs_task() {
     let raw_handle = unsafe { get_eax!() };
     let queue =
@@ -49,8 +54,7 @@ extern "C" fn fs_task() {
             break;
         };
 
-        let request =
-            work.request.try_lock().unwrap().take().expect("No request");
+        let request = work.take_request();
 
         match request {
             FsRequest::Mount { .. } => {
@@ -64,7 +68,11 @@ extern "C" fn fs_task() {
             }
             FsRequest::Unmount { .. } => todo!(),
             FsRequest::FsQueue { queue } => {
-                let arg = unsafe { queue.leak() as _ };
+                let init_message =
+                    Box::try_new(InitMessage { work, queue }).unwrap();
+
+                let arg = Box::into_raw(init_message) as *mut ();
+
                 let sb_task =
                     task::new_task(sb_task, arg, task::TaskPriority::Module(0))
                         .unwrap();
@@ -78,12 +86,17 @@ extern "C" fn fs_task() {
 }
 
 extern "C" fn sb_task() {
-    let raw_handle = unsafe { get_eax!() };
-    let queue = unsafe {
-        Handle::<Queue<FileLookupWork>>::from_addr_unchecked(raw_handle)
-    };
+    let raw_message = unsafe { get_eax!() };
 
-    log::debug!("dev sb task is started");
+    let message: Box<InitMessage> = unsafe { Box::from_raw(raw_message) };
+
+    let message = *message;
+
+    message.work.send_response(FsResponse::Completed);
+
+    let queue = Handle::<Queue<FileLookupWork>>::from_raw(message.queue);
+
+    log::debug!("dev sb task is started #{}", current_task!().id);
 
     loop {
         let Some(work) = queue.blocking_pop() else {
@@ -94,7 +107,11 @@ extern "C" fn sb_task() {
             work.request.try_lock().unwrap().take().expect("No request");
 
         match request {
-            FileLookupRequest::LookupNode { name, .. } => {
+            FileLookupRequest::LookupNode { name, sb } => {
+                let _ = Handle::<SuperBlock>::from_raw(sb);
+
+                log::debug!("lookup req: {name}");
+
                 if let Some(module) = drivers::find_by_name(name) {
                     let node_kind = match module.kind() {
                         ModuleKind::Fs => {
@@ -110,7 +127,7 @@ extern "C" fn sb_task() {
                         id: module.id as _,
                         size: 0,
                         kind: node_kind,
-                        queue_size: 10,
+                        queue: module.queue.clone().into_raw(),
                         permissions: FilePermissions::READ_WRITE,
                     };
 

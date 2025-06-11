@@ -30,6 +30,19 @@ impl UserBuf {
         }
     }
 
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.buf.as_mut_ptr()
+    }
+
+    /// Sets the length of this [`UserBuf`].
+    ///
+    /// # Safety
+    ///
+    /// .
+    pub unsafe fn set_len(&mut self, len: usize) {
+        self.buf.set_len(len);
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         &self.buf
     }

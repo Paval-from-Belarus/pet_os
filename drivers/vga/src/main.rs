@@ -126,6 +126,14 @@ impl VgaWriter {
 }
 
 pub fn write(_file: File, buf: UserBuf) -> fs::Result<()> {
+    let mut writer = unsafe { VgaWriter::new_unchecked(&raw mut VGA_BUFFER) };
+
+    for byte in buf.as_slice() {
+        writer.put_char(*byte as char);
+    }
+
+    writer.update_cursor();
+
     Ok(())
 }
 

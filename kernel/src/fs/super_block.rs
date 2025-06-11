@@ -53,6 +53,8 @@ impl FileSystemItem {
     ) -> fs::Result<object::Handle<FsWork>> {
         let work = unsafe { FsWork::new_boxed(request, &self.queue)? };
 
+        log::debug!("New Fs Work: {:X?}", self.queue.clone().into_addr());
+
         let handle = self.queue.push(work);
 
         Ok(handle)

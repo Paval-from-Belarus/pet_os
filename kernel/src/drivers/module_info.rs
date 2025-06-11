@@ -3,6 +3,7 @@ use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, ListNode},
     drivers::{ModuleId, ModuleKind, UserModule},
+    object::RawHandle,
 };
 
 use crate::{
@@ -82,6 +83,16 @@ pub enum ModuleQueue {
     Fs(Handle<Queue<FsWork>>),
     Char(Handle<Queue<FileWork>>),
     Block(Handle<Queue<block::BlockWork>>),
+}
+
+impl ModuleQueue {
+    pub fn into_raw(self) -> RawHandle {
+        match self {
+            ModuleQueue::Fs(handle) => handle.into_raw(),
+            ModuleQueue::Char(handle) => handle.into_raw(),
+            ModuleQueue::Block(handle) => handle.into_raw(),
+        }
+    }
 }
 
 impl Module {

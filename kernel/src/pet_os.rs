@@ -23,11 +23,9 @@ extern crate multiboot2;
 use crate::task::TaskPriority;
 use alloc::sync::Arc;
 use common::logging;
-use fs::FsWork;
-use kernel_types::{fs::FsRequest, get_eax, object::RawHandle};
+use kernel_types::get_eax;
 use memory::PagingProperties;
 use task::Mutex;
-use user::queue::Queue;
 
 #[cfg(not(target_arch = "x86"))]
 compile_error!("Operation system is suitable for x86 CPU only");
@@ -126,44 +124,20 @@ pub fn main() {
 }
 
 extern "C" fn init_task() {
-    log::debug!("Init task is started");
+    log::debug!("Init task#{} is started", current_task!().id);
 
-    let q = Queue::<FsWork>::new_bounded(1).unwrap();
+    unsafe { fs::mount_dev_fs() }.expect("Failed to mount dev-fs");
 
-    log::debug!("Queue: {:?}", *q);
+    let file = fs::open("/dev/vga").expect("Failed to open");
 
-    let work = unsafe {
-        FsWork::new_boxed(
-            FsRequest::Mount {
-                device: RawHandle::null(),
-            },
-            &q,
-        )
-    }
-    .unwrap();
+    let file = fs::resolve(file).expect("Failed to resolve file");
 
-    log::debug!("Queue: {:?}", *q);
+    let buf = "Kernel Buf is cool".try_into().unwrap();
 
-    let h = q.push(work);
-    log::debug!("Handle {:?}", *h);
-    drop(h);
+    let work = fs::write(file, buf).unwrap();
 
-    let h = q.blocking_pop().unwrap();
-    log::debug!("Handle {:?}", *h);
-    drop(h);
-
-    // unsafe { fs::mount_dev_fs() }.expect("Failed to mount dev-fs");
-    //
-    // let file = fs::open("/dev/vga").expect("Failed to open");
-    //
-    // let file = fs::resolve(file).expect("Failed to resolve file");
-    //
-    // let buf = "Kernel Buf is cool".try_into().unwrap();
-    //
-    // let work = fs::write(file, buf).unwrap();
-    //
-    // let response = work.wait().unwrap();
-    // log::debug!("work response: {response:?}");
+    let response = work.wait().unwrap();
+    log::debug!("work response: {response:?}");
     // user::exec("/usr/sbin/init");
 }
 

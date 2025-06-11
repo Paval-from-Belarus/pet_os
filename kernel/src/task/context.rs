@@ -63,7 +63,7 @@ pub struct TaskContext {
 
 #[no_mangle]
 pub unsafe extern "C" fn prepare_task() {
-    log::debug!("Prepare task#{}", current_task!().id);
+    // log::debug!("Prepare task#{}", current_task!().id);
 
     let context = &*current_task!().context_ptr();
 
@@ -82,7 +82,6 @@ impl TaskContext {
     pub fn copy_to(&self, context: &mut TaskContext) {
         let context_size = self.size();
 
-        
         unsafe {
             let source = self as *const TaskContext as *const u8;
             let target = context as *mut TaskContext as *mut u8;

@@ -81,7 +81,6 @@ impl SuperBlock {
 #[derive(Debug)]
 #[repr(C)]
 pub struct File {
-    pub offset: usize,
     pub handle: RawHandle,
 }
 
@@ -92,8 +91,8 @@ impl File {
 }
 
 impl From<RawHandle> for File {
-    fn from(_value: RawHandle) -> Self {
-        todo!()
+    fn from(value: RawHandle) -> Self {
+        Self { handle: value }
     }
 }
 

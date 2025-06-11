@@ -27,6 +27,10 @@ macro_rules! impl_work {
                 })
             }
 
+            pub fn take_request(&self) -> $req {
+                self.request.try_lock().unwrap().take().expect("No request")
+            }
+
             pub fn wait(&self) -> Option<$res> {
                 use $crate::object::ObjectContainer;
 

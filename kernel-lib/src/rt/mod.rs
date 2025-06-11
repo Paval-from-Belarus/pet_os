@@ -93,7 +93,9 @@ pub enum HandleError {
     FsError(#[from] FsError),
 }
 
-pub fn handle_char_module(queue: Queue<FileRequest>, _ops: FileOperations) {
+pub fn handle_char_module(queue: Queue<FileRequest>, ops: FileOperations) {
+    log::debug!("Handling char module");
+
     loop {
         let Some(op) = queue.blocking_recv() else {
             break;
@@ -102,13 +104,17 @@ pub fn handle_char_module(queue: Queue<FileRequest>, _ops: FileOperations) {
         match op {
             FileRequest::Command { .. } => todo!(),
             FileRequest::Read { .. } => todo!(),
-            FileRequest::Write { buf, .. } => {
+            FileRequest::Write { buf, file } => {
                 let buf = KernelBuf::from(buf);
+
+                log::debug!("Kernel buf: {buf:?}");
 
                 let mut user_buf = UserBuf::new(buf.len());
                 buf.copy_to(&mut user_buf).unwrap();
 
-                // (ops.write)()
+                let status = (ops.write)(file.into(), user_buf);
+
+                log::debug!("vga write: {status:?}");
             }
         }
     }

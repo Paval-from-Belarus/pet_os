@@ -48,7 +48,6 @@ pub fn handle(
 
             log_module!("{string}");
         }
-
         Request::MemRemap => {
             let remap = validate_ref::<MemoryRemap>(edx)?;
 
@@ -119,15 +118,12 @@ pub fn handle(
 
             unsafe { *ptr = module };
         }
-
         Request::TerminateCurrentTask => {
             task::terminate(edx as i32);
         }
-
         Request::TerminateCurrentProcess => {
             user::exit(edx as i32);
         }
-
         Request::QueueBlockingGet => {
             unsafe { memory::switch_to_kernel() };
 
@@ -187,6 +183,7 @@ pub fn handle(
 
                 crate::object::Kind::FileWork => unsafe {
                     blocking_pop(&queue, |work: Handle<FileWork>| {
+                        log::debug!("User blocking get");
                         let request = work
                             .request
                             .try_lock()
@@ -215,7 +212,6 @@ pub fn handle(
                 }
             }
         }
-
         Request::FreeKernelObject => unsafe {
             let raw_object = edx as *const Object;
             let raw_handle = edx;
@@ -249,14 +245,19 @@ pub fn handle(
                         raw_handle,
                     );
                 }
+
+                crate::object::Kind::KernelBuf => {
+                    let handle =
+                        Handle::<KernelBuf>::from_addr_unchecked(raw_handle);
+
+                    drop(handle);
+                }
                 crate::object::Kind::SuperBlock => todo!(),
                 crate::object::Kind::Mutex => todo!(),
                 crate::object::Kind::Exchange => todo!(),
-                crate::object::Kind::KernelBuf => todo!(),
                 crate::object::Kind::Event => todo!(),
             }
         },
-
         Request::CloneHandle => {
             //clone handle
             let handle = Handle::<FsWork>::from_addr(edx).unwrap();
@@ -264,7 +265,6 @@ pub fn handle(
             //prevent droping handle
             let _ = handle.into_addr();
         }
-
         Request::KernelCopy => {
             let kernel_buf =
                 unsafe { UserHandle::<KernelBuf>::from_addr_unchecked(edx) };
@@ -277,9 +277,26 @@ pub fn handle(
 
             kernel_buf.copy_to(bytes)?;
         }
+        Request::GetObjectInfo => {
+            let kind = validate_ref::<Object>(edx)?.kind;
+            let ptr = ecx as *mut MemBuf;
 
+            match kind {
+                crate::object::Kind::KernelBuf => {
+                    let handle = unsafe {
+                        UserHandle::<KernelBuf>::from_addr_unchecked(edx)
+                    };
+                    unsafe {
+                        *ptr = MemBuf {
+                            ptr: core::ptr::null_mut(),
+                            len: handle.len(),
+                        };
+                    }
+                }
+                _ => todo!(),
+            }
+        }
         Request::UserCopy => todo!(),
-
         Request::QueueTryGet => todo!(),
     }
 
