@@ -49,7 +49,10 @@ extern "C" fn fs_task() {
             break;
         };
 
-        match work.request {
+        let request =
+            work.request.try_lock().unwrap().take().expect("No request");
+
+        match request {
             FsRequest::Mount { .. } => {
                 let sb_info = SuperBlockInfo {
                     block_size: 512,
@@ -87,8 +90,11 @@ extern "C" fn sb_task() {
             break;
         };
 
-        match &work.request {
-            FileLookupRequest::LookupNode { name } => {
+        let request =
+            work.request.try_lock().unwrap().take().expect("No request");
+
+        match request {
+            FileLookupRequest::LookupNode { name, .. } => {
                 if let Some(module) = drivers::find_by_name(name) {
                     let node_kind = match module.kind() {
                         ModuleKind::Fs => {

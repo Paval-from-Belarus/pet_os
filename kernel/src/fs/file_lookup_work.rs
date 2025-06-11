@@ -8,7 +8,7 @@ use crate::{
 use super::SuperBlock;
 
 pub struct FileLookupWork {
-    pub request: FileLookupRequest,
+    pub request: spin::Mutex<Option<FileLookupRequest>>,
     pub sb: Handle<SuperBlock>,
     response: spin::Mutex<Option<FileLookupResponse>>,
     object: Object,

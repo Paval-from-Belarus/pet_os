@@ -10,8 +10,8 @@ use crate::{
 };
 
 pub struct BlockWork {
+    pub request: spin::Mutex<Option<Request>>,
     object: object::Object,
-    pub request: Request,
     response: spin::Mutex<Option<Response>>,
 }
 

@@ -3,10 +3,7 @@ use kernel_types::{
     syscall,
 };
 
-use crate::{
-    io,
-    object::{KernelBuf, UserBuf},
-};
+use crate::io;
 
 #[repr(C)]
 #[must_use]

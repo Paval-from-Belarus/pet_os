@@ -51,11 +51,9 @@ impl FileSystemItem {
         &self,
         request: FsRequest,
     ) -> fs::Result<object::Handle<FsWork>> {
-        let work = FsWork::new_boxed(request, &self.queue)?;
+        let work = unsafe { FsWork::new_boxed(request, &self.queue)? };
 
-        let handle = work.handle();
-
-        self.queue.push(work);
+        let handle = self.queue.push(work);
 
         Ok(handle)
     }
@@ -86,13 +84,11 @@ impl SuperBlock {
         &self,
         req: FileLookupRequest,
     ) -> fs::Result<Handle<FileLookupWork>> {
-        let sb_handle = self.handle();
+        let work = unsafe {
+            FileLookupWork::new_boxed(req, &self.queue, self.handle())?
+        };
 
-        let work = FileLookupWork::new_boxed(req, &self.queue, sb_handle)?;
-
-        let handle = work.handle();
-
-        self.queue.push(work);
+        let handle = self.queue.push(work);
 
         Ok(handle)
     }

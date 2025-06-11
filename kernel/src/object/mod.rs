@@ -76,14 +76,14 @@ impl Object {
         Self {
             kind,
             parent: parent.into(),
-            ref_count: AtomicU16::new(0),
+            ref_count: AtomicU16::new(1),
             status: AtomicStatus::new(Status::Working),
             node: ListNode::empty(),
         }
     }
 
     pub fn handle<T: ObjectContainer>(&self) -> Handle<T> {
-        unsafe { Handle::from_addr_unchecked(self.raw_handle()) }
+        Handle::from_addr(self.raw_handle()).unwrap()
     }
 
     pub fn raw_handle(&self) -> RawHandle {
@@ -123,7 +123,7 @@ pub fn alloc_root_object<T: ObjectContainer + Slab + 'static>(
 
     let raw_handle = runtime::register(leaked_object.object_mut());
 
-    unsafe { Ok(Handle::from_addr_unchecked(raw_handle)) }
+    Ok(Handle::from_addr(raw_handle).unwrap())
 }
 
 pub fn dealloc_root_object<T: ObjectContainer>(handle: Handle<T>) {

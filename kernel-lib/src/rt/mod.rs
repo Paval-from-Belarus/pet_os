@@ -93,20 +93,20 @@ pub enum HandleError {
     FsError(#[from] FsError),
 }
 
-pub fn handle_char_module(queue: Queue<FileRequest>, ops: FileOperations) {
+pub fn handle_char_module(queue: Queue<FileRequest>, _ops: FileOperations) {
     loop {
         let Some(op) = queue.blocking_recv() else {
             break;
         };
 
         match op {
-            FileRequest::Command { command } => todo!(),
-            FileRequest::Read { buf } => todo!(),
-            FileRequest::Write { buf } => {
+            FileRequest::Command { .. } => todo!(),
+            FileRequest::Read { .. } => todo!(),
+            FileRequest::Write { buf, .. } => {
                 let buf = KernelBuf::from(buf);
 
                 let mut user_buf = UserBuf::new(buf.len());
-                buf.copy_to(&mut user_buf);
+                buf.copy_to(&mut user_buf).unwrap();
 
                 // (ops.write)()
             }

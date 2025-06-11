@@ -9,10 +9,16 @@ use crate::{
     object::{self, runtime, Handle, Object, ObjectContainer},
 };
 
-#[derive(Debug)]
 pub struct Mutex<T: Sized> {
     data: UnsafeCell<T>,
     mutex: Handle<MutexObject>,
+}
+impl<T: Sized> core::fmt::Debug for Mutex<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Mutex")
+            .field("mutex", &*self.mutex)
+            .finish()
+    }
 }
 
 #[derive(Debug)]

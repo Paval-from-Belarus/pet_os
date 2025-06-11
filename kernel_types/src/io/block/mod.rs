@@ -1,14 +1,14 @@
-use crate::io::{KernelBuf, KernelBufMut};
+use crate::object::RawHandle;
 
 #[derive(Debug)]
 pub enum Work {
     Read {
         sector: u32, // Starting sector (LBA)
-        buffer: KernelBufMut,
+        buffer: RawHandle,
     },
     Write {
         sector: u32, // Starting sector (LBA)
-        buffer: KernelBuf,
+        buffer: RawHandle,
     },
     Passthrough {
         cmd: u32, // Command code (e.g., for flush or ioctl)

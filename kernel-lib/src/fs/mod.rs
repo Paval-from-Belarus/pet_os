@@ -3,10 +3,7 @@ mod index_node;
 
 pub use index_node::*;
 pub use kernel_types::fs::*;
-use kernel_types::{
-    io::{KernelBuf, KernelBufMut},
-    object::{KernelObject, RawHandle},
-};
+use kernel_types::object::{KernelObject, RawHandle};
 
 use crate::{
     io::block::BlockDevice,
@@ -28,7 +25,7 @@ pub fn register(_fs: FileSystem) -> Result<()> {
     Ok(())
 }
 
-pub fn noop_write(_file: File, _buf: KernelBuf) -> Result<()> {
+pub fn noop_write(_file: File, _buf: UserBuf) -> Result<()> {
     Ok(())
 }
 

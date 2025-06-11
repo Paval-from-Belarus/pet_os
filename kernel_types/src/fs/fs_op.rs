@@ -5,6 +5,7 @@ use crate::{
 
 use super::SuperBlockInfo;
 
+#[derive(Debug)]
 pub enum FsRequest {
     Mount { device: RawHandle },
     //super_block
@@ -13,6 +14,7 @@ pub enum FsRequest {
     FsQueue { queue: RawHandle },
 }
 
+#[derive(Debug)]
 pub enum FsResponse {
     SuperBlockInfo(SuperBlockInfo),
     OpStatus(OpStatus),

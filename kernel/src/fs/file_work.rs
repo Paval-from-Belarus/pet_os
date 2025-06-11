@@ -8,8 +8,7 @@ use crate::{
 use super::IndexNode;
 
 pub struct FileWork {
-    pub request: FileRequest,
-    pub inode: Handle<IndexNode>,
+    pub request: spin::Mutex<Option<FileRequest>>,
     response: spin::Mutex<Option<FileResponse>>,
     object: Object,
 }
@@ -20,6 +19,5 @@ impl_work! {
     res: FileResponse,
 
     obj_kind: FileWork,
-    slab: "file_work",
-    args: [inode: Handle<IndexNode>]
+    slab: "file_work"
 }

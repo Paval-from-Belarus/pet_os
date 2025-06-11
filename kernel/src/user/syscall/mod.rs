@@ -1,12 +1,12 @@
 use kernel_types::{
     drivers::UserModule,
-    fs::{FileRequest, FsRequest},
+    fs::{FileLookupRequest, FileRequest, FsRequest},
     io::{
         block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, MemBuf,
         MemoryRemap,
     },
     string::MutString,
-    syscall::{FileOperation, Request, SyscallError},
+    syscall::{Request, SyscallError},
 };
 
 use crate::{
@@ -119,12 +119,15 @@ pub fn handle(
 
             unsafe { *ptr = module };
         }
+
         Request::TerminateCurrentTask => {
             task::terminate(edx as i32);
         }
+
         Request::TerminateCurrentProcess => {
             user::exit(edx as i32);
         }
+
         Request::QueueBlockingGet => {
             unsafe { memory::switch_to_kernel() };
 
@@ -133,41 +136,86 @@ pub fn handle(
 
             match queue.kind() {
                 crate::object::Kind::BlockDeviceWork => unsafe {
-                    blocking_pop(&queue, |work: BlockWork| {
+                    blocking_pop(&queue, |work: Handle<BlockWork>| {
+                        let request = work
+                            .request
+                            .try_lock()
+                            .unwrap()
+                            .take()
+                            .expect("No request");
+
                         memory::switch_to_task(current_task!());
+
                         let ptr = edx as *mut block::Request;
-                        *ptr = work.request;
+
+                        *ptr = request;
                     })?;
                 },
                 crate::object::Kind::FsWork => unsafe {
-                    blocking_pop(&queue, |work: FsWork| {
+                    blocking_pop(&queue, |work: Handle<FsWork>| {
+                        let request = work
+                            .request
+                            .try_lock()
+                            .unwrap()
+                            .take()
+                            .expect("No request");
+
                         memory::switch_to_task(current_task!());
+
                         let ptr = edx as *mut FsRequest;
-                        *ptr = work.request;
+
+                        *ptr = request;
                     })?;
                 },
-                crate::object::Kind::FileWork => unsafe {
-                    blocking_pop(&queue, |work: FileWork| {
+
+                crate::object::Kind::FileLookupWork => unsafe {
+                    blocking_pop(&queue, |work: Handle<FileLookupWork>| {
+                        let request = work
+                            .request
+                            .try_lock()
+                            .unwrap()
+                            .take()
+                            .expect("No request");
+
                         memory::switch_to_task(current_task!());
-                        let ptr = edx as *mut FileOperation;
-                        *ptr = FileOperation {
-                            file: work.inode.into_raw(),
-                            request: work.request,
-                        };
+
+                        let ptr = edx as *mut FileLookupRequest;
+
+                        *ptr = request;
                     })?;
                 },
+
+                crate::object::Kind::FileWork => unsafe {
+                    blocking_pop(&queue, |work: Handle<FileWork>| {
+                        let request = work
+                            .request
+                            .try_lock()
+                            .unwrap()
+                            .take()
+                            .expect("No request");
+
+                        memory::switch_to_task(current_task!());
+
+                        let ptr = edx as *mut FileRequest;
+
+                        *ptr = request;
+                    })?;
+                },
+
                 crate::object::Kind::IrqEvent => unsafe {
-                    blocking_pop(&queue, |event: IrqEvent| {
+                    blocking_pop(&queue, |event: Handle<IrqEvent>| {
                         memory::switch_to_task(current_task!());
                         let ptr = edx as *mut IrqLine;
                         *ptr = event.line;
                     })?;
                 },
+
                 _ => {
                     return Err(SyscallError::InvalidQueueKind);
                 }
             }
         }
+
         Request::FreeKernelObject => unsafe {
             let raw_object = edx as *const Object;
             let raw_handle = edx;
@@ -207,12 +255,13 @@ pub fn handle(
                 crate::object::Kind::KernelBuf => todo!(),
             }
         },
-        Request::CloneHandle => {
-            let handle = unsafe { Handle::<FsWork>::from_addr_unchecked(edx) };
-            let cloned_handle = Handle.clone();
 
-            let _ = handle.into_raw();
-            let _ = cloned_handle;
+        Request::CloneHandle => {
+            //clone handle
+            let handle = Handle::<FsWork>::from_addr(edx).unwrap();
+
+            //prevent droping handle
+            let _ = handle.into_addr();
         }
 
         Request::KernelCopy => {
@@ -225,8 +274,9 @@ pub fn handle(
                 core::slice::from_raw_parts_mut(mem_buf.ptr, mem_buf.len)
             };
 
-            kernel_buf.copy_to(bytes);
+            kernel_buf.copy_to(bytes)?;
         }
+
         Request::UserCopy => todo!(),
 
         Request::QueueTryGet => todo!(),
@@ -240,15 +290,19 @@ impl From<AllocError> for SyscallError {
         SyscallError::NoMemory
     }
 }
-unsafe fn blocking_pop<T: ObjectContainer, F: FnMut(T)>(
+unsafe fn blocking_pop<T, F>(
     queue: &Queue<AnyObject>,
     mut op: F,
-) -> Result<(), SyscallError> {
-    let Some(data) = queue.cast::<T>().blocking_pop() else {
+) -> Result<(), SyscallError>
+where
+    T: ObjectContainer,
+    F: FnMut(Handle<T>),
+{
+    let Some(handle) = queue.cast::<T>().blocking_pop() else {
         return Err(SyscallError::QueueIsEmpty);
     };
 
-    op(*data);
+    op(handle);
 
     Ok(())
 }

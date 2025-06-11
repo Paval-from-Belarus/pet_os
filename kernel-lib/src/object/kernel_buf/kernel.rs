@@ -1,10 +1,4 @@
-use kernel_types::{
-    io::{IoOperation, MemBuf},
-    object::RawHandle,
-    syscall,
-};
-
-use crate::io::IoTransaction;
+use kernel_types::{io::MemBuf, object::RawHandle, syscall};
 
 use super::UserBuf;
 

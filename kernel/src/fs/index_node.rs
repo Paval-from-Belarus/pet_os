@@ -76,13 +76,9 @@ impl IndexNode {
         &self,
         req: FileRequest,
     ) -> fs::Result<Handle<FileWork>> {
-        let inode = self.handle();
+        let work = unsafe { FileWork::new_boxed(req, &self.queue)? };
 
-        let work = FileWork::new_boxed(req, &self.queue, inode)?;
-
-        let handle = work.handle();
-
-        self.queue.push(work);
+        let handle = self.queue.push(work);
 
         Ok(handle)
     }

@@ -68,7 +68,10 @@ impl MountPoint {
         &self,
         name: alloc::string::String,
     ) -> Result<Handle<FileLookupWork>> {
-        let req = FileLookupRequest::LookupNode { name };
+        let req = FileLookupRequest::LookupNode {
+            sb: self.sb.handle().into_raw(),
+            name,
+        };
 
         self.sb.send_request(req)
     }

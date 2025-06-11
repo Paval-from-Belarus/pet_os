@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct SuperBlockInfo {
     pub context: *const (),
     pub block_size: usize,

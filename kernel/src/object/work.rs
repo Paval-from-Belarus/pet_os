@@ -7,7 +7,9 @@ macro_rules! impl_work {
      )?
      ) => {
         impl $ty {
-            pub fn new_boxed(
+            /// You should put object into the parent collections
+            /// As droping this object will cause removing object from collection
+            pub unsafe fn new_boxed(
                 request: $req,
                 parent: &$crate::object::Handle<$crate::user::queue::Queue<$ty>>,
                 $( $($field: $field_ty,)+ )?
@@ -18,7 +20,7 @@ macro_rules! impl_work {
                 let object = Self::new_object(parent);
 
                 $crate::memory::slab_alloc(Self {
-                    request,
+                    request: spin::Mutex::new(request.into()),
                     response: spin::Mutex::new(None),
                     object,
                   $( $($field,)+ )?

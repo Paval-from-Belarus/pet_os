@@ -9,24 +9,27 @@ use super::IndexNodeInfo;
 
 pub enum FileLookupRequest {
     LookupNode {
+        sb: RawHandle,
         name: alloc::string::String,
     },
 
     CreateFile {
-        fs: RawHandle,
+        sb: RawHandle,
         name: QuickString<'static>,
     },
 
     CreateDirectory {
-        fs: RawHandle,
+        sb: RawHandle,
         name: QuickString<'static>,
     },
 
     FlushNode {
+        sb: RawHandle,
         file: RawHandle,
     },
 
     DestroyNode {
+        sb: RawHandle,
         file: RawHandle,
     },
 }

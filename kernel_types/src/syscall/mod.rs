@@ -1,8 +1,4 @@
-mod file_op;
-
 use crate::declare_constants;
-
-pub use file_op::*;
 
 pub type Result<T> = core::result::Result<T, SyscallError>;
 
@@ -27,7 +23,9 @@ pub enum Request {
 
     IoOperation,
 
+    //copy from kernel space to user space
     KernelCopy,
+    //copy from user space to kernel space
     UserCopy,
 
     GetModuleInfo,
@@ -66,6 +64,8 @@ pub enum SyscallError {
     QueueIsEmpty = 7,
     ModuleIsNotFound = 8,
     InvalidModuleParams = 9,
+
+    NoSpaceInBuffer = 10,
 
     #[num_enum(default)]
     Failed = 0x42,

@@ -286,7 +286,6 @@ pub unsafe fn interpretate_op(op: &IoOperation) {
             }
         },
         IoOperation::MemoryOperation(_) => todo!(),
-        IoOperation::MemoryCopy { .. } => todo!(),
     }
 }
 

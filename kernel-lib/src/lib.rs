@@ -14,7 +14,7 @@ pub mod logging;
 extern crate alloc;
 
 #[cfg(feature = "alloc")]
-pub mod alloc;
+mod allocator;
 
 pub mod drivers;
 pub mod object;

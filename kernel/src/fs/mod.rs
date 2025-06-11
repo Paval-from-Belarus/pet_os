@@ -18,7 +18,7 @@ use kernel_types::declare_constants;
 use kernel_types::drivers::Device;
 
 use crate::current_task;
-use crate::object::{self, Handle};
+use crate::object::{self, Handle, ObjectContainer};
 use crate::user::kernel_buf::KernelBuf;
 use crate::user::queue::Queue;
 
@@ -174,6 +174,7 @@ pub fn write(
 
     let req = FileRequest::Write {
         buf: buf.into_raw(),
+        file: file.handle().into_raw(),
     };
 
     file.send_request(req)

@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, ops::DerefMut};
+use core::marker::PhantomData;
 
 use kernel_types::{collections::LinkedList, container_of};
 
@@ -17,6 +17,16 @@ pub struct Queue<T: 'static> {
     kind: object::Kind,
     max_capacity: Option<usize>,
     _marker: PhantomData<T>,
+}
+
+impl<T: 'static> core::fmt::Debug for Queue<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Queue")
+            .field("kind", &self.kind)
+            .field("object", &self.object)
+            .field("max_capacity", &self.max_capacity)
+            .finish()
+    }
 }
 
 impl Queue<AnyObject> {
@@ -61,12 +71,16 @@ where
         })
     }
 
-    pub fn push(&self, data: SlabBox<T>) {
+    pub fn push(&self, data: SlabBox<T>) -> Handle<T> {
+        let handle = data.handle();
+
         let data = unsafe { &mut *SlabBox::into_raw(data) };
 
         self.data.lock().push_back(data.object_mut());
 
         runtime::notify(self.handle());
+
+        handle
     }
 
     pub fn try_push(&self, data: SlabBox<T>) -> Result<(), ()> {
@@ -74,19 +88,20 @@ where
         todo!()
     }
 
-    pub fn try_pop(&self) -> Option<SlabBox<T>> {
+    pub fn try_pop(&self) -> Option<Handle<T>> {
         todo!()
     }
 
-    pub fn blocking_pop(&self) -> Option<SlabBox<T>> {
+    pub fn blocking_pop(&self) -> Option<Handle<T>> {
         loop {
             let maybe_obj = self.data.lock().remove_first();
+
             if let Some(obj) = maybe_obj {
-                let boxed = unsafe { &mut *T::container_of(obj.deref_mut()) };
+                log::debug!("Fetch from queue: {:?}", obj.kind);
 
-                log::debug!("S: {:?}", obj.kind);
+                obj.parent = None;
 
-                return Some(memory::into_boxed(boxed.into()));
+                return Some(obj.handle());
             }
         }
     }

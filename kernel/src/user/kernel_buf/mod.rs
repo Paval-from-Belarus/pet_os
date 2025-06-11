@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use kernel_types::syscall::SyscallError;
 
 use crate::{impl_container, memory::AllocError, task::Mutex};
 
@@ -73,6 +74,18 @@ impl<'a> TryFrom<&'a str> for Handle<KernelBuf> {
         buf.copy_from(value.as_bytes()).unwrap();
 
         Ok(buf)
+    }
+}
+
+impl From<CopyError> for SyscallError {
+    fn from(value: CopyError) -> Self {
+        match value {
+            CopyError::NoSpaceAvailable => SyscallError::NoSpaceInBuffer,
+            CopyError::Alloc(cause) => {
+                log::warn!("{cause}");
+                SyscallError::NoMemory
+            }
+        }
     }
 }
 
