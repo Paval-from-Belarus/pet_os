@@ -30,6 +30,7 @@ pub enum Kind {
     SuperBlock,
     File,
     Mutex,
+    Event,
 
     KernelBuf,
     //rendevouz oneshot channel

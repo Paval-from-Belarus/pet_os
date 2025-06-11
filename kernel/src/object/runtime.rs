@@ -73,4 +73,7 @@ pub fn unregister(handle: RawHandle) -> Option<&'static mut Object> {
 }
 
 //remove child from parent
-pub fn remove_child(_child: RawHandle, _parent: RawHandle) {}
+#[allow(unused)]
+pub fn remove_child(_child: RawHandle, _parent: RawHandle) {
+    todo!()
+}

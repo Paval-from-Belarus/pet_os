@@ -1,4 +1,4 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, string::ToString};
 use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, ListNode},
@@ -33,7 +33,6 @@ pub struct MountPoint {
     #[list_pivots]
     node: ListNode<MountPoint>,
 
-    lock: SpinLock,
     sb: Handle<SuperBlock>,
     // parent_mount: Option<NonNull<MountPoint>>,
     // //the vfs' root doesn't have parent
@@ -53,7 +52,6 @@ impl MountPoint {
 
         let mount_point = crate::memory::slab_alloc(Self {
             sb: super_block,
-            lock: SpinLock::new(),
             node: ListNode::empty(),
         })?;
 
@@ -64,13 +62,10 @@ impl MountPoint {
         self.sb.queue.clone()
     }
 
-    pub fn open(
-        &self,
-        name: alloc::string::String,
-    ) -> Result<Handle<FileLookupWork>> {
+    pub fn open(&self, name: &str) -> Result<Handle<FileLookupWork>> {
         let req = FileLookupRequest::LookupNode {
             sb: self.sb.handle().into_raw(),
-            name,
+            name: name.to_string(),
         };
 
         self.sb.send_request(req)

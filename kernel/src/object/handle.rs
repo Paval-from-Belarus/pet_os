@@ -2,7 +2,7 @@ use core::{marker::PhantomData, mem::ManuallyDrop};
 
 use kernel_types::collections::{HashCode, HashKey};
 
-use crate::{memory::VirtualAddress, object::runtime};
+use crate::memory::VirtualAddress;
 
 use super::{Object, ObjectContainer};
 
@@ -111,22 +111,22 @@ impl<T: ObjectContainer> Drop for Handle<T> {
 
         log::debug!("Droping object handle: {object:?}");
 
-        let prev_value = object.ref_count.fetch_sub(1, Ordering::SeqCst);
+        let prev_value = object.ref_count.fetch_sub(0, Ordering::SeqCst);
 
-        let value = prev_value - 1;
-
-        if value == 0 {
-            assert!(object.parent.is_none());
-            let _ = object;
-
-            let container =
-                unsafe { &mut *T::container_of(self.object() as *mut Object) };
-            let _ = container;
-        } else if value == 1 {
-            if let Some(parent) = object.parent {
-                //parent should drop object by itself
-                runtime::remove_child(self.0, parent);
-            }
-        }
+        let _value = prev_value - 1;
+        //
+        // if value == 0 {
+        //     assert!(object.parent.is_none());
+        //     let _ = object;
+        //
+        //     let container =
+        //         unsafe { &mut *T::container_of(self.object() as *mut Object) };
+        //     let _ = container;
+        // } else if value == 1 {
+        //     if let Some(parent) = object.parent {
+        //         //parent should drop object by itself
+        //         runtime::remove_child(self.0, parent);
+        //     }
+        // }
     }
 }

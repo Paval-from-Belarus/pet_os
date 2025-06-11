@@ -253,6 +253,7 @@ pub fn handle(
                 crate::object::Kind::Mutex => todo!(),
                 crate::object::Kind::Exchange => todo!(),
                 crate::object::Kind::KernelBuf => todo!(),
+                crate::object::Kind::Event => todo!(),
             }
         },
 

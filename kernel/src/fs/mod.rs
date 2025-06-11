@@ -17,6 +17,7 @@ pub use super_block::*;
 use kernel_types::declare_constants;
 use kernel_types::drivers::Device;
 
+use crate::common::atomics::UnsafeLazyCell;
 use crate::current_task;
 use crate::object::{self, Handle, ObjectContainer};
 use crate::user::kernel_buf::KernelBuf;
@@ -67,9 +68,14 @@ declare_constants!(
     MAX_FILES_COUNT = 15, "The count of files for process";
 );
 
-static FILE_SYSTEMS: SystemMountPoints = SystemMountPoints::new();
+static FILE_SYSTEMS: UnsafeLazyCell<SystemMountPoints> =
+    UnsafeLazyCell::empty();
 
-pub fn init() {}
+pub fn init() {
+    let fs = SystemMountPoints::new().expect("Failed to creaate mount points");
+
+    FILE_SYSTEMS.set(fs);
+}
 
 pub fn register_fs(fs: FileSystem) -> Result<FsId> {
     let fs_id = FILE_SYSTEMS.register(fs)?;
@@ -88,6 +94,8 @@ pub fn unregister_fs(id: FsId) -> Result<()> {
 pub unsafe fn mount_dev_fs() -> Result<()> {
     let work = FILE_SYSTEMS
         .fs_by_name("dev-fs", move |fs| {
+            log::debug!("sending dev-fs mount");
+
             fs.send_request(FsRequest::Mount {
                 device: RawHandle::null(),
             })
@@ -95,6 +103,7 @@ pub unsafe fn mount_dev_fs() -> Result<()> {
         .expect("Failed to mount dev-fs");
 
     let sb_info = work.wait().unwrap().super_block().unwrap();
+    log::debug!("dev fs sb is taken");
 
     let mount_point = MountPoint::new_boxed(sb_info)?;
 
@@ -102,11 +111,14 @@ pub unsafe fn mount_dev_fs() -> Result<()> {
 
     let work = FILE_SYSTEMS
         .fs_by_name("dev-fs", |fs| {
+            log::debug!("Sending dev-fs queue");
             fs.send_request(FsRequest::FsQueue { queue })
         })
         .unwrap();
 
     work.wait().unwrap().status().unwrap();
+
+    log::info!("Mounting dev-fs");
 
     FILE_SYSTEMS.set_dev_fs(mount_point.into_node());
 
@@ -120,6 +132,8 @@ pub fn mount(path: &str, fs_name: &str, dev_name: &str) -> Result<()> {
 }
 
 pub fn resolve(handle: Handle<FileLookupWork>) -> Result<usize> {
+    log::debug!("Resolving");
+
     let Some(res) = handle.wait() else {
         return Err(FsError::FsIsDead);
     };
@@ -140,9 +154,7 @@ pub fn resolve(handle: Handle<FileLookupWork>) -> Result<usize> {
 }
 
 pub fn open<T: AsRef<str>>(path: T) -> Result<Handle<FileLookupWork>> {
-    let (name, fs) = FILE_SYSTEMS.lookup_fs(path);
-
-    fs.open(name)
+    FILE_SYSTEMS.lookup_fs(path, |name, fs| fs.open(name))
 }
 
 pub fn read(
@@ -168,6 +180,8 @@ pub fn write(
     file_handle: usize,
     buf: Handle<KernelBuf>,
 ) -> Result<Handle<FileWork>> {
+    log::debug!("Writing to file!!!");
+
     let Some(file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };

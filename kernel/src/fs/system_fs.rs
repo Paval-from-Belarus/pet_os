@@ -9,7 +9,7 @@ use kernel_types::{
     fs::{FileSystem, FsId},
 };
 
-use crate::{fs, user::queue::Queue};
+use crate::{fs, task::Mutex, user::queue::Queue};
 
 use crate::{
     common::{atomics::SpinLock, SpinBox},
@@ -19,10 +19,8 @@ use crate::{
 use super::{FileSystemItem, FsError, FsWork, MountPoint};
 
 pub struct SystemMountPoints {
-    mounts: UnsafeCell<LinkedList<'static, MountPoint>>,
-    mounts_lock: SpinLock,
-
-    fs: spin::RwLock<LinkedList<'static, FileSystemItem>>,
+    mounts: Mutex<LinkedList<'static, MountPoint>>,
+    fs: Mutex<LinkedList<'static, FileSystemItem>>,
 
     fs_id: AtomicUsize,
 }
@@ -31,15 +29,13 @@ unsafe impl Send for SystemMountPoints {}
 unsafe impl Sync for SystemMountPoints {}
 
 impl SystemMountPoints {
-    pub const fn new() -> Self {
-        Self {
-            mounts: UnsafeCell::new(LinkedList::empty()),
-            mounts_lock: SpinLock::new(),
-
-            fs: spin::RwLock::new(LinkedList::empty()),
+    pub fn new() -> fs::Result<Self> {
+        Ok(Self {
+            mounts: Mutex::new(LinkedList::empty())?,
+            fs: Mutex::new(LinkedList::empty())?,
 
             fs_id: AtomicUsize::new(1),
-        }
+        })
     }
 
     pub fn register(&self, fs: FileSystem) -> fs::Result<usize> {
@@ -52,7 +48,7 @@ impl SystemMountPoints {
         let fs_leaked = unsafe { &mut *Box::into_raw(fs) };
         fs_leaked.id = id;
 
-        self.fs.write().push_back(fs_leaked.as_node());
+        self.fs.lock().push_back(fs_leaked.as_node());
 
         Ok(id)
     }
@@ -62,14 +58,7 @@ impl SystemMountPoints {
     }
 
     pub unsafe fn set_root_fs(&self, fs: &'static mut MountPoint) {
-        self.mounts_lock.acquire();
-
-        let mounts = unsafe { &mut *self.mounts.get() };
-        assert!(mounts.is_empty(), "Only once");
-
-        mounts.push_back(fs.as_node());
-
-        self.mounts_lock.release();
+        self.mounts.lock().push_back(fs);
     }
 
     pub unsafe fn set_dev_fs(&self, fs: &'static mut ListNode<MountPoint>) {
@@ -81,7 +70,7 @@ impl SystemMountPoints {
         F: FnOnce(&FileSystemItem) -> fs::Result<T>,
     {
         let maybe_fs =
-            self.fs.read().iter().find(|item| item.fs().name.eq(name));
+            self.fs.lock().iter().find(|item| item.fs().name.eq(name));
 
         let Some(fs) = maybe_fs else {
             return Err(FsError::NotFound);
@@ -95,28 +84,34 @@ impl SystemMountPoints {
     }
 
     pub fn root_fs(&self) -> SpinBox<'_, &MountPoint> {
-        self.mounts_lock.acquire();
-
-        let mounts = unsafe { &*self.mounts.get() };
-        let root_fs = mounts.first().expect("Root FS is not set");
-
-        SpinBox::new_locked(&self.mounts_lock, root_fs)
+        todo!()
     }
 
     pub fn fs_queue(&self, id: FsId) -> Option<Handle<Queue<FsWork>>> {
         self.fs
-            .read()
+            .lock()
             .iter()
             .find(|fs| fs.id == id)
             .map(|fs| fs.queue())
     }
 
-    pub fn lookup_fs<PATH: AsRef<str>>(
+    pub fn lookup_fs<PATH, F, T>(
         &self,
-        name: PATH,
-    ) -> (alloc::string::String, SpinBox<'_, &MountPoint>) {
-        let file_name = name.as_ref().to_string();
+        _name: PATH,
+        mut action: F,
+    ) -> fs::Result<T>
+    where
+        PATH: AsRef<str>,
+        F: FnMut(&str, &MountPoint) -> fs::Result<T>,
+    {
+        // let file_name = name.as_ref().to_string();
+        //
+        // (file_name, self.root_fs())
+        // ("vga".to_string(), self.mounts.lock().iter().next())
 
-        (file_name, self.root_fs())
+        let mounts = self.mounts.lock();
+        let dev_fs = mounts.first().unwrap();
+
+        action("vga", &dev_fs)
     }
 }
