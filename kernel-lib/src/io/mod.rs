@@ -5,9 +5,9 @@ pub mod spin;
 mod transaction;
 
 pub use kernel_types::io::op::*;
-use kernel_types::io::MemoryRemap;
+use kernel_types::io::{IrqHandler, MemoryRemap};
+use kernel_types::object::{Queue, RawHandle};
 use kernel_types::syscall;
-use kernel_types::syscall::Request;
 pub use transaction::*;
 
 pub use error::*;
@@ -29,13 +29,26 @@ pub struct FileOperations {
 
 pub type FnIrq<T> = fn(*const T);
 
+pub struct IrqEvent(u8);
+
 //set callback handler on irq
-pub fn set_irq<T: Send + Sync>(
-    _line: u8,
-    _handler: FnIrq<T>,
-    _context: *const T,
-) -> Result<()> {
-    Ok(())
+pub fn set_irq(line: u8, hook: Option<IoOperation>) -> Result<Queue<IrqEvent>> {
+    let handler = IrqHandler { hook, line };
+    let queue: usize;
+
+    unsafe {
+        syscall!(
+            syscall::Request::SetIrqHandler,
+            edx: &handler,
+            edx_out: queue
+        )?;
+    }
+
+    log::debug!("Irq Queue Handle: {queue:X?}");
+
+    let queue = unsafe { RawHandle::new_unchecked(queue) };
+
+    Ok(queue.into())
 }
 
 pub fn remap(
@@ -50,7 +63,7 @@ pub fn remap(
     };
 
     unsafe {
-        syscall!(Request::MemRemap, edx: &remap)?;
+        syscall!(syscall::Request::MemRemap, edx: &remap)?;
     }
 
     Ok(())

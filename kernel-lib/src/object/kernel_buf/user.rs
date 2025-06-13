@@ -21,6 +21,14 @@ impl UserBufMut {
     pub fn has_remaining_capacity(&self) -> bool {
         self.remaining_capacity() != 0
     }
+
+    pub fn push(&mut self, v: u8) {
+        todo!()
+    }
+
+    pub fn flush(&mut self) -> Result<(), ()> {
+        todo!()
+    }
 }
 
 impl UserBuf {

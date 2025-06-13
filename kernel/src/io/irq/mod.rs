@@ -1,13 +1,15 @@
 mod chain;
 mod event;
-mod hook;
 
 pub use chain::*;
 pub use event::IrqEvent;
-pub use hook::*;
+use kernel_types::io::IoOperation;
 
 use crate::{
-    drivers::ModuleId, io::pic, object::Handle, task::TaskContext,
+    drivers::ModuleId,
+    io::{interpretate_op, pic},
+    object::Handle,
+    task::TaskContext,
     user::queue::Queue,
 };
 
@@ -15,7 +17,7 @@ use super::IrqLine;
 
 pub struct ModuleIrqContext {
     pub module_id: ModuleId,
-    pub hook_op: Option<HookOperation>,
+    pub hook_op: Option<IoOperation>,
     pub line: IrqLine,
     //that's safe to handle in interrupt
     //as nested interrupts are not allowed
@@ -46,8 +48,8 @@ pub fn module_irq(
         return true;
     };
 
-    if let Some(hook_op) = context.hook_op {
-        unsafe { hook::handle_irq(hook_op) };
+    if let Some(hook_op) = context.hook_op.as_ref() {
+        unsafe { interpretate_op(hook_op) };
     }
 
     if context.queue.try_push(event).is_err() {

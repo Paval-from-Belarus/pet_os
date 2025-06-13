@@ -32,6 +32,8 @@ pub enum Request {
     GetObjectInfo,
 
     TerminateCurrentTask,
+    SpawnTask,
+    SetIrqHandler,
     TerminateCurrentProcess,
 
     FreeKernelObject,
@@ -74,16 +76,26 @@ pub enum SyscallError {
 
 #[macro_export]
 macro_rules! syscall {
-    ($id:expr $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?$(,)?) => ({
+    ( $id:expr
+     $(, ecx: $ecx:expr)? $(, edx: $edx:expr)?
+     $(, ecx_out: $ecx_out: ident )?
+     $(, edx_out: $edx_out: ident )?
+     $(,)?) => ({
         let mut id = $id as u32;
+        let _ecx_out: usize;
+        let _edx_out: usize;
+
         core::arch::asm!(
           "int 80h",
-           lateout("ecx") _,
-           lateout("edx") _,
+           lateout("ecx") _ecx_out,
+           lateout("edx") _edx_out,
            inout("eax") id
            $(,in("ecx") $ecx)?
            $(,in("edx") $edx)?
         );
+
+        $($ecx_out = _ecx_out;)?
+        $($edx_out = _edx_out;)?
 
         let status = id;
 

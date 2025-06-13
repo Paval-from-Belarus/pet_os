@@ -2,8 +2,8 @@ use kernel_types::{
     drivers::UserModule,
     fs::{FileLookupRequest, FileRequest, FsRequest},
     io::{
-        block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, MemBuf,
-        MemoryRemap,
+        block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, IrqHandler,
+        MemBuf, MemoryRemap,
     },
     string::MutString,
     syscall::{Request, SyscallError},
@@ -298,6 +298,22 @@ pub fn handle(
         }
         Request::UserCopy => todo!(),
         Request::QueueTryGet => todo!(),
+        Request::SpawnTask => {
+            // task::new_task(routine, arg, priority)
+            todo!()
+        }
+
+        Request::SetIrqHandler => {
+            let _handler = validate_ref::<IrqHandler>(edx)?;
+
+            todo!()
+
+            // unsafe { memory::switch_to_kernel() };
+            //
+            // crate::io::set_irq(handler.line, info);
+            //
+            // unsafe { memory::switch_to_task(current_task!()) };
+        }
     }
 
     Ok(())

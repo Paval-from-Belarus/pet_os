@@ -99,7 +99,8 @@ pub extern "C" fn handle_syscall() {
     };
 
     let code = match user::syscall::handle(request, edx, ecx) {
-        Ok(()) => 0,
+        Ok(_) => 0,
+
         Err(cause) => cause as u32,
     };
 

@@ -243,11 +243,12 @@ impl InterruptGate {
 
 const MAX_INTERRUPTS_COUNT: usize = 256;
 
-///the method to registry InterruptObject
-pub fn registry(_handle: object::RawHandle, line: IrqLine, info: CallbackInfo) {
+pub fn set_irq(line: IrqLine, info: CallbackInfo) {
     let index = u8::from(line.line) as usize;
     let interceptors = INTERCEPTORS.try_lock().unwrap().unwrap();
+
     let manager = interceptors[index];
+
     manager.append(info);
 }
 

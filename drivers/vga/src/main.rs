@@ -3,6 +3,7 @@
 
 use core::mem::MaybeUninit;
 
+use alloc::boxed::Box;
 use kernel_lib::{
     fs::{self, not_supported_read, File, FileOperations},
     io::{self, char::register_module, IoTransaction},
@@ -14,6 +15,8 @@ kernel_lib::module! {
     module: VgaDriver,
     name: "vga",
 }
+
+extern crate alloc;
 
 pub struct VgaDriver {}
 
@@ -139,8 +142,6 @@ pub fn write(_file: File, buf: UserBuf) -> fs::Result<()> {
 
 impl KernelModule for VgaDriver {
     fn init() -> Result<Self, ModuleError> {
-        register_module(io::char::CharModuleInfo { name: "vga".into() })?;
-
         let offset = unsafe { VGA_BUFFER.buffer.as_ptr() };
 
         io::remap(VGA_BUFFER_OFFSET, offset as _, VGA_WIDTH * VGA_HEIGHT)?;
@@ -149,8 +150,12 @@ impl KernelModule for VgaDriver {
             unsafe { VgaWriter::new_unchecked(&raw mut VGA_BUFFER) };
 
         writer.clear();
-        writer.put_string("Hello from vga\n");
-        writer.update_cursor();
+
+        let writer = Box::new(writer);
+        register_module(io::char::CharModuleInfo {
+            name: "vga".into(),
+            ctx: Box::into_raw(writer),
+        })?;
 
         log::info!("Vga driver is initialized");
 

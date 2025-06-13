@@ -1,3 +1,5 @@
+use kernel_types::io::IoOperation;
+
 use crate::common::io;
 
 #[derive(Debug, Clone, Copy)]
