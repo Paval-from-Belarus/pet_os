@@ -56,6 +56,18 @@ impl RawHandle {
     pub unsafe fn syscall(&self) -> usize {
         self.0
     }
+
+    pub fn try_clone(&self) -> Result<Self, syscall::SyscallError> {
+        unsafe {
+            syscall! {
+                syscall::Request::CloneHandle,
+                edx:
+                    self.syscall()
+            }?;
+        }
+
+        Ok(unsafe { RawHandle::new_unchecked(self.syscall()) })
+    }
 }
 
 impl Drop for RawHandle {

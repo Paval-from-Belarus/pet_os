@@ -85,7 +85,7 @@ pub struct File {
 }
 
 impl File {
-    pub fn context<T: Send + Sync>(&self) -> *const T {
+    pub fn ctx<T: Send + Sync>(&self) -> *const T {
         todo!()
     }
 }

@@ -290,6 +290,7 @@ pub fn handle(
                         *ptr = MemBuf {
                             ptr: core::ptr::null_mut(),
                             len: handle.len(),
+                            capacity: handle.capacity(),
                         };
                     }
                 }

@@ -7,14 +7,17 @@ use super::UserBuf;
 #[derive(Debug)]
 #[repr(C)]
 pub struct KernelBuf {
-    size: usize,
+    len: usize,
+    capacity: usize,
     handle: RawHandle,
 }
 
 #[derive(Debug)]
 #[repr(C)]
 pub struct KernelBufMut {
-    size: usize,
+    len: usize,
+    capacity: usize,
+    handle: RawHandle,
 }
 
 impl From<RawHandle> for KernelBuf {
@@ -33,7 +36,8 @@ impl From<RawHandle> for KernelBuf {
         let buf_info = unsafe { buf_info.assume_init() };
 
         Self {
-            size: buf_info.len,
+            len: buf_info.len,
+            capacity: buf_info.capacity,
             handle: value,
         }
     }
@@ -41,7 +45,7 @@ impl From<RawHandle> for KernelBuf {
 
 impl KernelBuf {
     pub fn len(&self) -> usize {
-        self.size
+        self.len
     }
 
     #[must_use]
@@ -55,6 +59,7 @@ impl KernelBuf {
     ) -> Result<(), syscall::SyscallError> {
         let mem_buf = MemBuf {
             len: buf.capacity(),
+            capacity: buf.capacity(),
             ptr: buf.as_mut_ptr(),
         };
 
@@ -70,22 +75,48 @@ impl KernelBuf {
 
         Ok(())
     }
+}
 
-    pub fn handle_cloned(&self) -> Result<RawHandle, syscall::SyscallError> {
-        unsafe {
-            syscall! {
-                syscall::Request::CloneHandle,
-                edx:
-                    self.handle.syscall()
-            }?;
+impl From<RawHandle> for KernelBufMut {
+    fn from(value: RawHandle) -> Self {
+        let buf = KernelBuf::from(value);
+
+        Self {
+            len: buf.len,
+            capacity: buf.capacity,
+            handle: buf.handle,
         }
-
-        Ok(unsafe { RawHandle::new_unchecked(self.handle.syscall()) })
     }
 }
 
 impl KernelBufMut {
     pub fn remaining_capacity(&self) -> usize {
-        self.size
+        self.len
+    }
+
+    pub fn handle(&self) -> &RawHandle {
+        &self.handle
+    }
+
+    pub fn write(&mut self, bytes: &[u8]) -> Result<(), syscall::SyscallError> {
+        assert!(bytes.len() <= self.remaining_capacity());
+
+        let buf = MemBuf {
+            len: bytes.len(),
+            capacity: bytes.len(),
+            ptr: bytes.as_ptr() as *mut u8,
+        };
+
+        unsafe {
+            syscall! {
+                syscall::Request::UserCopy,
+                ecx: &buf,
+                edx: self.handle.syscall()
+            }?;
+        }
+
+        self.len -= bytes.len();
+
+        Ok(())
     }
 }

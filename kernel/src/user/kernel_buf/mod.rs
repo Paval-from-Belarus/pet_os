@@ -37,6 +37,16 @@ impl KernelBuf {
         self.size
     }
 
+    pub fn remaining_capacity(&self) -> usize {
+        let buf = self.buf.lock();
+
+        buf.capacity() - buf.len()
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity()
+    }
+
     pub fn as_slice<'a>(
         &'a self,
     ) -> impl core::ops::Deref<Target = Vec<u8>> + 'a {

@@ -7,7 +7,7 @@ use alloc::boxed::Box;
 use kernel_lib::{
     fs::{self, not_supported_read, File, FileOperations},
     io::{self, char::register_module, IoTransaction},
-    object::{KernelBuf, UserBuf},
+    object::UserBuf,
     KernelModule, ModuleError, ModuleOperations,
 };
 
@@ -152,9 +152,10 @@ impl KernelModule for VgaDriver {
         writer.clear();
 
         let writer = Box::new(writer);
+
         register_module(io::char::CharModuleInfo {
             name: "vga".into(),
-            ctx: Box::into_raw(writer),
+            ctx: Box::into_raw(writer) as *mut (),
         })?;
 
         log::info!("Vga driver is initialized");

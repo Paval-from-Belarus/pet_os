@@ -9,15 +9,15 @@ use kernel_types::{
 //separately
 #[derive(Debug, Clone)]
 pub struct Operations {
-    pub open: fn(),
-    pub close: fn(),
-    pub ioctl: fn(),
-    pub request: fn(Request) -> Result<()>,
+    read: fn(sector: u32, buf: KernelBufMut),
+    write: fn(sector: u32, buf: UserBuf),
+    ioctl: fn(u32),
 }
 
-use crate::io::Result;
-
-use super::IoError;
+use crate::{
+    io::Result,
+    object::{KernelBufMut, UserBuf},
+};
 
 pub fn register_device(device: BlockDeviceInfo) -> Result<()> {
     unsafe {
@@ -29,46 +29,16 @@ pub fn register_device(device: BlockDeviceInfo) -> Result<()> {
     Ok(())
 }
 
-pub fn default_operations() -> Operations {
-    Operations {
-        request: handle_request,
-        open: handle_open,
-        close: handle_close,
-        ioctl: handle_ioctl,
-    }
-}
-
 pub fn handle_ioctl() {}
 
 pub fn handle_open() {}
 
 pub fn handle_close() {}
 
-pub fn handle_request(_work: Request) -> Result<()> {
-    Err(IoError::NotSupported)
-}
-
 pub struct BlockDevice;
 
 impl From<RawHandle> for BlockDevice {
     fn from(_value: RawHandle) -> Self {
-        todo!()
-    }
-}
-
-impl KernelObject for BlockDevice {}
-
-impl BlockDevice {
-    pub fn sector_size(&self) -> usize {
-        512
-    }
-
-    pub fn read_sector(
-        &self,
-        _offset: usize,
-        _buffer: &mut [u8],
-        // ) -> Result<IoEvent> {
-    ) -> Result<()> {
         todo!()
     }
 }

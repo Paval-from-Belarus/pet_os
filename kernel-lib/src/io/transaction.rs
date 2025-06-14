@@ -3,7 +3,7 @@ use kernel_types::{
     syscall,
 };
 
-use crate::io;
+use crate::{io, object::KernelBufMut};
 
 #[repr(C)]
 #[must_use]
@@ -19,6 +19,20 @@ pub struct Write;
 
 impl IoKind for Read {}
 impl IoKind for Write {}
+
+impl<const N: usize, K: IoKind> IoTransaction<K, N> {
+    pub fn commit(&mut self) -> io::Result<()> {
+        unsafe {
+            syscall!(
+                syscall::Request::IoOperation,
+                ecx: self.ops.len(),
+                edx: self.ops.as_ptr(),
+            )?;
+        }
+
+        Ok(())
+    }
+}
 
 impl IoTransaction<Read, 32> {
     pub fn new_read() -> IoTransaction<Read, 32> {
@@ -36,6 +50,24 @@ impl<const N: usize> IoTransaction<Read, N> {
 
     pub fn port_u16(self, _port: u16) -> io::Result<u16> {
         todo!()
+    }
+
+    pub fn port_to_buf(
+        &mut self,
+        port: u16,
+        buf: &mut KernelBufMut,
+    ) -> io::Result<()> {
+        self.ops
+            .push(
+                PortOperation::ReadToBuf {
+                    port,
+                    buf: unsafe { buf.handle().syscall() },
+                }
+                .into(),
+            )
+            .unwrap();
+
+        Ok(())
     }
 }
 
@@ -63,17 +95,5 @@ impl<const N: usize> IoTransaction<Write, N> {
             .unwrap();
 
         self
-    }
-
-    pub fn commit(&mut self) -> io::Result<()> {
-        unsafe {
-            syscall!(
-                syscall::Request::IoOperation,
-                ecx: self.ops.len(),
-                edx: self.ops.as_ptr(),
-            )?;
-        }
-
-        Ok(())
     }
 }

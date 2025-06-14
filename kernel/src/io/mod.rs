@@ -10,6 +10,7 @@ use kernel_types::{
 };
 
 use crate::common::io::{inb, inw, outb, outw};
+use crate::current_task;
 use crate::io;
 use crate::io::irq::IrqChain;
 use crate::io::pic::PicLine;
@@ -17,8 +18,9 @@ use crate::memory::{
     self, slab_alloc, InterruptGate, PrivilegeLevel, SegmentSelector, Slab,
     SlabBox, SystemType, VirtualAddress,
 };
+use crate::object::{Handle, UserHandle};
 use crate::task::TaskContext;
-use crate::{current_task, object};
+use crate::user::kernel_buf::KernelBuf;
 
 pub use irq::IrqEvent;
 pub use lock::InterruptableLazyCell;
@@ -271,19 +273,25 @@ pub unsafe fn interpretate_op(op: &IoOperation) {
             PortOperation::WriteByte { port, value } => {
                 outb(*port, *value);
             }
-
             PortOperation::WriteWord { port, value } => {
                 outw(*port, *value);
             }
-
             PortOperation::ReadByte { port, value } => {
                 let read_byte = inb(*port);
                 value.write_volatile(read_byte);
             }
-
             PortOperation::ReadWord { port, value } => {
                 let read_word = inw(*port);
                 value.write_volatile(read_word);
+            }
+            PortOperation::ReadToBuf { port, buf } => {
+                let buf: UserHandle<KernelBuf> =
+                    unsafe { UserHandle::from_addr_unchecked(*buf) };
+
+                for _ in 0..buf.remaining_capacity() {
+                    let byte = inb(*port);
+                    buf.copy_from(&[byte]).unwrap();
+                }
             }
         },
         IoOperation::MemoryOperation(_) => todo!(),

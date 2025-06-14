@@ -1,4 +1,6 @@
-#[derive(Debug, Clone)]
+use crate::object::RawHandle;
+
+#[derive(Debug)]
 pub enum MemoryOperation {
     Write {},
 }
@@ -9,12 +11,15 @@ pub enum PortValue {
     Word(u16),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum PortOperation {
     WriteByte { port: u16, value: u8 },
     WriteWord { port: u16, value: u16 },
+
     ReadByte { port: u16, value: *mut u8 },
     ReadWord { port: u16, value: *mut u16 },
+
+    ReadToBuf { port: u16, buf: usize },
 }
 
 #[derive(Debug)]

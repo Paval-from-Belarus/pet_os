@@ -3,8 +3,8 @@ use crate::object::RawHandle;
 #[derive(Debug)]
 pub enum Work {
     Read {
-        sector: u32, // Starting sector (LBA)
-        buffer: RawHandle,
+        sector: u32,       // Starting sector (LBA)
+        buffer: RawHandle, //read buffer
     },
     Write {
         sector: u32, // Starting sector (LBA)

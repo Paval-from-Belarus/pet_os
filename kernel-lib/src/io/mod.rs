@@ -14,22 +14,7 @@ pub use error::*;
 
 pub type Result<T> = core::result::Result<T, IoError>;
 
-#[repr(C)]
-pub struct FileOperations {
-    // pub open: fn(&mut IndexNode, &mut File),
-    // pub flush: fn(&mut File),
-    // pub close: fn(&mut IndexNode, &mut File),
-    // pub read: fn(&mut File, *mut u8, usize),
-    // pub write: fn(&mut File, *const u8, usize),
-    // pub seek: fn(&mut File, mode: FileSeekMode, offset: usize),
-    // #[doc = "for devices only"]
-    // pub ioctl: fn(&mut IndexNode, &mut File, usize),
-    //consider additionally implement file_lock and mmap handler
-}
-
-pub type FnIrq<T> = fn(*const T);
-
-pub struct IrqEvent(u8);
+pub struct IrqEvent;
 
 //set callback handler on irq
 pub fn set_irq(line: u8, hook: Option<IoOperation>) -> Result<Queue<IrqEvent>> {
