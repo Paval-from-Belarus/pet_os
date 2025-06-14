@@ -1,5 +1,3 @@
-use crate::object::RawHandle;
-
 #[derive(Debug)]
 pub enum MemoryOperation {
     Write {},

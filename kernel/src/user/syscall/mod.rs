@@ -46,7 +46,7 @@ pub fn handle(
         Request::PrintK => {
             let string: &MutString = validate_ref(edx)?;
 
-            log_module!("{string}");
+            log_module!("M! {string}");
         }
         Request::MemRemap => {
             let remap = validate_ref::<MemoryRemap>(edx)?;
@@ -183,13 +183,9 @@ pub fn handle(
 
                 crate::object::Kind::FileWork => unsafe {
                     blocking_pop(&queue, |work: Handle<FileWork>| {
-                        log::debug!("User blocking get");
-                        let request = work
-                            .request
-                            .try_lock()
-                            .unwrap()
-                            .take()
-                            .expect("No request");
+                        let request = work.take_request();
+
+                        log::debug!("User blocking get: {request:?}");
 
                         memory::switch_to_task(current_task!());
 
@@ -212,8 +208,10 @@ pub fn handle(
                 }
             }
         }
+
         Request::FreeKernelObject => unsafe {
             let raw_object = edx as *const Object;
+
             let raw_handle = edx;
             let kind = (*raw_object).kind;
 

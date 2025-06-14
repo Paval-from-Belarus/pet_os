@@ -132,12 +132,17 @@ extern "C" fn init_task() {
 
     let file = fs::resolve(file).expect("Failed to resolve file");
 
-    let buf = "Kernel Buf is cool".try_into().unwrap();
-
-    let work = fs::write(file, buf).unwrap();
-
-    let response = work.wait().unwrap();
-    log::debug!("work response: {response:?}");
+    let buf1 = "Kernel Buf is cool\n".try_into().unwrap();
+    //
+    let work = fs::write(file, buf1).unwrap();
+    //
+    // let response = work.wait().unwrap();
+    // log::debug!("work response: {response:?}");
+    // let buf2 = "Another line\n".try_into().unwrap();
+    // let work = fs::write(file, buf2).unwrap();
+    //
+    // let response = work.wait().unwrap();
+    // log::debug!("work response: {response:?}");
     // user::exec("/usr/sbin/init");
 }
 

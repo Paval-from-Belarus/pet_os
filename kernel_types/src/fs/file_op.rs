@@ -2,6 +2,7 @@ use crate::object::{OpStatus, RawHandle};
 
 use super::NodeId;
 
+#[derive(Debug)]
 pub enum FileRequest {
     Command { file: RawHandle, command: usize },
     Read { file: RawHandle, buf: RawHandle },

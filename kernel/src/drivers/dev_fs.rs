@@ -126,6 +126,7 @@ extern "C" fn sb_task() {
                     let inode_info = IndexNodeInfo {
                         id: module.id as _,
                         size: 0,
+                        ctx: module.ctx(),
                         kind: node_kind,
                         queue: module.queue.clone().into_raw(),
                         permissions: FilePermissions::READ_WRITE,

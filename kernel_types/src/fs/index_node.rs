@@ -12,6 +12,8 @@ pub struct IndexNodeInfo {
     pub size: usize,
     pub kind: NodeKind,
     pub permissions: FilePermissions,
+
+    pub ctx: *const (),
 }
 
 pub enum NodeKind {

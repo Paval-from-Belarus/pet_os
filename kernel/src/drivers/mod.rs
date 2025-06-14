@@ -84,12 +84,13 @@ pub fn current_module() -> Option<Arc<Module>> {
 
 pub fn init_module(
     name: &str,
+    ctx: *const (),
     kind: ModuleKind,
     capacity: usize,
 ) -> Result<(), ModuleError> {
     log::debug!("new module detected: {name}");
 
-    let module = Module::new(name, kind, capacity)?;
+    let module = Module::new(name, ctx, kind, capacity)?;
 
     MODULES.get().add_module(module)?;
 

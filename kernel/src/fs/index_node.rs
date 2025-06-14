@@ -22,6 +22,7 @@ use super::{Device, FilePermissions, FileWork, SuperBlock};
 #[repr(C)]
 pub struct IndexNode {
     pub id: NodeId,
+    pub ctx: *const (),
     permissions: FilePermissions,
     // type: u8,//file type?
     size: usize,
@@ -46,9 +47,10 @@ impl IndexNode {
         parent: &Handle<SuperBlock>,
     ) -> Result<SlabBox<IndexNode>, AllocError> {
         let IndexNodeInfo {
-            queue,
             id,
+            ctx,
             size,
+            queue,
             kind,
             permissions,
         } = inode;
@@ -58,6 +60,7 @@ impl IndexNode {
 
         crate::memory::slab_alloc(Self {
             id,
+            ctx,
             size,
             kind,
             device: Device::new(0, 0),

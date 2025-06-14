@@ -66,6 +66,7 @@ pub struct Module {
     pub id: ModuleId,
     pub name: heapless::String<MAX_MODULE_NAME_LEN>,
     pub queue: ModuleQueue,
+    pub ctx: *const (),
 }
 
 impl Module {
@@ -75,6 +76,10 @@ impl Module {
             ModuleQueue::Char(_) => ModuleKind::Char,
             ModuleQueue::Block(_) => ModuleKind::Block,
         }
+    }
+
+    pub fn ctx(&self) -> *const () {
+        self.ctx
     }
 }
 
@@ -98,6 +103,7 @@ impl ModuleQueue {
 impl Module {
     pub fn new(
         name: &str,
+        ctx: *const (),
         kind: ModuleKind,
         capacity: usize,
     ) -> Result<Self, AllocError> {
@@ -121,8 +127,9 @@ impl Module {
         let concated_name = &name[..len];
 
         Ok(Self {
-            queue,
             id,
+            ctx,
+            queue,
             name: concated_name.into(),
         })
     }

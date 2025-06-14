@@ -81,6 +81,33 @@ issue list:
 13. ref_count in Page
 14. memory deallocation
 
+
+Ближейший план:
+1. добавить ioremap (проверить) и вывести на экран строку
+2. ret from init
+2. FileOperations?
+3. Queue
+
 Наблюдение
 ss = KERNEL_DATA
 esp = USER_STACK
+
+
+lateout should be used anywhere in syscall
+
+
+critical bugs:
+- virtual memory is not released
+- physical allocator use too much memory
+
+
+1. Обеспечить создание IrqEvent без блокировки (выделить слаб сразу же по созданию очереди)
+2. Проверить контекст выделения памяти
+
+
+Потенциальные проблемы:
+Блокировка на state в page_fault handler
+
+
+PageFault in dev-fs, когда запускается много задач
+

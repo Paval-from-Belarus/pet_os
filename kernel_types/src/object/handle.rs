@@ -78,16 +78,16 @@ impl Drop for RawHandle {
             return;
         }
 
-        log::debug!("Syscall to release handle");
+        log::debug!("Syscall to release handle: {handle:X}");
 
-        unsafe {
-            let _ = syscall!(
-                syscall::Request::FreeKernelObject,
-                edx: handle
-            )
-            .inspect_err(|cause| {
-                log::error!("Failed to release kernel object: {cause:?}");
-            });
-        }
+        // unsafe {
+        //     let _ = syscall!(
+        //         syscall::Request::FreeKernelObject,
+        //         edx: handle
+        //     )
+        //     .inspect_err(|cause| {
+        //         log::error!("Failed to release kernel object: {cause:?}");
+        //     });
+        // }
     }
 }

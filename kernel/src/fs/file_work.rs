@@ -10,7 +10,7 @@ use super::IndexNode;
 pub struct FileWork {
     pub request: spin::Mutex<Option<FileRequest>>,
     response: spin::Mutex<Option<FileResponse>>,
-    object: Object,
+    pub object: Object,
 }
 
 impl_work! {

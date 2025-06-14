@@ -7,19 +7,25 @@ use kernel_types::{
 use super::init_module;
 
 pub fn reg_blk_module(dev: &BlockDeviceInfo) -> Result<(), SyscallError> {
-    init_module(&dev.name, ModuleKind::Block, dev.queue_size).inspect_err(
-        |cause| {
-            log::warn!("Failed to init new module: {cause}");
-        },
-    )?;
+    init_module(
+        &dev.name,
+        core::ptr::null_mut(),
+        ModuleKind::Block,
+        dev.queue_size,
+    )
+    .inspect_err(|cause| {
+        log::warn!("Failed to init new module: {cause}");
+    })?;
 
     Ok(())
 }
 
 pub fn reg_chr_module(dev: &CharModuleInfo) -> Result<(), SyscallError> {
-    init_module(&dev.name, ModuleKind::Char, 10).inspect_err(|cause| {
-        log::warn!("Failed to init new module: {cause}");
-    })?;
+    init_module(&dev.name, dev.ctx, ModuleKind::Char, 10).inspect_err(
+        |cause| {
+            log::warn!("Failed to init new module: {cause}");
+        },
+    )?;
 
     Ok(())
 }
