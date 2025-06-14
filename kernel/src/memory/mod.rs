@@ -1,6 +1,6 @@
 use core::alloc::{Allocator, GlobalAlloc};
 use core::ptr::NonNull;
-use core::{mem, ptr};
+use core::{mem, ptr, u16};
 
 use alloc::boxed::Box;
 use allocators::SlabAlloc;
@@ -282,6 +282,24 @@ pub fn slab_alloc<T: Slab>(value: T) -> Result<SlabBox<T>, AllocError> {
     };
 
     Box::try_new_in(value, allocator).map_err(|_| AllocError::NoMemory)
+}
+
+//ensure that slab will have at least
+//deseriaable count of entries anytime
+pub fn slab_reserve<T: Slab>() -> Result<(), AllocError> {
+    let size = mem::size_of::<T>();
+
+    assert!(size < u16::MAX as usize);
+
+    let layout = SYSTEM_ALLOCATOR.get().alloc_slab(SlabAlloc {
+        name: T::NAME,
+        size: size as u16,
+        alignment: T::ALIGNMENT,
+    })?;
+
+    SYSTEM_ALLOCATOR.get().dealloc_slab(T::NAME, layout);
+
+    Ok(())
 }
 
 pub fn into_boxed<T: Slab>(data: NonNull<T>) -> SlabBox<T> {

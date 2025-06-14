@@ -40,6 +40,11 @@ pub enum Request {
 
     QueueBlockingGet,
     QueueTryGet,
+
+    //event operations
+    EventBlock,
+    EventNotifyOne,
+    EventNotifyAll,
 }
 
 impl Request {

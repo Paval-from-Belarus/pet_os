@@ -11,10 +11,11 @@ use kernel_types::{
 
 use crate::{
     current_task, drivers,
-    fs::{File, FileLookupWork, FileWork, FsWork, IndexNode},
+    fs::{FileLookupWork, FileWork, FsWork, IndexNode},
     io::{
         self,
         block::{self, BlockWork},
+        pic::PicLine,
         IrqEvent, IrqLine,
     },
     log_module,
@@ -199,7 +200,6 @@ pub fn handle(
                 }
             }
         }
-
         Request::FreeKernelObject => unsafe {
             let raw_object = edx as *const Object;
 
@@ -246,7 +246,6 @@ pub fn handle(
                 }
                 crate::object::Kind::SuperBlock => todo!(),
                 crate::object::Kind::Mutex => todo!(),
-                crate::object::Kind::Exchange => todo!(),
                 crate::object::Kind::Event => todo!(),
             }
         },
@@ -314,18 +313,26 @@ pub fn handle(
             // task::new_task(routine, arg, priority)
             todo!()
         }
-
         Request::SetIrqHandler => {
-            let _handler = validate_ref::<IrqHandler>(edx)?;
+            let handler = validate_ref::<IrqHandler>(edx)?.clone();
 
-            todo!()
+            let Ok(pic_line) = PicLine::try_from(handler.line) else {
+                return Err(SyscallError::InvalidData);
+            };
 
-            // unsafe { memory::switch_to_kernel() };
-            //
-            // crate::io::set_irq(handler.line, info);
-            //
-            // unsafe { memory::switch_to_task(current_task!()) };
+            unsafe {
+                memory::switch_to_kernel();
+            }
+
+            crate::io::set_irq(pic_line.into(), handler.hook)?;
+
+            unsafe {
+                memory::switch_to_task(current_task!());
+            }
         }
+        Request::EventBlock => todo!(),
+        Request::EventNotifyOne => todo!(),
+        Request::EventNotifyAll => todo!(),
     }
 
     Ok(())

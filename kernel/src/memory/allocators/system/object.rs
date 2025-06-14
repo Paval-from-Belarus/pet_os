@@ -1,4 +1,4 @@
-use super::{Alignment, AllocContext, SlabAlloc};
+use super::{Alignment, SlabAlloc};
 
 pub trait Slab: Sized {
     const NAME: &str = match core::mem::size_of::<Self>().next_power_of_two() {
@@ -11,8 +11,6 @@ pub trait Slab: Sized {
     };
 
     const ALIGNMENT: Alignment = Alignment::Word;
-
-    const CONTEXT: AllocContext = AllocContext::Kernel;
 }
 
 pub fn classify_slab_by_size(size: usize) -> Option<SlabAlloc> {

@@ -33,8 +33,6 @@ pub enum Kind {
     Event,
 
     KernelBuf,
-    //rendevouz oneshot channel
-    Exchange,
 }
 
 #[derive(Debug, ListNode)]
@@ -50,6 +48,10 @@ pub struct Object {
     pub ref_count: AtomicU16,
 }
 
+pub enum DetachError {
+    NoParent,
+}
+
 #[atomic_enum::atomic_enum]
 #[derive(PartialEq, Eq)]
 #[repr(u8)]
@@ -63,7 +65,6 @@ pub enum Status {
 }
 
 impl Object {
-
     fn new_root(kind: Kind) -> Self {
         Self {
             kind,
@@ -103,6 +104,24 @@ pub trait ObjectContainer: Sized + Slab + 'static {
         assert!(runtime::lookup(parent.clone()));
 
         Object::new_child(Self::KIND, parent.clone().into_addr())
+    }
+
+    fn attach_to_parent<T: ObjectContainer>(&mut self, parent: &Handle<T>) {
+        assert!(runtime::lookup(parent.clone()));
+
+        *self.object_mut() =
+            Object::new_child(Self::KIND, parent.clone().into_addr())
+    }
+
+    //detach given object from paret
+    fn detatch(&mut self) -> Result<(), DetachError> {
+        let Some(parent) = self.object_mut().parent.take() else {
+            return Err(DetachError::NoParent);
+        };
+
+        runtime::remove_child(self.object().raw_handle(), parent);
+
+        Ok(())
     }
 
     fn new_root_object() -> Object {

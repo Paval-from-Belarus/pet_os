@@ -39,7 +39,7 @@ pub struct ContextLock<T> {
 
 enum LockKind<'a> {
     Spin(spin::MutexGuard<'a, ()>),
-    Object(MutexGuard<'a, ()>),
+    Object(MutexGuard<'a, ()>, spin::MutexGuard<'a, ()>),
 }
 
 pub struct ContextLockGuard<'a, T: 'a> {
@@ -96,11 +96,13 @@ impl<T> ContextLock<T> {
                     .as_ref()
                     .expect("Object lock is not set");
 
+                let spin_lock = self.spin_lock.try_lock().unwrap();
+
                 let lock = mutex.lock();
 
                 Ok(ContextLockGuard {
                     lock: self,
-                    kind: LockKind::Object(lock),
+                    kind: LockKind::Object(lock, spin_lock),
                 })
             }
         }

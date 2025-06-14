@@ -2,15 +2,18 @@ use core::arch::asm;
 use core::sync::atomic::AtomicUsize;
 use core::{mem, ptr};
 
+use alloc::boxed::Box;
+use irq::{module_irq, ModuleIrqContext};
 use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
-use kernel_types::io::IoOperation;
+use kernel_types::io::{IoOperation, IrqHandler};
 use kernel_types::{
     declare_constants, declare_types, get_eax, get_edx, set_eax, syscall,
 };
 
 use crate::common::io::{inb, inw, outb, outw};
 use crate::current_task;
+use crate::error::KernelError;
 use crate::io;
 use crate::io::irq::IrqChain;
 use crate::io::pic::PicLine;
@@ -21,6 +24,7 @@ use crate::memory::{
 use crate::object::{Handle, UserHandle};
 use crate::task::TaskContext;
 use crate::user::kernel_buf::KernelBuf;
+use crate::user::queue::Queue;
 
 pub use irq::IrqEvent;
 pub use lock::InterruptableLazyCell;
@@ -51,16 +55,15 @@ pub type ErrorExceptionHandler =
 ///the interrupt callback that return true if interrupt was handle (and no more handling is required)
 pub type Callback = fn(
     is_processed: bool,
-    context: *mut (),
+    context: *const (),
     frame: &mut *mut TaskContext,
 ) -> bool;
 
 #[derive(Debug, ListNode)]
 #[repr(C)]
 pub struct CallbackInfo {
-    driver: crate::object::RawHandle,
     callback: Callback,
-    context: *mut (),
+    context: *const (),
     #[list_pivots]
     next: ListNode<CallbackInfo>,
 }
@@ -79,11 +82,10 @@ impl BoxedNode for CallbackInfo {
 
 impl CallbackInfo {
     //the default kernel callback with no context
-    pub const fn new(callback: Callback) -> Self {
+    pub const fn new(callback: Callback, context: *const ()) -> Self {
         Self {
             callback,
-            driver: 0,
-            context: ptr::null_mut(),
+            context,
             next: ListNode::empty(),
         }
     }
@@ -245,13 +247,24 @@ impl InterruptGate {
 
 const MAX_INTERRUPTS_COUNT: usize = 256;
 
-pub fn set_irq(line: IrqLine, info: CallbackInfo) {
+pub fn set_irq(
+    line: IrqLine,
+    hook: Option<IoOperation>,
+) -> Result<Handle<Queue<IrqEvent>>, KernelError> {
+    let queue = Queue::new_bounded(10)?;
+
+    let ctx = ModuleIrqContext::new_boxed(line, hook, queue.clone())?;
+
+    let info = CallbackInfo::new(module_irq, Box::into_raw(ctx).cast());
+
     let index = u8::from(line.line) as usize;
     let interceptors = INTERCEPTORS.try_lock().unwrap().unwrap();
 
     let manager = interceptors[index];
 
     manager.append(info);
+
+    Ok(queue.clone())
 }
 
 //the red zone in thread kernel size:
@@ -419,18 +432,6 @@ fn init_interceptors(table: &mut IDTable) {
 
     *INTERCEPTORS.try_lock().unwrap() = objects.into();
 }
-//this function is invoked directly from interrupt stub
-
-const SUPPRESS_CALLBACK: CallbackInfo = CallbackInfo::new(suppress_irq);
-
-const fn suppress_irq(
-    _is_processed: bool,
-    _context: *mut (),
-    _frame: &mut *mut TaskContext,
-) -> bool {
-    false
-}
-
 /// set custom interrupt handler
 pub fn set(index: usize, descriptor: InterruptGate) -> InterruptGate {
     let table = &raw mut INTERRUPT_TABLE;

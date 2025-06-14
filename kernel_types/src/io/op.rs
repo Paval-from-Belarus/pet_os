@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MemoryOperation {
     Write {},
 }
@@ -9,7 +9,7 @@ pub enum PortValue {
     Word(u16),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PortOperation {
     WriteByte { port: u16, value: u8 },
     WriteWord { port: u16, value: u16 },
@@ -20,7 +20,7 @@ pub enum PortOperation {
     ReadToBuf { port: u16, buf: usize },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IoOperation {
     PortOperation(PortOperation),
     MemoryOperation(MemoryOperation),

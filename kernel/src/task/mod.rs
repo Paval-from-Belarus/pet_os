@@ -244,7 +244,7 @@ pub fn init() -> CallbackInfo {
 
     SCHEDULER.set(SchedulerLock::new(idle));
 
-    CallbackInfo::new(on_timer)
+    CallbackInfo::new(on_timer, ptr::null_mut())
 }
 
 #[no_mangle]
@@ -265,7 +265,7 @@ extern "C" fn idle_task() {
 
 fn on_timer(
     _is_processed: bool,
-    _context: *mut (),
+    _context: *const (),
     frame: &mut *mut TaskContext,
 ) -> bool {
     clocks::update_time();

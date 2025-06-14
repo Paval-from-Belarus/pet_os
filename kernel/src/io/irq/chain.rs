@@ -64,22 +64,6 @@ impl IrqChain {
         list.push_back(leaked_info.as_next());
     }
 
-    pub fn remove(&self, removable: object::RawHandle) {
-        let mut list = self.callbacks.try_lock().unwrap();
-
-        let mut iterator = list.iter_mut();
-
-        while let Some(callback) = iterator.next() {
-            if callback.driver.eq(&removable) {
-                let node = iterator
-                    .unlink_watched()
-                    .expect("The node is only visited");
-
-                let _ = node.into_boxed();
-            }
-        }
-    }
-
     pub fn line(&self) -> PicLine {
         self.line
     }

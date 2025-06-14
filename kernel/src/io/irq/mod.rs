@@ -1,28 +1,16 @@
 mod chain;
+mod context;
 mod event;
 
 pub use chain::*;
+pub use context::ModuleIrqContext;
 pub use event::IrqEvent;
-use kernel_types::io::IoOperation;
 
 use crate::{
     drivers::ModuleId,
     io::{interpretate_op, pic},
-    object::Handle,
     task::TaskContext,
-    user::queue::Queue,
 };
-
-use super::IrqLine;
-
-pub struct ModuleIrqContext {
-    pub module_id: ModuleId,
-    pub hook_op: Option<IoOperation>,
-    pub line: IrqLine,
-    //that's safe to handle in interrupt
-    //as nested interrupts are not allowed
-    pub queue: Handle<Queue<IrqEvent>>,
-}
 
 fn start_irq(_module_id: ModuleId) {
     todo!()
@@ -32,7 +20,7 @@ fn complete_irq(_module_id: ModuleId) {}
 
 pub fn module_irq(
     _is_processed: bool,
-    context: *mut (),
+    context: *const (),
     _frame: &mut *mut TaskContext,
 ) -> bool {
     assert!(!context.is_null());

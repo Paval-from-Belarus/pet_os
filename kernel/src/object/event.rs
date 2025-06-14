@@ -1,3 +1,17 @@
+use crate::impl_container;
+
+use super::Object;
+
+pub struct Event {
+    object: Object,
+}
+
+impl_container! {
+    Event,
+    obj_kind: Event,
+    slab: "event"
+}
+
 //Each kernel object supports blocking functionality
 //Queue:
 //block_on -> waiting for the first element in queue

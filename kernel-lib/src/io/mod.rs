@@ -1,14 +1,14 @@
+mod batch;
 pub mod block;
 pub mod char;
 mod error;
 pub mod spin;
-mod transaction;
 
+pub use batch::*;
 pub use kernel_types::io::op::*;
 use kernel_types::io::{IrqHandler, MemoryRemap};
 use kernel_types::object::{Queue, RawHandle};
 use kernel_types::syscall;
-pub use transaction::*;
 
 pub use error::*;
 
