@@ -1,9 +1,14 @@
 mod file;
 mod index_node;
 
+use core::mem::MaybeUninit;
+
 pub use index_node::*;
 pub use kernel_types::fs::*;
-use kernel_types::object::{KernelObject, RawHandle};
+use kernel_types::{
+    object::{KernelObject, RawHandle},
+    syscall,
+};
 
 use crate::{
     io::block::BlockDevice,
@@ -82,17 +87,34 @@ impl SuperBlock {
 #[repr(C)]
 pub struct File {
     pub handle: RawHandle,
+    pub file: FileInfo,
 }
 
 impl File {
-    pub fn ctx<T: Send + Sync>(&self) -> *const T {
-        todo!()
+    pub fn ctx<T: Send>(&self) -> *const T {
+        self.file.ctx.cast()
     }
 }
 
 impl From<RawHandle> for File {
     fn from(value: RawHandle) -> Self {
-        Self { handle: value }
+        let mut file_info = MaybeUninit::<FileInfo>::uninit();
+
+        unsafe {
+            syscall! {
+                syscall::Request::GetObjectInfo,
+                ecx: file_info.as_mut_ptr(),
+                edx: value.syscall(),
+            }
+            .unwrap();
+        }
+
+        let file = unsafe { file_info.assume_init() };
+
+        Self {
+            handle: value,
+            file,
+        }
     }
 }
 

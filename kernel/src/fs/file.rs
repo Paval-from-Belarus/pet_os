@@ -83,19 +83,3 @@ pub struct File {
 impl Slab for File {
     const NAME: &str = "file";
 }
-
-impl ObjectContainer for File {
-    const KIND: object::Kind = object::Kind::File;
-
-    fn container_of(object: *mut Object) -> *mut Self {
-        todo!()
-    }
-
-    fn object(&self) -> &Object {
-        todo!()
-    }
-
-    fn object_mut(&mut self) -> &mut Object {
-        todo!()
-    }
-}

@@ -5,6 +5,7 @@ mod fs_op;
 mod index_node;
 mod super_block;
 
+pub use file::*;
 pub use file_lookup_op::*;
 pub use file_op::*;
 pub use fs_op::*;

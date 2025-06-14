@@ -56,6 +56,7 @@ struct VgaWriter {
     pub cursor_x: usize,
     pub cursor_y: usize,
 }
+unsafe impl Send for VgaWriter {}
 
 impl VgaWriter {
     pub unsafe fn new_unchecked(buffer: *mut VgaBuffer) -> Self {
@@ -128,8 +129,8 @@ impl VgaWriter {
     }
 }
 
-pub fn write(_file: File, buf: UserBuf) -> fs::Result<()> {
-    let mut writer = unsafe { VgaWriter::new_unchecked(&raw mut VGA_BUFFER) };
+pub fn write(file: File, buf: UserBuf) -> fs::Result<()> {
+    let writer = unsafe { &mut *(file.ctx::<VgaWriter>() as *mut VgaWriter) };
 
     for byte in buf.as_slice() {
         writer.put_char(*byte as char);

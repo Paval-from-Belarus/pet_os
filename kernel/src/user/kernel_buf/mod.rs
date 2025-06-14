@@ -44,7 +44,7 @@ impl KernelBuf {
     }
 
     pub fn capacity(&self) -> usize {
-        self.capacity()
+        self.size
     }
 
     pub fn as_slice<'a>(

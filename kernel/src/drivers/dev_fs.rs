@@ -49,6 +49,9 @@ extern "C" fn fs_task() {
     let queue =
         unsafe { Handle::<Queue<FsWork>>::from_addr_unchecked(raw_handle) };
 
+
+    log::debug!("dev-fs task #{}", current_task!().id);
+
     loop {
         let Some(work) = queue.blocking_pop() else {
             break;

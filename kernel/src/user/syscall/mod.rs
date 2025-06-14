@@ -1,6 +1,6 @@
 use kernel_types::{
     drivers::UserModule,
-    fs::{FileLookupRequest, FileRequest, FsRequest},
+    fs::{FileInfo, FileLookupRequest, FileRequest, FsRequest},
     io::{
         block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, IrqHandler,
         MemBuf, MemoryRemap,
@@ -11,7 +11,7 @@ use kernel_types::{
 
 use crate::{
     current_task, drivers,
-    fs::{File, FileLookupWork, FileWork, FsWork},
+    fs::{File, FileLookupWork, FileWork, FsWork, IndexNode},
     io::{
         self,
         block::{self, BlockWork},
@@ -116,7 +116,7 @@ pub fn handle(
 
             unsafe { memory::switch_to_task(current_task!()) };
 
-            unsafe { *ptr = module };
+            unsafe { ptr.write(module) };
         }
         Request::TerminateCurrentTask => {
             task::terminate(edx as i32);
@@ -127,57 +127,42 @@ pub fn handle(
         Request::QueueBlockingGet => {
             unsafe { memory::switch_to_kernel() };
 
-            let queue: Handle<Queue<AnyObject>> =
-                Handle::from_addr(ecx).unwrap();
+            let queue: UserHandle<Queue<AnyObject>> =
+                unsafe { UserHandle::from_addr_unchecked(ecx) };
 
             match queue.kind() {
                 crate::object::Kind::BlockDeviceWork => unsafe {
                     blocking_pop(&queue, |work: Handle<BlockWork>| {
-                        let request = work
-                            .request
-                            .try_lock()
-                            .unwrap()
-                            .take()
-                            .expect("No request");
+                        let request = work.take_request();
 
                         memory::switch_to_task(current_task!());
 
                         let ptr = edx as *mut block::Request;
 
-                        *ptr = request;
+                        ptr.write(request);
                     })?;
                 },
                 crate::object::Kind::FsWork => unsafe {
                     blocking_pop(&queue, |work: Handle<FsWork>| {
-                        let request = work
-                            .request
-                            .try_lock()
-                            .unwrap()
-                            .take()
-                            .expect("No request");
+                        let request = work.take_request();
 
                         memory::switch_to_task(current_task!());
 
                         let ptr = edx as *mut FsRequest;
 
-                        *ptr = request;
+                        ptr.write(request);
                     })?;
                 },
 
                 crate::object::Kind::FileLookupWork => unsafe {
                     blocking_pop(&queue, |work: Handle<FileLookupWork>| {
-                        let request = work
-                            .request
-                            .try_lock()
-                            .unwrap()
-                            .take()
-                            .expect("No request");
+                        let request = work.take_request();
 
                         memory::switch_to_task(current_task!());
 
                         let ptr = edx as *mut FileLookupRequest;
 
-                        *ptr = request;
+                        ptr.write(request);
                     })?;
                 },
 
@@ -191,15 +176,21 @@ pub fn handle(
 
                         let ptr = edx as *mut FileRequest;
 
-                        *ptr = request;
+                        ptr.write(request);
+
+                        work.send_response(
+                            kernel_types::fs::FileResponse::Completed,
+                        );
                     })?;
                 },
 
                 crate::object::Kind::IrqEvent => unsafe {
                     blocking_pop(&queue, |event: Handle<IrqEvent>| {
                         memory::switch_to_task(current_task!());
+
                         let ptr = edx as *mut IrqLine;
-                        *ptr = event.line;
+
+                        ptr.write(event.line);
                     })?;
                 },
 
@@ -235,9 +226,12 @@ pub fn handle(
                 crate::object::Kind::IrqEvent => {
                     let _ = Handle::<IrqEvent>::from_addr_unchecked(raw_handle);
                 }
+
                 crate::object::Kind::File => {
-                    let _ = Handle::<File>::from_addr_unchecked(raw_handle);
+                    let _ =
+                        Handle::<IndexNode>::from_addr_unchecked(raw_handle);
                 }
+
                 crate::object::Kind::Queue => {
                     let _ = Handle::<Queue<AnyObject>>::from_addr_unchecked(
                         raw_handle,
@@ -277,21 +271,40 @@ pub fn handle(
         }
         Request::GetObjectInfo => {
             let kind = validate_ref::<Object>(edx)?.kind;
-            let ptr = ecx as *mut MemBuf;
+
+            log::debug!("obj kind: {kind:?}");
 
             match kind {
                 crate::object::Kind::KernelBuf => {
                     let handle = unsafe {
                         UserHandle::<KernelBuf>::from_addr_unchecked(edx)
                     };
+
+                    let ptr = ecx as *mut MemBuf;
+
                     unsafe {
-                        *ptr = MemBuf {
+                        ptr.write(MemBuf {
                             ptr: core::ptr::null_mut(),
                             len: handle.len(),
                             capacity: handle.capacity(),
-                        };
+                        });
                     }
                 }
+                crate::object::Kind::File => {
+                    let handle = unsafe {
+                        UserHandle::<IndexNode>::from_addr_unchecked(edx)
+                    };
+
+                    let ptr = ecx as *mut FileInfo;
+
+                    unsafe {
+                        ptr.write(FileInfo {
+                            ctx: handle.ctx,
+                            offset: 0,
+                        });
+                    }
+                }
+
                 _ => todo!(),
             }
         }
