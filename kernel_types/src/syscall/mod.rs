@@ -42,6 +42,7 @@ pub enum Request {
     QueueTryGet,
 
     //event operations
+    EventNew,
     EventBlock,
     EventNotifyOne,
     EventNotifyAll,

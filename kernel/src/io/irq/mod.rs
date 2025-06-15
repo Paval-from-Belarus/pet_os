@@ -29,26 +29,11 @@ pub fn module_irq(
 
     start_irq(context.module_id);
 
-    let Ok(event) = IrqEvent::new_boxed(context.line, &context.queue) else {
-        log::error!("Failed to alloc memory for irq event");
-        pic::complete(context.line.into());
-        complete_irq(context.module_id);
-        return true;
-    };
-
-    if let Some(hook_op) = context.hook_op.as_ref() {
-        unsafe { interpretate_op(hook_op) };
-    }
-
-    if context.queue.try_push(event).is_err() {
-        log::error!(
-            "Module queue is full. Event is suppressed: {:?}",
-            context.line
-        );
+    if let Err(cause) = context.notify() {
+        log::warn!("Failed to notify process via irq: {cause}");
     }
 
     pic::complete(context.line.into());
-
     complete_irq(context.module_id);
 
     true

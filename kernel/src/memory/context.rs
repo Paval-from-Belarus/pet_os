@@ -5,6 +5,7 @@ use crate::task::{Mutex, MutexGuard};
 use super::AllocError;
 
 #[atomic_enum::atomic_enum]
+#[derive(PartialEq, Eq)]
 #[repr(usize)]
 pub enum Context {
     Boot,
@@ -28,6 +29,10 @@ pub fn start_irq<F: FnOnce()>(f: F) {
 
 pub fn context() -> Context {
     CONTEXT.load(Ordering::SeqCst)
+}
+
+pub fn is_irq_context() -> bool {
+    context() == Context::Irq
 }
 
 pub struct ContextLock<T> {
@@ -96,9 +101,9 @@ impl<T> ContextLock<T> {
                     .as_ref()
                     .expect("Object lock is not set");
 
-                let spin_lock = self.spin_lock.try_lock().unwrap();
-
                 let lock = mutex.lock();
+
+                let spin_lock = self.spin_lock.try_lock().unwrap();
 
                 Ok(ContextLockGuard {
                     lock: self,

@@ -7,10 +7,12 @@ use kernel_types::{
     },
     string::MutString,
     syscall::{Request, SyscallError},
+    task::TaskParams,
 };
 
 use crate::{
-    current_task, drivers,
+    current_task,
+    drivers::{self, current_module},
     fs::{FileLookupWork, FileWork, FsWork, IndexNode},
     io::{
         self,
@@ -20,8 +22,9 @@ use crate::{
     },
     log_module,
     memory::{self, AllocError, VirtualAddress},
-    object::{AnyObject, Handle, Object, ObjectContainer, UserHandle},
-    task, user,
+    object::{runtime, AnyObject, Handle, Object, ObjectContainer, UserHandle},
+    task::{self, Event, TaskPriority},
+    user,
 };
 
 use super::{kernel_buf::KernelBuf, queue::Queue};
@@ -36,6 +39,11 @@ pub fn validate_ref<'a, T: Sized>(
     }
 
     Ok(unsafe { &*ptr })
+}
+
+#[derive(Default)]
+pub struct SyscallResponse {
+    pub edx: Option<usize>,
 }
 
 pub fn handle(
@@ -310,8 +318,24 @@ pub fn handle(
         Request::UserCopy => todo!(),
         Request::QueueTryGet => todo!(),
         Request::SpawnTask => {
-            // task::new_task(routine, arg, priority)
-            todo!()
+            let params = validate_ref::<TaskParams>(ecx)?.clone();
+            let priority = if current_module().is_some() {
+                TaskPriority::Module(params.nice)
+            } else {
+                TaskPriority::User(params.nice)
+            };
+
+            let routine_task =
+                task::new_task(params.routine, params.args, priority)?;
+
+            task::submit_task(routine_task);
+
+            let ptr = edx as *mut VirtualAddress;
+
+            //fixme: handle is the promise to interact with task
+            unsafe {
+                ptr.write(0);
+            }
         }
         Request::SetIrqHandler => {
             let handler = validate_ref::<IrqHandler>(edx)?.clone();
@@ -324,15 +348,40 @@ pub fn handle(
                 memory::switch_to_kernel();
             }
 
-            crate::io::set_irq(pic_line.into(), handler.hook)?;
+            let queue = crate::io::set_irq(pic_line.into(), handler.hook)?;
 
             unsafe {
                 memory::switch_to_task(current_task!());
             }
+
+            let ptr = ecx as *mut VirtualAddress;
+
+            unsafe { ptr.write(queue.into_addr()) };
         }
-        Request::EventBlock => todo!(),
-        Request::EventNotifyOne => todo!(),
-        Request::EventNotifyAll => todo!(),
+
+        Request::EventNew => {
+            let event = Event::new()?;
+
+            let ptr = edx as *mut VirtualAddress;
+
+            unsafe {
+                ptr.write(event.into_addr());
+            }
+        }
+
+        Request::EventBlock => {
+            let event =
+                unsafe { UserHandle::<Event>::from_addr_unchecked(edx) };
+
+            runtime::block_on(event.to_owned())?;
+        }
+
+        Request::EventNotifyOne | Request::EventNotifyAll => {
+            let event =
+                unsafe { UserHandle::<Event>::from_addr_unchecked(edx) };
+
+            runtime::notify(event.to_owned());
+        }
     }
 
     Ok(())

@@ -89,6 +89,7 @@ impl TaskScheduler {
         self.blocked.push_back(blocked_task);
     }
 
+    /// unblock task with highest priority on object handle
     pub fn unblock_on(&mut self, handle: object::RawHandle) {
         log::debug!("Unblocking: {handle:?}");
 
@@ -113,16 +114,6 @@ impl TaskScheduler {
             .remove_by(|task| task.id == task_id)
             .expect("no task for existing id")
             .into_running();
-
-        if unblocked_task.priority > self.current.priority {
-            log::debug!("Swapping task to unblock");
-            let mut displaced_task = unblocked_task;
-
-            mem::swap(&mut self.current, &mut displaced_task);
-            self.running.push(displaced_task);
-
-            return;
-        }
 
         self.push_task(unblocked_task);
     }

@@ -1,7 +1,7 @@
 use crate::{
     impl_container,
     memory::AllocError,
-    object::{self, runtime, Handle, Object, ObjectContainer},
+    object::{alloc_root_object, Handle, Object, ObjectContainer},
 };
 
 pub struct Event {
@@ -9,17 +9,11 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new() -> Result<Handle<Self>, AllocError> {
-        object::alloc_root_object(Self {
+    pub fn new() -> Result<Handle<Event>, AllocError> {
+        alloc_root_object(Self {
             object: Self::new_root_object(),
         })
     }
-
-    pub fn wait(&self) {
-        runtime::block_on(self.handle()).expect("Failed to block on event")
-    }
-
-    pub fn notify(&self) {}
 }
 
 impl_container! {

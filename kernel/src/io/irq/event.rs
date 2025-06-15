@@ -18,6 +18,15 @@ impl IrqEvent {
             object: Self::new_root_object(),
         })
     }
+    pub fn new_boxed(
+        line: IrqLine,
+        parent: &Handle<Queue<IrqEvent>>,
+    ) -> Result<SlabBox<Self>, AllocError> {
+        crate::memory::slab_alloc(Self {
+            object: Self::new_object(parent),
+            line,
+        })
+    }
 }
 
 impl_container! {

@@ -6,7 +6,18 @@ pub struct Event {
 
 impl Event {
     pub fn new() -> syscall::Result<Self> {
-        todo!()
+        let mut handle: usize = 0;
+
+        unsafe {
+            syscall! {
+                syscall::Request::EventNew,
+                edx: &mut handle,
+            }?;
+
+            log::debug!("event handle: 0x{handle:X?}");
+
+            Ok(RawHandle::new_unchecked(handle).into())
+        }
     }
 
     pub fn wait(&self) -> syscall::Result<()> {

@@ -1,3 +1,5 @@
+use core::ops::DerefMut;
+
 use alloc::boxed::Box;
 use kernel_types::{
     collections::LinkedList, drivers::ModuleId, io::IoOperation,
@@ -23,7 +25,7 @@ pub struct ModuleIrqContext {
     pub queue: Handle<Queue<IrqEvent>>,
 
     //the list of reserved irq events
-    reserved_events: LinkedList<'static, Object>,
+    reserved_events: spin::Mutex<LinkedList<'static, Object>>,
 }
 
 const RESERVED_EVENTS_COUNT: usize = 5;
@@ -48,12 +50,41 @@ impl ModuleIrqContext {
 
         let ctx = Box::try_new(Self {
             line,
-            reserved_events,
+            reserved_events: spin::Mutex::new(reserved_events),
             queue,
             hook_op: hook,
             module_id: module.id,
         })?;
 
         Ok(ctx)
+    }
+
+    pub fn notify(&self) -> Result<(), KernelError> {
+        assert!(memory::is_irq_context());
+
+        let mut events = self.reserved_events.try_lock().unwrap();
+
+        let mut maybe_event =
+            events.remove_first().and_then(|obj_event| unsafe {
+                let event = IrqEvent::container_of(obj_event.deref_mut());
+
+                let _ = obj_event;
+
+                Some(memory::into_boxed((&mut *event).into()))
+            });
+
+        if let Some(event) = maybe_event.as_mut() {
+            event.attach_to_parent(&self.queue);
+        }
+
+        if maybe_event.is_none() {
+            maybe_event = Some(IrqEvent::new_boxed(self.line, &self.queue)?);
+        }
+
+        let event = maybe_event.expect("Should be initialized");
+
+        self.queue.push(event);
+
+        Ok(())
     }
 }

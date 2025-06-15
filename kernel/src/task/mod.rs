@@ -3,6 +3,7 @@ use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use kernel_types::task::FnTask;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use kernel_types::{bitflags, declare_constants, get_eax, Zeroed};
@@ -14,7 +15,7 @@ use crate::fs::{FileOpenMode, MountPoint, PathNode};
 
 use crate::io::{pic, CallbackInfo};
 use crate::memory::{
-    MemoryAllocationFlag, Page, SegmentSelector, TaskRoutine, VirtualAddress,
+    MemoryAllocationFlag, Page, SegmentSelector, VirtualAddress,
 };
 use crate::task::scheduler::SchedulerLock;
 use crate::{memory, object};
@@ -22,6 +23,7 @@ use crate::{memory, object};
 mod arch;
 pub mod clocks;
 mod context;
+mod event;
 mod fs;
 mod mutex;
 mod pid;
@@ -30,6 +32,7 @@ mod scheduler;
 mod state;
 
 pub use context::*;
+pub use event::*;
 pub use fs::*;
 pub use mutex::*;
 pub use priority::*;
@@ -161,8 +164,8 @@ pub struct TaskFileSystem {
 //todo: each task should have stub before running to enable interrupts
 #[inline(never)]
 pub fn new_task(
-    routine: TaskRoutine,
-    arg: *mut (),
+    routine: FnTask,
+    arg: *const (),
     priority: TaskPriority,
 ) -> Result<&'static mut RunningTask, KernelError> {
     let kernel_stack = memory::virtual_alloc(

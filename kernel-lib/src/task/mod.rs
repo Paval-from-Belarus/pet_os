@@ -1,6 +1,7 @@
 use kernel_types::{
     object::{KernelObject, RawHandle},
     syscall,
+    task::{FnTask, TaskParams},
 };
 
 pub fn terminate(code: i32) -> ! {
@@ -27,20 +28,23 @@ impl From<RawHandle> for TaskHandle {
 
 impl KernelObject for TaskHandle {}
 
-pub type FnTask = fn();
-
 pub fn spawn(
     routine: FnTask,
-    arg: *const (),
+    args: *const (),
 ) -> Result<TaskHandle, syscall::SyscallError> {
+    let params = TaskParams {
+        routine,
+        args,
+        nice: 0,
+    };
+
     unsafe {
-        let handle: usize;
+        let mut handle: usize = 0;
 
         syscall! {
             syscall::Request::SpawnTask,
-            ecx: routine,
-            edx: arg,
-            edx_out: handle
+            ecx: &params,
+            edx: &mut handle
         }?;
 
         let handle = RawHandle::new_unchecked(handle);

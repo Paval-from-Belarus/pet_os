@@ -5,9 +5,7 @@ use core::{mem, ptr, u16};
 use alloc::boxed::Box;
 use allocators::SlabAlloc;
 
-pub use allocators::{
-    Alignment, AllocContext, MemoryAllocationFlag, PhysicalAllocator,
-};
+pub use allocators::{Alignment, MemoryAllocationFlag, PhysicalAllocator};
 pub use arch::*;
 use kernel_types::collections::LinkedList;
 use kernel_types::declare_constants;
@@ -30,7 +28,7 @@ mod paging;
 mod process;
 mod region;
 
-pub use context::{start_irq, ContextLock};
+pub use context::{is_irq_context, start_irq, ContextLock};
 pub use mapping::*;
 pub use page::*;
 pub use process::*;
@@ -219,8 +217,6 @@ pub fn kernel_physical_offset() -> usize {
 pub fn stack_size() -> usize {
     unsafe { &KERNEL_STACK_SIZE as *const usize as VirtualAddress }
 }
-
-pub type TaskRoutine = extern "C" fn();
 
 pub enum AllocationStrategy {
     #[doc = "Allocation for Kernel space when page cannot be swapped"]

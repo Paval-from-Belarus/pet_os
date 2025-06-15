@@ -1,6 +1,6 @@
 use kernel_types::collections::LinkedList;
 
-use crate::task::SCHEDULER;
+use crate::{error::KernelError, task::SCHEDULER};
 
 use super::{Handle, Object, ObjectContainer, RawHandle, Status};
 
@@ -36,7 +36,9 @@ impl Runtime {
     }
 }
 
-pub fn block_on<T: ObjectContainer>(handle: Handle<T>) -> Result<(), ()> {
+pub fn block_on<T: ObjectContainer>(
+    handle: Handle<T>,
+) -> Result<(), KernelError> {
     use core::sync::atomic::Ordering;
 
     let object = unsafe { &*handle.object() };
@@ -49,7 +51,7 @@ pub fn block_on<T: ObjectContainer>(handle: Handle<T>) -> Result<(), ()> {
 }
 
 pub fn notify<T: ObjectContainer>(handle: Handle<T>) {
-    SCHEDULER.switch_lock().unblock_on(handle.into_addr());
+    SCHEDULER.access_lock().unblock_on(handle.into_addr());
 }
 
 pub fn lookup<T: ObjectContainer>(handle: Handle<T>) -> bool {
@@ -67,6 +69,7 @@ pub fn register(object: &'static mut Object) -> RawHandle {
 
     handle
 }
+
 
 pub fn unregister(handle: RawHandle) -> Option<&'static mut Object> {
     RUNTIME.remove_object(handle)

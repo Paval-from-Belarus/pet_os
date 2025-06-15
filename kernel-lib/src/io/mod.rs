@@ -19,13 +19,13 @@ pub struct IrqEvent;
 //set callback handler on irq
 pub fn set_irq(line: u8, hook: Option<IoOperation>) -> Result<Queue<IrqEvent>> {
     let handler = IrqHandler { hook, line };
-    let queue: usize;
+    let mut queue: usize = 0;
 
     unsafe {
         syscall!(
             syscall::Request::SetIrqHandler,
+            ecx: &mut queue,
             edx: &handler,
-            edx_out: queue
         )?;
     }
 

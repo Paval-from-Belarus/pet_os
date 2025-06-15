@@ -1,4 +1,3 @@
-mod event;
 mod handle;
 pub mod runtime;
 mod user_handle;
