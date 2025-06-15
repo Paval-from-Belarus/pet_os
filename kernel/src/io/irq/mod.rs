@@ -33,6 +33,10 @@ pub fn module_irq(
         log::warn!("Failed to notify process via irq: {cause}");
     }
 
+    if let Some(op) = context.hook_op.as_ref() {
+        unsafe { interpretate_op(op) };
+    }
+
     pic::complete(context.line.into());
     complete_irq(context.module_id);
 

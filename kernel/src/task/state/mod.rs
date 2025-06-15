@@ -48,7 +48,6 @@ pub struct Task {
     pub start_time: usize,
     //the process context for thread
     pub process: Option<Process>,
-    pub file_system: NonNull<TaskFileSystem>,
 
     pub metrics: TaskMetrics,
 
@@ -103,7 +102,6 @@ impl Task {
             start_time: 0,
             process: None,
             opened_files: Default::default(),
-            file_system: NonNull::dangling(),
 
             metrics: TaskMetrics {
                 elapsed: 0,

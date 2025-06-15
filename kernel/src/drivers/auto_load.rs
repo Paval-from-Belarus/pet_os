@@ -3,10 +3,6 @@ use crate::{
     task::{self, TaskPriority},
 };
 
-pub struct ModuleStatistic {
-    pub shout_down_count: usize,
-}
-
 pub fn spawn_task() -> Result<(), KernelError> {
     let task_handle = task::new_task(
         autoload_task,

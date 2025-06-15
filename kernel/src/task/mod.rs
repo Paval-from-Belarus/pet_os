@@ -170,7 +170,7 @@ pub fn new_task(
 ) -> Result<&'static mut RunningTask, KernelError> {
     let kernel_stack = memory::virtual_alloc(
         TASK_STACK_SIZE,
-        MemoryAllocationFlag::ZEROED
+        MemoryAllocationFlag::CONTINOUS
             | MemoryAllocationFlag::ZEROED
             | MemoryAllocationFlag::READ_WRITE,
     )?;

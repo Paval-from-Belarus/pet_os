@@ -86,14 +86,14 @@ impl MemoryRegion {
     pub fn new_allocated(
         map_region: MemoryMappingRegion,
         flag: MemoryRegionFlag,
-        pages: LinkedList<'static, Page>,
+        pages: &mut LinkedList<'static, Page>,
     ) -> Result<MemoryRegionBox, AllocError> {
         let size = map_region.page_count * Page::SIZE;
         let offset = map_region.virtual_offset;
 
         let mut region = unsafe { Self::empty(offset..(offset + size), flag) }?;
 
-        region.pages = pages;
+        region.pages.splice(pages);
 
         Ok(region)
     }

@@ -9,9 +9,9 @@ use crate::{
     drivers::current_module,
     error::KernelError,
     io::IrqLine,
-    memory::{self, AllocError, SlabBox},
+    memory::{self, SlabBox},
     object::{Handle, Object, ObjectContainer},
-    user::queue::Queue,
+    user::queue::{Queue, TryPushError},
 };
 
 use super::IrqEvent;
@@ -26,6 +26,16 @@ pub struct ModuleIrqContext {
 
     //the list of reserved irq events
     reserved_events: spin::Mutex<LinkedList<'static, Object>>,
+}
+
+#[derive(Debug, thiserror_no_std::Error)]
+pub enum ContextError {
+    #[error("Queue is busy")]
+    QueueIsBusy,
+    #[error("Kernel alloc failed: {0}")]
+    AllocFailed(#[from] crate::memory::AllocError),
+    #[error("Rust alloc failed: {0}")]
+    RustAllocFailed(#[from] alloc::alloc::AllocError),
 }
 
 const RESERVED_EVENTS_COUNT: usize = 5;
@@ -59,19 +69,18 @@ impl ModuleIrqContext {
         Ok(ctx)
     }
 
-    pub fn notify(&self) -> Result<(), KernelError> {
+    pub fn notify(&self) -> Result<(), ContextError> {
         assert!(memory::is_irq_context());
 
         let mut events = self.reserved_events.try_lock().unwrap();
 
-        let mut maybe_event =
-            events.remove_first().and_then(|obj_event| unsafe {
-                let event = IrqEvent::container_of(obj_event.deref_mut());
+        let mut maybe_event = events.remove_first().map(|obj_event| unsafe {
+            let event = IrqEvent::container_of(obj_event.deref_mut());
 
-                let _ = obj_event;
+            let _ = obj_event;
 
-                Some(memory::into_boxed((&mut *event).into()))
-            });
+            memory::into_boxed((&mut *event).into())
+        });
 
         if let Some(event) = maybe_event.as_mut() {
             event.attach_to_parent(&self.queue);
@@ -83,7 +92,10 @@ impl ModuleIrqContext {
 
         let event = maybe_event.expect("Should be initialized");
 
-        self.queue.push(event);
+        if let Err(cause) = self.queue.try_push(event) {
+            log::warn!("Failed to push irq event: {cause:?}");
+            return Err(ContextError::QueueIsBusy);
+        }
 
         Ok(())
     }

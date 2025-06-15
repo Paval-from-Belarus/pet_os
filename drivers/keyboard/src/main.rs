@@ -6,22 +6,17 @@ mod pc;
 
 use alloc::sync::Arc;
 use kernel_lib::{
-    fs::{self, not_supported_write, File, FileOperations, IndexNode},
-    io::{
-        self,
-        char::{not_supported_write, register_module},
-        spin, IoTransaction, IrqEvent, UserBufMut,
-    },
+    fs::{self, not_supported_write, File, FileOperations},
+    io::{self, char::register_module, spin, IrqEvent},
     module,
-    object::{Event, Handle, Queue, RawHandle, UserBuf, UserBufMut},
+    object::{Event, Queue, UserBufMut},
     task::{self, TaskHandle},
     KernelModule, ModuleError,
 };
 
-static DEVICE_NAME: &str = "keyboard";
-
 extern crate alloc;
 
+#[allow(unused)]
 pub struct KeyboardDriver {
     irq_task: TaskHandle,
 }
@@ -38,24 +33,23 @@ impl KernelModule for KeyboardDriver {
             ctx: core::ptr::null_mut(),
         })?;
 
-        let queue = io::set_irq(34, None)?;
+        let irq_queue = io::set_irq(1, None)?;
 
-        let event = Handle::new_event()?;
+        let event = Event::new()?;
 
         let context = spin::Mutex::new(DriverContext {
             scan_codes: heapless::Deque::new(),
             event,
-            queue,
+            irq_queue,
         });
 
         let boxed_context = Arc::try_new(context)?;
 
-        let arg = boxed_context.clone().as_ref() as *const DriverContextLock
-            as *const ();
+        let arg = Arc::into_raw(boxed_context.clone()) as *const ();
 
         let irq_task = task::spawn(handle_irq, arg)?;
 
-        log::info!("Driver is configured");
+        log::info!("Driver is configured. Irq Task: {}", irq_task.id);
 
         Ok(Self { irq_task })
     }
@@ -69,42 +63,59 @@ impl KernelModule for KeyboardDriver {
     }
 }
 
-fn handle_irq() {
-    // let queue: Queue<IrqEvent> = unsafe {
-    //     let handle: usize;
-    //     core::arch::asm! {
-    //         "",
-    //         out("eax") handle
-    //     };
-    let lock: DriverContextLock = todo!();
+extern "C" fn handle_irq() {
+    let ctx = unsafe {
+        let ctx_ptr: *const DriverContextLock;
+        core::arch::asm! {
+            "",
+            out("ebx") ctx_ptr
+        };
 
-    let scan_code = pc::read_scan_code().expect("Failed to read scan code");
+        Arc::from_raw(ctx_ptr)
+    };
 
-    let mut context = lock.try_lock().unwrap();
+    log::debug!("Keybrd irq task");
 
-    if let Err(scan_code) = context.scan_codes.push_back(scan_code) {
-        let _ = context.scan_codes.pop_front();
+    let queue = ctx.try_lock().unwrap().irq_queue.try_clone().unwrap();
 
-        context
-            .scan_codes
-            .push_back(scan_code)
-            .expect("Previous value was poped");
+    loop {
+        let Some(_event) = queue.blocking_recv() else {
+            break;
+        };
+
+        let scan_code = pc::read_scan_code().expect("Failed to read scan code");
+
+        log::debug!("key read: {scan_code}");
     }
 
-    context.event.notify();
+    log::debug!("irq queue is exit");
+
+    loop {}
+
+    // let mut context = ctx.try_lock().unwrap();
+
+    // if let Err(scan_code) = context.scan_codes.push_back(scan_code) {
+    //     let _ = context.scan_codes.pop_front();
+    //
+    //     context
+    //         .scan_codes
+    //         .push_back(scan_code)
+    //         .expect("Previous value was poped");
+    // }
+    //
+    // context.event.notify();
 }
 
 fn handle_read(file: File, mut buf: UserBufMut) -> fs::Result<()> {
-    let context_lock = unsafe { &*file.context::<DriverContextLock>() };
+    let context_lock = unsafe { &*file.ctx::<DriverContextLock>() };
 
     while buf.has_remaining_capacity() {
         let mut context = context_lock.try_lock().unwrap();
-
         if context.scan_codes.is_empty() {
-            let event = context.event.clone();
+            let event = context.event.try_clone().unwrap();
             drop(context);
             buf.flush().unwrap();
-            event.block_on();
+            event.wait().unwrap();
             continue;
         }
 
@@ -121,6 +132,6 @@ pub type DriverContextLock = spin::Mutex<DriverContext>;
 
 pub struct DriverContext {
     pub scan_codes: heapless::Deque<u8, 255>,
-    pub event: Handle<Event>,
-    pub queue: Queue<IrqEvent>,
+    pub event: Event,
+    pub irq_queue: Queue<IrqEvent>,
 }

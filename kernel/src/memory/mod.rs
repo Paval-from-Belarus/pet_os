@@ -409,7 +409,7 @@ pub fn remap(
 ) -> Result<(), AllocError> {
     assert_eq!(map_region.virtual_offset % Page::SIZE, 0);
 
-    let pages = PHYSICAL_ALLOCATOR
+    let mut pages = PHYSICAL_ALLOCATOR
         .get()
         .reserve_pages(map_region.physical_offset, map_region.page_count)?;
 
@@ -422,7 +422,7 @@ pub fn remap(
         let mem_region = MemoryRegion::new_allocated(
             map_region,
             MemoryRegionFlag::READ_WRITE,
-            pages,
+            &mut pages,
         )?;
 
         state.add_region(mem_region.into_node());

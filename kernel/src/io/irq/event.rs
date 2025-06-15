@@ -2,10 +2,11 @@ use crate::{
     impl_container,
     io::IrqLine,
     memory::{AllocError, SlabBox},
-    object::{alloc_root_object, runtime, Handle, Object, ObjectContainer},
+    object::{Handle, Object, ObjectContainer},
     user::queue::Queue,
 };
 
+#[derive(Debug)]
 pub struct IrqEvent {
     pub line: IrqLine,
     object: Object,

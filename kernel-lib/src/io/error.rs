@@ -9,6 +9,6 @@ use kernel_types::syscall::SyscallError;
 pub enum IoError {
     #[error("Not Supported Operation")]
     NotSupported,
-    #[error("Syscall is failed")]
+    #[error("Syscall is failed: {0:?}")]
     SyscallFailed(#[from] SyscallError),
 }

@@ -1,6 +1,9 @@
 use kernel_types::syscall::SyscallError;
 
-use crate::memory::{AllocError, PageMarkerError};
+use crate::{
+    memory::{AllocError, PageMarkerError},
+    user::queue::TryPushError,
+};
 
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum KernelError {

@@ -39,4 +39,11 @@ impl<T> Queue<T> {
             object.assume_init().into()
         }
     }
+
+    pub fn try_clone(&self) -> Result<Self, syscall::SyscallError> {
+        Ok(Self {
+            handle: self.handle.try_clone()?,
+            _marker: self._marker,
+        })
+    }
 }

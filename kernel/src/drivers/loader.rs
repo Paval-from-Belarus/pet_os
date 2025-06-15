@@ -1,21 +1,25 @@
 #![allow(unused)]
 use core::ffi::{c_char, CStr};
 
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use elf::{
     endian::AnyEndian, relocation::Rel, section::SectionHeader,
     segment::SegmentTable, symbol::Symbol, ElfBytes,
 };
 use fallible_collections::{FallibleVec, TryCollect};
-use kernel_types::{collections::LinkedList, string::MutString};
+use kernel_types::{
+    collections::LinkedList, get_eax, io::MemoryRemap, string::MutString,
+    task::TaskParams,
+};
 
 use crate::{
     current_task,
     error::KernelError,
     io,
     memory::{
-        self, MemoryRegion, MemoryRegionFlag, Process, ProcessId,
-        SegmentSelector, VirtualAddress,
+        self, MemoryMappingFlag, MemoryMappingRegion, MemoryRegion,
+        MemoryRegionFlag, Page, Process, ProcessId, SegmentSelector,
+        VirtualAddress,
     },
     task,
 };
@@ -403,6 +407,56 @@ pub extern "C" fn run_process() {
             in("cx") *SegmentSelector::USER_DATA,
             in("dx") *SegmentSelector::USER_CODE,
             options(nomem, nostack, preserves_flags, noreturn)
+        }
+    }
+}
+
+pub extern "C" fn run_process_task() {
+    let raw_params: *mut TaskParams = unsafe { get_eax!() };
+
+    let params = unsafe { Box::from_raw(raw_params) };
+
+    log::debug!("{params:?}");
+
+    unsafe { io::disable() }; //disable interrupts to configure kernel task
+
+    let mut pages = memory::physical_alloc(4 * Page::SIZE)
+        .expect("Failed to alloc memory for page stack");
+
+    let map_region = MemoryMappingRegion {
+        flags: MemoryMappingFlag::USER_DATA,
+        page_count: 4,
+        virtual_offset: 0xA_000_000,
+        physical_offset: pages.first().unwrap().as_physical(),
+    };
+
+    let process = current_task!().process.clone().unwrap();
+
+    let mut state = process.state.try_lock().unwrap();
+
+    state.marker.map_user_range(&map_region).unwrap();
+
+    let region = MemoryRegion::new_allocated(
+        map_region,
+        MemoryRegionFlag::READ_WRITE,
+        &mut pages,
+    )
+    .unwrap();
+
+    let stack_end = region.range.end;
+
+    state.add_region(region.into_node());
+
+    drop(state);
+
+    unsafe {
+        core::arch::asm! {
+            "jmp run_process_routine",
+            in("eax") params.routine,
+            in("ebx") params.args,
+            in("ecx") stack_end,
+            in("edx") ((*SegmentSelector::USER_CODE as u32) << 16 | (*SegmentSelector::USER_DATA as u32)),
+            options(nostack, preserves_flags, noreturn)
         }
     }
 }

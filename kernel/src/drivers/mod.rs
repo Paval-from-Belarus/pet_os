@@ -14,6 +14,7 @@ mod loader;
 mod module_info;
 
 pub use error::*;
+pub use loader::run_process_task;
 pub use module_info::*;
 
 use generated::STATIC_DRIVERS;

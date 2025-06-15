@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use kernel_types::{
     drivers::UserModule,
     fs::{FileInfo, FileLookupRequest, FileRequest, FsRequest},
@@ -12,13 +13,13 @@ use kernel_types::{
 
 use crate::{
     current_task,
-    drivers::{self, current_module},
+    drivers::{self, current_module, run_process_task},
     fs::{FileLookupWork, FileWork, FsWork, IndexNode},
     io::{
         self,
         block::{self, BlockWork},
         pic::PicLine,
-        IrqEvent, IrqLine,
+        IrqEvent,
     },
     log_module,
     memory::{self, AllocError, VirtualAddress},
@@ -39,11 +40,6 @@ pub fn validate_ref<'a, T: Sized>(
     }
 
     Ok(unsafe { &*ptr })
-}
-
-#[derive(Default)]
-pub struct SyscallResponse {
-    pub edx: Option<usize>,
 }
 
 pub fn handle(
@@ -195,11 +191,12 @@ pub fn handle(
 
                 crate::object::Kind::IrqEvent => unsafe {
                     blocking_pop(&queue, |event: Handle<IrqEvent>| {
-                        memory::switch_to_task(current_task!());
-
-                        let ptr = edx as *mut IrqLine;
-
-                        ptr.write(event.line);
+                        todo!()
+                        // memory::switch_to_task(current_task!());
+                        //
+                        // let ptr = edx as *mut IrqLine;
+                        //
+                        // ptr.write(event.line);
                     })?;
                 },
 
@@ -319,22 +316,38 @@ pub fn handle(
         Request::QueueTryGet => todo!(),
         Request::SpawnTask => {
             let params = validate_ref::<TaskParams>(ecx)?.clone();
+
+            unsafe {
+                memory::switch_to_kernel();
+            }
+
             let priority = if current_module().is_some() {
                 TaskPriority::Module(params.nice)
             } else {
                 TaskPriority::User(params.nice)
             };
 
-            let routine_task =
-                task::new_task(params.routine, params.args, priority)?;
+            let params =
+                Box::try_new(params).map_err(|_| SyscallError::NoMemory)?;
+
+            let routine_task = task::new_task(
+                run_process_task,
+                Box::into_raw(params) as *const (),
+                priority,
+            )?;
+
+            routine_task.process = current_task!().process.clone();
 
             task::submit_task(routine_task);
 
+            unsafe {
+                memory::switch_to_task(current_task!());
+            }
+
             let ptr = edx as *mut VirtualAddress;
 
-            //fixme: handle is the promise to interact with task
             unsafe {
-                ptr.write(0);
+                ptr.write(current_task!().id);
             }
         }
         Request::SetIrqHandler => {
@@ -360,7 +373,11 @@ pub fn handle(
         }
 
         Request::EventNew => {
+            unsafe { memory::switch_to_kernel() };
+
             let event = Event::new()?;
+
+            unsafe { memory::switch_to_task(current_task!()) };
 
             let ptr = edx as *mut VirtualAddress;
 

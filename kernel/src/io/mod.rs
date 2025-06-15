@@ -6,7 +6,7 @@ use alloc::boxed::Box;
 use irq::{module_irq, ModuleIrqContext};
 use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
-use kernel_types::io::{IoOperation, IrqHandler};
+use kernel_types::io::IoOperation;
 use kernel_types::{
     declare_constants, declare_types, get_eax, get_edx, set_eax, syscall,
 };

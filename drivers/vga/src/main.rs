@@ -6,7 +6,7 @@ use core::mem::MaybeUninit;
 use alloc::boxed::Box;
 use kernel_lib::{
     fs::{self, not_supported_read, File, FileOperations},
-    io::{self, char::register_module, IoTransaction},
+    io::{self, char::register_module, IoBatch},
     object::UserBuf,
     KernelModule, ModuleError, ModuleOperations,
 };
@@ -89,7 +89,7 @@ impl VgaWriter {
     pub fn update_cursor(&self) {
         let pos = self.cursor_y * VGA_WIDTH + self.cursor_x;
 
-        IoTransaction::new_write()
+        IoBatch::new_write()
             .port_u8(0x3D4, 0x0F)
             .port_u8(0x3D5, pos as u8)
             .port_u8(0x3D4, 0x0E)

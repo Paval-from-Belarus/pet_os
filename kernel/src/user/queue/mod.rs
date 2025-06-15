@@ -1,4 +1,7 @@
-use core::marker::PhantomData;
+use core::{
+    marker::PhantomData,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use kernel_types::{collections::LinkedList, container_of};
 
@@ -13,10 +16,17 @@ use crate::{
 
 pub struct Queue<T: 'static> {
     data: Mutex<LinkedList<'static, Object>>,
+    len: AtomicUsize,
     object: Object,
     kind: object::Kind,
     max_capacity: Option<usize>,
     _marker: PhantomData<T>,
+}
+
+#[derive(Debug)]
+pub enum TryPushError<T> {
+    Full(T),
+    Locked(T),
 }
 
 impl<T: 'static> core::fmt::Debug for Queue<T> {
@@ -50,6 +60,7 @@ where
             object: Self::new_root_object(),
             data,
             kind: T::KIND,
+            len: AtomicUsize::new(0),
             max_capacity: None,
             _marker: PhantomData,
         })?;
@@ -64,6 +75,7 @@ where
 
         alloc_root_object(Self {
             max_capacity: capacity.into(),
+            len: AtomicUsize::new(0),
             kind: T::KIND,
             object: Self::new_root_object(),
             data,
@@ -83,9 +95,23 @@ where
         handle
     }
 
-    pub fn try_push(&self, data: SlabBox<T>) -> Result<(), ()> {
-        let _ = data;
-        todo!()
+    pub fn try_push(
+        &self,
+        data: SlabBox<T>,
+    ) -> Result<Handle<T>, TryPushError<SlabBox<T>>> {
+        let Some(mut queue) = self.data.try_lock() else {
+            return Err(TryPushError::Locked(data));
+        };
+
+        let handle = data.handle();
+
+        let data = unsafe { &mut *SlabBox::into_raw(data) };
+
+        queue.push_back(data.object_mut());
+
+        runtime::notify(self.handle());
+
+        Ok(handle)
     }
 
     pub fn try_pop(&self) -> Option<Handle<T>> {
@@ -108,6 +134,16 @@ where
 
             runtime::block_on(self.handle()).expect("Failed to block on queue");
         }
+    }
+
+    #[allow(unused)]
+    fn has_capacity(&self) -> bool {
+        self.max_capacity
+            .map(|capacity| {
+                let len = self.len.load(Ordering::SeqCst);
+                len < capacity
+            })
+            .unwrap_or(true)
     }
 }
 

@@ -1,5 +1,4 @@
 use kernel_types::{
-    object::{KernelObject, RawHandle},
     syscall,
     task::{FnTask, TaskParams},
 };
@@ -17,16 +16,16 @@ pub fn terminate(code: i32) -> ! {
 
 #[allow(unused)]
 pub struct TaskHandle {
-    handle: RawHandle,
+    pub id: usize,
 }
 
-impl From<RawHandle> for TaskHandle {
-    fn from(value: RawHandle) -> Self {
-        Self { handle: value }
-    }
-}
+// impl From<RawHandle> for TaskHandle {
+//     fn from(value: RawHandle) -> Self {
+//         Self { handle: value }
+//     }
+// }
 
-impl KernelObject for TaskHandle {}
+// impl KernelObject for TaskHandle {}
 
 pub fn spawn(
     routine: FnTask,
@@ -47,8 +46,9 @@ pub fn spawn(
             edx: &mut handle
         }?;
 
-        let handle = RawHandle::new_unchecked(handle);
+        // let handle = RawHandle::new_unchecked(handle);
 
-        Ok(handle.into())
+        Ok(TaskHandle { id: handle })
+        // Ok(handle.into())
     }
 }
