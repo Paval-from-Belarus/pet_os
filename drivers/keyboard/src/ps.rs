@@ -14,7 +14,7 @@ const NINE_PRESSED: u8 = 0xA;
 pub fn read_scan_code() -> io::Result<Option<char>> {
     let key = IoBatch::new_read().port_u8(0x60)?;
 
-    log::debug!("KEY TO FETCH: 0x{key:x}");
+    log::trace!("KEY TO FETCH: 0x{key:x}");
 
     if key == 0x1C {
         return Ok('\n'.into());
@@ -42,8 +42,6 @@ pub fn read_scan_code() -> io::Result<Option<char>> {
     if (ONE_PRESSED..=NINE_PRESSED).contains(&key) {
         return Ok((NUM[(key - ONE_PRESSED) as usize] as char).into());
     }
-
-    log::debug!("key");
 
     if (0x10..=0x1C).contains(&key) {
         let letter = QWERTYUIOP[(key - 0x10) as usize] as char;

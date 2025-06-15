@@ -78,9 +78,11 @@ extern "C" fn handle_irq(ctx_ptr: *const ()) {
             break;
         };
 
+        log::debug!("before process");
+
         let scan_code = ps::read_scan_code().expect("Failed to read scan code");
 
-        log::debug!("key read: {scan_code:?}");
+        log::info!("key read: {scan_code:?}");
     }
 
     log::debug!("irq queue is exit");

@@ -90,11 +90,17 @@ pub extern "C" fn handle_syscall(
         return;
     };
 
+    let old_esp = current_task!().context().esp;
+
     let code = match user::syscall::handle(request, edx, ecx, &frame) {
         Ok(_) => 0,
-
         Err(cause) => cause as u32,
     };
+
+    if current_task!().context().esp != old_esp {
+        current_task!().context_mut().esp = old_esp;
+        unsafe { memory::switch_to_task(current_task!()) }
+    }
 
     unsafe { set_eax!(code) }
 }

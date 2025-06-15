@@ -16,7 +16,10 @@ use crate::{
     drivers::{self, current_module, run_process_task},
     fs::{FileLookupWork, FileWork, FsWork, IndexNode},
     io::{
-        self, block::{self, BlockWork}, pic::PicLine, InterruptStackFrame, IrqEvent
+        self,
+        block::{self, BlockWork},
+        pic::PicLine,
+        InterruptStackFrame, IrqEvent,
     },
     log_module,
     memory::{self, AllocError, VirtualAddress},
@@ -43,7 +46,7 @@ pub fn handle(
     request: Request,
     edx: usize,
     ecx: usize,
-    frame: &InterruptStackFrame
+    _frame: &InterruptStackFrame,
 ) -> Result<(), SyscallError> {
     match request {
         Request::PrintK => {
@@ -188,10 +191,21 @@ pub fn handle(
                 },
 
                 crate::object::Kind::IrqEvent => unsafe {
+                    log::debug!(
+                        "task !!. Stack size before: {}. ESP + {}",
+                        current_task!().stack_size(),
+                        unsafe { current_task!().context().esp }
+                    );
                     let Some(handle) = queue.cast::<IrqEvent>().blocking_pop()
                     else {
                         return Err(SyscallError::QueueIsEmpty);
                     };
+
+                    log::debug!(
+                        "task !!. Stack size after: {}. ESP = {}",
+                        current_task!().stack_size(),
+                        unsafe { current_task!().context().esp }
+                    );
 
                     let event = handle.into_owned().unwrap();
                     let message = (&*event).into();
@@ -204,6 +218,12 @@ pub fn handle(
 
                     memory::switch_to_task(current_task!());
 
+                    log::debug!(
+                        "task !!. Stack size somewhere: {}. ESP = {}",
+                        current_task!().stack_size(),
+                        unsafe { current_task!().context().esp }
+                    );
+
                     let ptr = edx as *mut IrqMessage;
 
                     ptr.write(message);
@@ -214,6 +234,7 @@ pub fn handle(
                 }
             }
         }
+
         Request::FreeKernelObject => unsafe {
             let raw_object = edx as *const Object;
 

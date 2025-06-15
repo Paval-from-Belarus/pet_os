@@ -28,8 +28,10 @@ rept IRQ_LINES_COUNT index: 0
         mov eax, index
         mov edx, esp ;TaskContext
 
+        push edx eax
         call Interceptors.service
 
+        pop eax eax
         mov esp, eax
 
         popa
@@ -125,5 +127,7 @@ public _syscall
 extrn handle_syscall
 
 _syscall:
+    push ecx edx eax
     call handle_syscall
+    add esp, 4 * 3
     iret
