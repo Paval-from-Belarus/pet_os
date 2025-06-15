@@ -353,7 +353,7 @@ pub fn init() {
     }
 
     unsafe {
-        if syscall!(syscall::RESERVED).is_ok() {
+        if syscall!(syscall::RESERVED, ecx: 2, edx: 1).is_ok() {
             let code: usize = get_edx!();
             if code == system::CHECK_CODE {
                 return;
@@ -377,7 +377,7 @@ static INTERCEPTORS: spin::Mutex<
 pub unsafe fn validate_stack() {
     let stack_size = current_task!().stack_size();
 
-    log::trace!("task#{} IRQ stack size: {stack_size}", current_task!().id);
+    log::debug!("task#{} IRQ stack size: {stack_size}", current_task!().id);
 
     if stack_size == 0 {
         panic!("Red Zone violated");
@@ -390,10 +390,10 @@ pub unsafe fn validate_stack() {
 /// - Interrupts are disabled (to prevent nested interrupts)
 #[no_mangle]
 #[allow(clippy::pointers_in_nomem_asm_block)]
-pub unsafe extern "C" fn interceptor_stub() {
-    let index: usize = get_eax!();
-    let mut frame_ptr: *mut TaskContext = get_edx!();
-
+pub unsafe extern "C" fn interceptor_stub(
+    index: usize,
+    mut frame_ptr: *mut TaskContext,
+) {
     io::disable();
 
     validate_stack();
@@ -414,7 +414,7 @@ pub unsafe extern "C" fn interceptor_stub() {
         chain.dispatch(&mut frame_ptr);
     });
 
-    set_eax!(frame_ptr)
+    // set_eax!(frame_ptr)
 }
 
 fn init_interceptors(table: &mut IDTable) {

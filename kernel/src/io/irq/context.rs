@@ -85,7 +85,8 @@ impl ModuleIrqContext {
         }
 
         if maybe_event.is_none() {
-            maybe_event = Some(IrqEvent::new_boxed(self.line, &self.queue)?);
+            return Err(ContextError::QueueIsBusy);
+            // maybe_event = Some(IrqEvent::new_boxed(self.line, &self.queue)?);
         }
 
         let event = maybe_event.expect("Should be initialized");

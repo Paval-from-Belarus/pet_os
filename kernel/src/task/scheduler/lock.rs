@@ -145,6 +145,8 @@ impl SchedulerLock {
 
         memory::switch_to_task(&mut *new_task);
 
+        log::debug!("context: {:?}", current_task!().context());
+
         core::arch::asm! {
             "pushfd",
             "push ecx",

@@ -73,20 +73,12 @@ extern "x86-interrupt" {
 }
 
 #[no_mangle]
-pub extern "C" fn handle_syscall() {
-    let edx: usize;
-    let ecx: usize;
-    let id: u32;
-
-    unsafe {
-        core::arch::asm! {
-            "",
-            out("eax") id,
-            out("edx") edx,
-            out("ecx") ecx
-        }
-    }
-
+pub extern "C" fn handle_syscall(
+    id: u32,
+    edx: usize,
+    ecx: usize,
+    frame: InterruptStackFrame,
+) {
     if id == syscall::RESERVED {
         unsafe { set_edx!(CHECK_CODE) };
         unsafe { set_eax!(OK_CODE) };
@@ -98,7 +90,7 @@ pub extern "C" fn handle_syscall() {
         return;
     };
 
-    let code = match user::syscall::handle(request, edx, ecx) {
+    let code = match user::syscall::handle(request, edx, ecx, &frame) {
         Ok(_) => 0,
 
         Err(cause) => cause as u32,

@@ -16,10 +16,7 @@ use crate::{
     drivers::{self, current_module, run_process_task},
     fs::{FileLookupWork, FileWork, FsWork, IndexNode},
     io::{
-        self,
-        block::{self, BlockWork},
-        pic::PicLine,
-        IrqEvent,
+        self, block::{self, BlockWork}, pic::PicLine, InterruptStackFrame, IrqEvent
     },
     log_module,
     memory::{self, AllocError, VirtualAddress},
@@ -46,6 +43,7 @@ pub fn handle(
     request: Request,
     edx: usize,
     ecx: usize,
+    frame: &InterruptStackFrame
 ) -> Result<(), SyscallError> {
     match request {
         Request::PrintK => {
