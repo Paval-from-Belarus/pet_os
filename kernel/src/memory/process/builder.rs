@@ -5,6 +5,7 @@ use kernel_types::collections::LinkedList;
 
 use crate::{
     error::KernelError,
+    io::InterruptableLazyCell,
     memory::{
         self, new_proccess_id, physical_alloc, AllocError, MemoryMappingRegion,
         MemoryRegion, MemoryRegionFlag, Page, PageMarker, VirtualAddress,
@@ -116,7 +117,7 @@ impl ProcessBuilder<ProcessSpace> {
 
         Ok(Process {
             id,
-            state: Arc::new(spin::Mutex::new(state)),
+            state: Arc::new(InterruptableLazyCell::new(state)),
         })
     }
 }

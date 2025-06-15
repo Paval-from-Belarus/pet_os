@@ -151,21 +151,21 @@ impl IrqLine {
     declare_constants! {
         pub IrqLine,
         SYS_TIMER = irq_line!(32, IRQ0), "Scheduler and company";
-        KEYBOARD = irq_line!(34, IRQ1);
-        CASCADE_SLAVE = irq_line!(35, IRQ2);
-        COM1 = irq_line!(36, IRQ3);
-        COM2 = irq_line!(37, IRQ4);
-        SOUND_CARD = irq_line!(38, IRQ5);
-        FLOPPY = irq_line!(39, IRQ6);
-        PRINTER = irq_line!(40, IRQ7);
-        CLOCKS = irq_line!(41, IRQ8);
-        POWER = irq_line!(42, IRQ9);
-        NETWORK_CARD = irq_line!(43, IRQ10);
-        UNUSED = irq_line!(44, IRQ11);
-        MOUSE = irq_line!(45,  IRQ12);
-        FLOAT_COPROC = irq_line!(46, IRQ13);
-        PRIMARY_ATA = irq_line!(47, IRQ14);
-        SECONDARY_ATA = irq_line!(48, IRQ15);
+        KEYBOARD = irq_line!(33, IRQ1);
+        CASCADE_SLAVE = irq_line!(34, IRQ2);
+        COM1 = irq_line!(35, IRQ3);
+        COM2 = irq_line!(36, IRQ4);
+        SOUND_CARD = irq_line!(37, IRQ5);
+        FLOPPY = irq_line!(38, IRQ6);
+        PRINTER = irq_line!(39, IRQ7);
+        CLOCKS = irq_line!(40, IRQ8);
+        POWER = irq_line!(41, IRQ9);
+        NETWORK_CARD = irq_line!(42, IRQ10);
+        UNUSED = irq_line!(43, IRQ11);
+        MOUSE = irq_line!(44,  IRQ12);
+        FLOAT_COPROC = irq_line!(45, IRQ13);
+        PRIMARY_ATA = irq_line!(46, IRQ14);
+        SECONDARY_ATA = irq_line!(47, IRQ15);
     }
 
     declare_constants! {

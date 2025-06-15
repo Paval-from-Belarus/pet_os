@@ -12,6 +12,7 @@ use kernel_types::collections::LinkedList;
 
 use crate::{
     error::KernelError,
+    io::InterruptableLazyCell,
     memory::{self, MemoryMappingRegion, MemoryRegionFlag},
 };
 
@@ -40,7 +41,7 @@ pub fn new_proccess_id() -> Option<ProcessId> {
 #[repr(C)]
 pub struct Process {
     pub id: ProcessId,
-    pub state: Arc<spin::Mutex<ProcessState>>,
+    pub state: Arc<InterruptableLazyCell<ProcessState>>,
 }
 
 impl Process {

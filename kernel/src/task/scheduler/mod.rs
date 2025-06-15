@@ -154,7 +154,7 @@ impl TaskScheduler {
             }
         }
 
-        log::debug!("On tick. Task = {}", self.current.id);
+        log::trace!("On tick. Task = {}", self.current.id);
 
         self.current.metrics.elapsed += ticks_size!();
 
@@ -212,7 +212,7 @@ impl TaskScheduler {
             }
         }
 
-        log::debug!("On tick end. Task = {}", self.current.id);
+        log::trace!("On tick end. Task = {}", self.current.id);
     }
 
     /// terminate the current task by

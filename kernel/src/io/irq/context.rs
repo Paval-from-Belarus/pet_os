@@ -38,7 +38,7 @@ pub enum ContextError {
     RustAllocFailed(#[from] alloc::alloc::AllocError),
 }
 
-const RESERVED_EVENTS_COUNT: usize = 5;
+const RESERVED_EVENTS_COUNT: usize = 20;
 
 impl ModuleIrqContext {
     pub fn new(
@@ -72,7 +72,7 @@ impl ModuleIrqContext {
     pub fn notify(&self) -> Result<(), ContextError> {
         assert!(memory::is_irq_context());
 
-        let mut events = self.reserved_events.get();
+        let mut events = self.reserved_events.lock();
 
         let mut maybe_event = events.remove_first().map(|obj_event| unsafe {
             let event = IrqEvent::container_of(obj_event.deref_mut());
@@ -101,7 +101,7 @@ impl ModuleIrqContext {
     }
 
     pub fn restore_event(&self, event: SlabBox<IrqEvent>) {
-        let mut events = self.reserved_events.get();
+        let mut events = self.reserved_events.lock();
 
         let event = unsafe { &mut *SlabBox::into_raw(event) };
 

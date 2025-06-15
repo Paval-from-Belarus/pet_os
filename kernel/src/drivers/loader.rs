@@ -386,7 +386,7 @@ pub extern "C" fn run_process() {
     let (entry_point, stack_end) = {
         let process = current_task!().process.as_ref().unwrap().clone();
 
-        let state = process.state.try_lock().unwrap();
+        let state = process.state.lock();
 
         (state.entry_point, state.stack.end)
     };
@@ -432,7 +432,7 @@ pub extern "C" fn run_process_task() {
 
     let process = current_task!().process.clone().unwrap();
 
-    let mut state = process.state.try_lock().unwrap();
+    let mut state = process.state.lock();
 
     state.marker.map_user_range(&map_region).unwrap();
 

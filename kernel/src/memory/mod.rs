@@ -1,6 +1,6 @@
 use core::alloc::{Allocator, GlobalAlloc};
 use core::ptr::NonNull;
-use core::{mem, ptr, u16};
+use core::{mem, ptr};
 
 use alloc::boxed::Box;
 use allocators::SlabAlloc;
@@ -413,7 +413,7 @@ pub fn remap(
         .get()
         .reserve_pages(map_region.physical_offset, map_region.page_count)?;
 
-    let mut state = process.state.try_lock().unwrap();
+    let mut state = process.state.lock();
 
     state.marker.map_user_range(&map_region)?;
 
@@ -477,12 +477,9 @@ pub unsafe fn switch_to_task(task: &mut Task) {
     let task_state = &raw mut TASK_STATE;
     unsafe { (*task_state).set_kernel_stack(stack) };
 
-    // log::debug!("KERNEL Marker {:?}", *KERNEL_MARKER.get());
-
     if let Some(process) = task.process.as_ref() {
-        let state = process.state.try_lock().unwrap();
+        let state = process.state.lock();
 
-        // log::debug!("Process Marker {:?}", state.marker);
         state.marker.load();
     } else {
         KERNEL_MARKER.get().load();
@@ -511,8 +508,7 @@ pub fn address_space() -> AddressSpace {
         .clone()
         .map(|proc| {
             let kernel_dir = KERNEL_MARKER.get().directory() as *const _;
-            let user_dir =
-                proc.state.try_lock().unwrap().marker.directory() as *const _;
+            let user_dir = proc.state.lock().marker.directory() as *const _;
 
             if ptr::eq(kernel_dir, user_dir) {
                 AddressSpace::Kernel

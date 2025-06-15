@@ -47,9 +47,7 @@ impl KernelModule for KeyboardDriver {
 
         let arg = Arc::into_raw(boxed_context.clone()) as *const ();
 
-        let irq_task = task::spawn(handle_irq, arg)?;
-
-        ps::init();
+        let irq_task = task::spawn(handle_irq, arg, 3)?;
 
         log::info!("Driver is configured. Irq Task: {}", irq_task.id);
 
@@ -87,7 +85,7 @@ extern "C" fn handle_irq() {
 
         let scan_code = ps::read_scan_code().expect("Failed to read scan code");
 
-        log::debug!("key read: {scan_code}");
+        log::debug!("key read: {scan_code:?}");
     }
 
     log::debug!("irq queue is exit");

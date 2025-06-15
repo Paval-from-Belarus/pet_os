@@ -10,7 +10,7 @@ macro_rules! log {
 	( $($arg:tt)* ) => ({
 		use core::fmt::Write;
 
-                let mut logger = $crate::common::logging::LOGGER_LOCK.get();
+                let mut logger = $crate::common::logging::LOGGER_LOCK.lock();
                 let _ = write!(logger, $($arg)*);
 	})
 }
@@ -20,7 +20,7 @@ macro_rules! log_module {
     ( $($arg:tt)* ) => ({
 	use core::fmt::Write;
 
-        let mut logger = $crate::common::logging::LOGGER_LOCK.get();
+        let mut logger = $crate::common::logging::LOGGER_LOCK.lock();
         let _ = write!(logger, $($arg)*);
     })
 }

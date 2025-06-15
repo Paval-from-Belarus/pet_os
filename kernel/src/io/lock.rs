@@ -36,7 +36,7 @@ impl<T> InterruptableLazyCell<T> {
         }
     }
 
-    pub fn get(&self) -> InterruptableLock<T> {
+    pub fn lock(&self) -> InterruptableLock<T> {
         let cell = unsafe { &mut *self.cell.get() };
         if let Some(data) = cell {
             InterruptableLock::new(data)

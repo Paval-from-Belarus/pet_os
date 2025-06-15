@@ -208,7 +208,7 @@ pub extern "x86-interrupt" fn page_fault(
     }
 
     if let Some(process) = current_task!().process.clone() {
-        let mut state = process.state.try_lock().unwrap();
+        let mut state = process.state.lock();
 
         let stack_bottom = state.stack.start;
 
@@ -238,12 +238,8 @@ pub extern "x86-interrupt" fn page_fault(
     };
 
     if let Some(process) = current_task!().process.as_ref() {
-        let lookuped = process
-            .state
-            .try_lock()
-            .unwrap()
-            .marker
-            .lookup_physical(access_address);
+        let lookuped =
+            process.state.lock().marker.lookup_physical(access_address);
 
         log_module!("Lookuped value: {lookuped:?}");
     }

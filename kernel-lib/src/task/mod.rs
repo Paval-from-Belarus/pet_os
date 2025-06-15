@@ -30,11 +30,12 @@ pub struct TaskHandle {
 pub fn spawn(
     routine: FnTask,
     args: *const (),
+    nice: u16,
 ) -> Result<TaskHandle, syscall::SyscallError> {
     let params = TaskParams {
         routine,
         args,
-        nice: 0,
+        nice,
     };
 
     unsafe {

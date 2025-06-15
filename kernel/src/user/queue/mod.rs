@@ -109,6 +109,8 @@ where
 
         queue.push_back(data.object_mut());
 
+        drop(queue);
+
         runtime::notify(self.handle());
 
         Ok(handle)
@@ -120,13 +122,9 @@ where
 
     pub fn blocking_pop(&self) -> Option<Handle<T>> {
         loop {
-            log::debug!("Trying to fetch new object");
             let maybe_obj = self.data.lock().remove_first();
 
             if let Some(obj) = maybe_obj {
-                log::debug!("Fetched new object");
-                // log::debug!("Fetch from queue: {:?}", obj.kind);
-
                 obj.parent = None;
 
                 return Some(obj.handle());

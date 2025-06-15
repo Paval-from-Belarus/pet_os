@@ -3,7 +3,7 @@ use kernel_types::collections::LinkedList;
 use crate::io::pic::PicLine;
 use crate::io::{pic, CallbackInfo};
 use crate::memory::{self, Slab, SlabBox};
-use crate::{object, ticks_now};
+use crate::ticks_now;
 
 use crate::task::TaskContext;
 

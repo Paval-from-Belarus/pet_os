@@ -2,6 +2,8 @@ mod chain;
 mod context;
 mod event;
 
+use core::sync::atomic::AtomicUsize;
+
 pub use chain::*;
 pub use context::ModuleIrqContext;
 pub use event::IrqEvent;
@@ -12,11 +14,19 @@ use crate::{
     task::TaskContext,
 };
 
-fn start_irq(_module_id: ModuleId) {
+pub fn current_irq_module() -> Option<ModuleId> {
     todo!()
 }
 
-fn complete_irq(_module_id: ModuleId) {}
+static IRQ_MODULE: AtomicUsize = AtomicUsize::new(0);
+
+fn start_irq(module_id: ModuleId) {
+    IRQ_MODULE.store(module_id, core::sync::atomic::Ordering::SeqCst);
+}
+
+fn complete_irq() {
+    IRQ_MODULE.store(0, core::sync::atomic::Ordering::SeqCst);
+}
 
 pub fn module_irq(
     _is_processed: bool,
@@ -38,7 +48,7 @@ pub fn module_irq(
     }
 
     pic::complete(context.line.into());
-    complete_irq(context.module_id);
+    complete_irq();
 
     true
 }

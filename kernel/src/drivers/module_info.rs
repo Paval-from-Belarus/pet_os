@@ -80,12 +80,12 @@ impl Module {
     }
 
     pub fn set_irq_ctx(&self, irq_ctx: Arc<ModuleIrqContext>) {
-        let mut lock = self.irq_ctx.get();
+        let mut lock = self.irq_ctx.lock();
         *lock = Some(irq_ctx);
     }
 
     pub fn irq_ctx(&self) -> Option<Arc<ModuleIrqContext>> {
-        self.irq_ctx.get().clone()
+        self.irq_ctx.lock().clone()
     }
 
     pub fn file_ctx(&self) -> *const () {

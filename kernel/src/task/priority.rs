@@ -12,8 +12,8 @@ impl TaskPriority {
     pub fn into_raw(self) -> u16 {
         match self {
             TaskPriority::Idle => 0,
-            TaskPriority::User(v) => v,
-            TaskPriority::Module(v) => v,
+            TaskPriority::User(v) => v + 1,
+            TaskPriority::Module(v) => v + 16,
             TaskPriority::Kernel => 31,
         }
     }
