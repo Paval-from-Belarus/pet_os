@@ -15,6 +15,7 @@ use kernel_types::collections::{
 };
 use queue::TaskQueue;
 
+use crate::object::{Handle, ObjectContainer};
 use crate::task::{switch_context, RunningTask, TaskContext, TaskStatus};
 use crate::{io, log_module, memory, ticks_size};
 use crate::{object, ticks_now};
@@ -68,8 +69,13 @@ impl TaskScheduler {
     }
 
     /// block the current task on object handle
-    pub fn block_on(&mut self, handle: object::RawHandle) {
-        log::debug!("Blocking: {handle:?}");
+    pub fn block_on<T: ObjectContainer, F: Fn(&T)>(
+        &mut self,
+        handle: Handle<T>,
+        awake_another: bool,
+        on_block: F,
+    ) {
+        log::debug!("Blocking: 0x{:x}", handle.as_addr());
 
         let mut next_task = self
             .running
@@ -78,15 +84,20 @@ impl TaskScheduler {
 
         mem::swap(&mut self.current, &mut next_task);
 
-        let mut blocked_task = next_task.into_blocked(handle);
+        let mut blocked_task = next_task.into_blocked(handle.as_addr());
 
-        assert!(!self
-            .blocked
-            .iter()
-            .any(|task| task.id == blocked_task.id
-                && *task.block_reason() == handle));
+        let blocked_task_id = blocked_task.id;
+
+        assert!(!self.blocked.iter().any(|task| task.id == blocked_task_id
+            && *task.block_reason() == handle.as_addr()));
+
+        if awake_another {
+            self.unblock_on(handle.as_addr());
+        }
 
         self.blocked.push_back(blocked_task);
+
+        on_block(&handle);
     }
 
     /// unblock task with highest priority on object handle

@@ -6,7 +6,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use kernel_types::task::FnTask;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use kernel_types::{bitflags, declare_constants, get_eax, Zeroed};
+use kernel_types::{bitflags, declare_constants, Zeroed};
 
 use crate::common::atomics::UnsafeLazyCell;
 

@@ -51,7 +51,10 @@ extern "C" fn fs_task(raw_handle: *const ()) {
         )
     };
 
-    log::debug!("dev-fs task #{}", current_task!().id);
+    log::debug!(
+        "dev-fs task #{}. Queue = {raw_handle:?}",
+        current_task!().id
+    );
 
     loop {
         let Some(work) = queue.blocking_pop() else {

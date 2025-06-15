@@ -121,17 +121,17 @@ where
     }
 
     pub fn blocking_pop(&self) -> Option<Handle<T>> {
-        loop {
-            let maybe_obj = self.data.lock().remove_first();
+        runtime::critical_section(self.handle(), |queue| loop {
+            let mut maybe_obj = queue.data.try_lock().unwrap().remove_first();
 
-            if let Some(obj) = maybe_obj {
+            if let Some(obj) = maybe_obj.as_mut() {
                 obj.parent = None;
-
                 return Some(obj.handle());
             }
 
-            runtime::block_on(self.handle()).expect("Failed to block on queue");
-        }
+            runtime::block_on(queue.handle())
+                .expect("Failed to block on queue");
+        })
     }
 
     #[allow(unused)]

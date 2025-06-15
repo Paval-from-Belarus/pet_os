@@ -122,7 +122,7 @@ impl<T: ObjectContainer> Drop for Handle<T> {
 
         log::debug!("Droping object handle: {object:?}");
 
-        let prev_value = object.ref_count.fetch_sub(0, Ordering::SeqCst);
+        let prev_value = object.ref_count.fetch_sub(1, Ordering::SeqCst);
 
         let _value = prev_value - 1;
         //

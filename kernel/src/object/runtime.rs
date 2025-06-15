@@ -1,3 +1,5 @@
+use core::sync::atomic::Ordering;
+
 use kernel_types::collections::LinkedList;
 
 use crate::{error::KernelError, task::SCHEDULER};
@@ -39,19 +41,52 @@ impl Runtime {
 pub fn block_on<T: ObjectContainer>(
     handle: Handle<T>,
 ) -> Result<(), KernelError> {
-    use core::sync::atomic::Ordering;
+    let status = T::object(&handle).status.load(Ordering::SeqCst);
 
-    let object = unsafe { &*handle.object() };
+    //this task is blocking on object
+    //and holding critical section
+    let awake_another = status == Status::Blocked;
 
-    object.status.store(Status::Blocked, Ordering::SeqCst);
-
-    SCHEDULER.switch_lock().block_on(handle.into_addr());
+    SCHEDULER
+        .switch_lock()
+        .block_on(handle, awake_another, |obj| {
+            obj.object().status.store(Status::Working, Ordering::SeqCst);
+        });
 
     Ok(())
 }
 
+pub fn critical_section<T, F, OUTPUT>(handle: Handle<T>, f: F) -> OUTPUT
+where
+    T: ObjectContainer,
+    F: Fn(&T) -> OUTPUT,
+{
+    loop {
+        let status = T::object(&handle).status.compare_exchange(
+            Status::Working,
+            Status::Blocked,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+
+        if status.is_ok() {
+            let v = f(&handle);
+
+            T::object(&handle)
+                .status
+                .store(Status::Working, Ordering::SeqCst);
+
+            notify(handle.clone());
+
+            break v;
+        }
+
+        block_on(handle.clone()).expect("Failed to block on critical section");
+    }
+}
+
 pub fn notify<T: ObjectContainer>(handle: Handle<T>) {
-    SCHEDULER.access_lock().unblock_on(handle.into_addr());
+    SCHEDULER.access_lock().unblock_on(handle.as_addr());
 }
 
 pub fn lookup<T: ObjectContainer>(handle: Handle<T>) -> bool {
@@ -69,7 +104,6 @@ pub fn register(object: &'static mut Object) -> RawHandle {
 
     handle
 }
-
 
 pub fn unregister(handle: RawHandle) -> Option<&'static mut Object> {
     RUNTIME.remove_object(handle)
