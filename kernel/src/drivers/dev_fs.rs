@@ -9,7 +9,8 @@ use kernel_types::{
 };
 
 use crate::{
-    current_task, drivers,
+    current_task,
+    drivers::{self, ready_event},
     fs::{self, FileLookupWork, FsWork, SuperBlock},
     memory::VirtualAddress,
     object::Handle,
@@ -29,7 +30,7 @@ pub fn spawn_task() -> fs::Result<()> {
 
     let fs_task = task::new_task(
         fs_task,
-        queue.into_addr() as _,
+        unsafe { queue.into_addr() as _ },
         task::TaskPriority::Module(1),
     )
     .expect("Failed to spawn dev-fs task");
@@ -55,6 +56,10 @@ extern "C" fn fs_task(raw_handle: *const ()) {
         "dev-fs task #{}. Queue = {raw_handle:?}",
         current_task!().id
     );
+
+    ready_event().wait();
+
+    log::debug!("All modules are ready");
 
     loop {
         let Some(work) = queue.blocking_pop() else {

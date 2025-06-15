@@ -102,7 +102,7 @@ impl TaskScheduler {
 
     /// unblock task with highest priority on object handle
     pub fn unblock_on(&mut self, handle: object::RawHandle) {
-        log::debug!("Unblocking: {handle:?}");
+        log::debug!("Unblocking: 0x{handle:x?}");
 
         let mut max_priority = Option::<TaskPriority>::None;
 
@@ -114,7 +114,7 @@ impl TaskScheduler {
             .map(|task| task.id);
 
         let Some(task_id) = maybe_task_id else {
-            log::debug!("No tasks to unblock on {handle:X?}");
+            log::trace!("No tasks to unblock on 0x{handle:x?}");
             return;
         };
 

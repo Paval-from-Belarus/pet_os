@@ -147,11 +147,15 @@ impl Module {
     pub fn as_user_module(&self) -> kernel_types::drivers::UserModule {
         let queue_handle = self.queue.clone();
 
-        let (raw_handle, kind) = match queue_handle {
-            ModuleQueue::Fs(handle) => (handle.into_addr(), ModuleKind::Fs),
-            ModuleQueue::Char(handle) => (handle.into_addr(), ModuleKind::Char),
-            ModuleQueue::Block(handle) => {
-                (handle.into_addr(), ModuleKind::Block)
+        let (raw_handle, kind) = unsafe {
+            match queue_handle {
+                ModuleQueue::Fs(handle) => (handle.into_addr(), ModuleKind::Fs),
+                ModuleQueue::Char(handle) => {
+                    (handle.into_addr(), ModuleKind::Char)
+                }
+                ModuleQueue::Block(handle) => {
+                    (handle.into_addr(), ModuleKind::Block)
+                }
             }
         };
 

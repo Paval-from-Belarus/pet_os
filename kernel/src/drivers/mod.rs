@@ -1,5 +1,9 @@
 use crate::common::atomics::UnsafeLazyCell;
 use crate::current_task;
+use crate::error::KernelError;
+use crate::io::InterruptableLazyCell;
+use crate::object::Handle;
+use crate::task::Event;
 use alloc::sync::Arc;
 use kernel_types::collections::LinkedList;
 pub use kernel_types::drivers::ModuleId;
@@ -22,20 +26,23 @@ use generated::STATIC_DRIVERS;
 pub const KERNEL_MODULE: usize = 0;
 
 pub struct ModuleManager {
-    modules: spin::Mutex<LinkedList<'static, ModuleItem>>,
+    modules: InterruptableLazyCell<LinkedList<'static, ModuleItem>>,
+    mount: Handle<Event>,
 }
 
 impl ModuleManager {
-    pub fn from_modules(modules: LinkedList<'static, ModuleItem>) -> Self {
-        Self {
-            modules: spin::Mutex::new(modules),
-        }
+    pub fn new(
+        modules: LinkedList<'static, ModuleItem>,
+    ) -> Result<Self, KernelError> {
+        Ok(Self {
+            modules: InterruptableLazyCell::new(modules),
+            mount: Event::new()?,
+        })
     }
 
     pub fn find_module(&self, id: ModuleId) -> Option<Arc<Module>> {
         self.modules
-            .try_lock()
-            .unwrap()
+            .lock()
             .iter()
             .find(|item| item.state.id == id)
             .map(|item| item.state.clone())
@@ -43,8 +50,7 @@ impl ModuleManager {
 
     pub fn find_module_by_name(&self, name: &str) -> Option<Arc<Module>> {
         self.modules
-            .try_lock()
-            .unwrap()
+            .lock()
             .iter()
             .find(|item| item.state.name.eq(name))
             .map(|item| item.state.clone())
@@ -53,7 +59,7 @@ impl ModuleManager {
     pub fn add_module(&self, module: Module) -> Result<(), ModuleError> {
         let item = ModuleItem::new_boxed(module)?;
 
-        let mut modules = self.modules.try_lock().unwrap();
+        let mut modules = self.modules.lock();
 
         let has_found = modules
             .iter()
@@ -64,6 +70,10 @@ impl ModuleManager {
         }
 
         modules.push_back(item.into_node());
+
+        if modules.len() == STATIC_DRIVERS.len() {
+            self.mount.set();
+        }
 
         Ok(())
     }
@@ -100,6 +110,10 @@ pub fn init_module(
     Ok(())
 }
 
+pub fn ready_event() -> Handle<Event> {
+    MODULES.get().mount.clone()
+}
+
 unsafe impl Send for ModuleManager {}
 unsafe impl Sync for ModuleManager {}
 
@@ -122,7 +136,9 @@ pub fn init() {
         });
     }
 
-    MODULES.set(ModuleManager::from_modules(LinkedList::empty()));
+    let modules = ModuleManager::new(LinkedList::empty()).unwrap();
+
+    MODULES.set(modules);
 
     auto_load::spawn_task().expect("Failed to init autoload task");
 

@@ -270,7 +270,7 @@ pub fn handle(
             let handle = Handle::<FsWork>::from_addr(edx).unwrap();
 
             //prevent droping handle
-            let _ = handle.into_addr();
+            let _ = unsafe { handle.into_addr() };
         }
         Request::KernelCopy => {
             let kernel_buf =

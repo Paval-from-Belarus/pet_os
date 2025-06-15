@@ -63,7 +63,7 @@ impl<T: ObjectContainer> Handle<T> {
         self.0
     }
 
-    pub fn into_addr(self) -> RawHandle {
+    pub unsafe fn into_addr(self) -> RawHandle {
         let handle = self.0;
 
         let _ = ManuallyDrop::new(self);
@@ -72,7 +72,7 @@ impl<T: ObjectContainer> Handle<T> {
     }
 
     pub fn into_raw(self) -> kernel_types::object::RawHandle {
-        let handle = self.into_addr();
+        let handle = unsafe { self.into_addr() };
 
         unsafe { kernel_types::object::RawHandle::new_unchecked(handle) }
     }
@@ -120,7 +120,7 @@ impl<T: ObjectContainer> Drop for Handle<T> {
 
         let object = unsafe { &*self.object() };
 
-        log::debug!("Droping object handle: {object:?}");
+        log::trace!("Droping object handle: {object:?}");
 
         let prev_value = object.ref_count.fetch_sub(1, Ordering::SeqCst);
 

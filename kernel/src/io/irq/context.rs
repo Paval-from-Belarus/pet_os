@@ -95,7 +95,7 @@ impl ModuleIrqContext {
             return Err(ContextError::QueueIsBusy);
         }
 
-        log::info!("irq event pushed");
+        log::debug!("irq event pushed. Queue = 0x{:x?}", self.queue.as_addr());
 
         Ok(())
     }

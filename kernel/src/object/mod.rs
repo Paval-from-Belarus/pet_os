@@ -102,14 +102,13 @@ pub trait ObjectContainer: Sized + Slab + 'static {
     fn new_object<T: ObjectContainer>(parent: &Handle<T>) -> Object {
         assert!(runtime::lookup(parent.clone()));
 
-        Object::new_child(Self::KIND, parent.clone().into_addr())
+        Object::new_child(Self::KIND, parent.as_addr())
     }
 
     fn attach_to_parent<T: ObjectContainer>(&mut self, parent: &Handle<T>) {
         assert!(runtime::lookup(parent.clone()));
 
-        *self.object_mut() =
-            Object::new_child(Self::KIND, parent.clone().into_addr())
+        *self.object_mut() = Object::new_child(Self::KIND, parent.as_addr())
     }
 
     //detach given object from paret
@@ -149,8 +148,8 @@ pub fn alloc_root_object<T: ObjectContainer + Slab + 'static>(
 pub fn dealloc_root_object<T: ObjectContainer>(handle: Handle<T>) {
     let handle_cloned = handle.clone();
 
-    let Some(object) = runtime::unregister(handle_cloned.into_addr()) else {
-        panic!("No root object for handle: {:X?}", handle.into_addr());
+    let Some(object) = runtime::unregister(handle_cloned.as_addr()) else {
+        panic!("No root object for handle: 0x{:x?}", handle.as_addr());
     };
 
     let container =
