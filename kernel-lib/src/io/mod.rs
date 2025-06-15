@@ -6,7 +6,7 @@ pub mod spin;
 
 pub use batch::*;
 pub use kernel_types::io::op::*;
-pub use kernel_types::io::{IrqEvent, IrqHandler, MemoryRemap};
+pub use kernel_types::io::{IrqMessage, IrqHandler, MemoryRemap};
 use kernel_types::object::{Queue, RawHandle};
 use kernel_types::syscall;
 
@@ -15,7 +15,7 @@ pub use error::*;
 pub type Result<T> = core::result::Result<T, IoError>;
 
 //set callback handler on irq
-pub fn set_irq(line: u8, hook: Option<IoOperation>) -> Result<Queue<IrqEvent>> {
+pub fn set_irq(line: u8, hook: Option<IoOperation>) -> Result<Queue<IrqMessage>> {
     let handler = IrqHandler { hook, line };
     let mut queue: usize = 0;
 

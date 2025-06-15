@@ -1,3 +1,5 @@
+use kernel_types::io::IrqMessage;
+
 use crate::{
     impl_container,
     io::IrqLine,
@@ -34,4 +36,12 @@ impl_container! {
     IrqEvent,
     obj_kind: IrqEvent,
     slab: "irq_event"
+}
+
+impl<'a> From<&'a IrqEvent> for IrqMessage {
+    fn from(value: &'a IrqEvent) -> Self {
+        Self {
+            line: value.line.line.into()
+        }
+    }
 }

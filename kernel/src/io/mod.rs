@@ -2,8 +2,8 @@ use core::arch::asm;
 use core::sync::atomic::AtomicUsize;
 use core::{mem, ptr};
 
-use alloc::boxed::Box;
-use irq::{module_irq, ModuleIrqContext};
+use alloc::sync::Arc;
+pub use irq::{module_irq, ModuleIrqContext};
 use kernel_macro::ListNode;
 use kernel_types::collections::{BoxedNode, ListNode};
 use kernel_types::io::IoOperation;
@@ -13,6 +13,7 @@ use kernel_types::{
 
 use crate::common::io::{inb, inw, outb, outw};
 use crate::current_task;
+use crate::drivers::current_module;
 use crate::error::KernelError;
 use crate::io;
 use crate::io::irq::IrqChain;
@@ -253,9 +254,15 @@ pub fn set_irq(
 ) -> Result<Handle<Queue<IrqEvent>>, KernelError> {
     let queue = Queue::new_bounded(10)?;
 
-    let ctx = ModuleIrqContext::new_boxed(line, hook, queue.clone())?;
+    let Some(module) = current_module() else {
+        return Err(KernelError::NotModule);
+    };
 
-    let info = CallbackInfo::new(module_irq, Box::into_raw(ctx).cast());
+    let ctx = ModuleIrqContext::new(line, hook, queue.clone())?;
+
+    module.set_irq_ctx(ctx.clone());
+
+    let info = CallbackInfo::new(module_irq, Arc::into_raw(ctx).cast());
 
     let index = u8::from(line.line) as usize;
     let interceptors = INTERCEPTORS.try_lock().unwrap().unwrap();
@@ -264,7 +271,7 @@ pub fn set_irq(
 
     manager.append(info);
 
-    Ok(queue.clone())
+    Ok(queue)
 }
 
 //the red zone in thread kernel size:

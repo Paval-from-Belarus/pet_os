@@ -2,12 +2,12 @@
 #![no_std]
 #![no_main]
 
-mod pc;
+mod ps;
 
 use alloc::sync::Arc;
 use kernel_lib::{
     fs::{self, not_supported_write, File, FileOperations},
-    io::{self, char::register_module, spin, IrqEvent},
+    io::{self, char::register_module, spin, IrqMessage},
     module,
     object::{Event, Queue, UserBufMut},
     task::{self, TaskHandle},
@@ -49,6 +49,8 @@ impl KernelModule for KeyboardDriver {
 
         let irq_task = task::spawn(handle_irq, arg)?;
 
+        ps::init();
+
         log::info!("Driver is configured. Irq Task: {}", irq_task.id);
 
         Ok(Self { irq_task })
@@ -83,7 +85,7 @@ extern "C" fn handle_irq() {
             break;
         };
 
-        let scan_code = pc::read_scan_code().expect("Failed to read scan code");
+        let scan_code = ps::read_scan_code().expect("Failed to read scan code");
 
         log::debug!("key read: {scan_code}");
     }
@@ -133,5 +135,5 @@ pub type DriverContextLock = spin::Mutex<DriverContext>;
 pub struct DriverContext {
     pub scan_codes: heapless::Deque<u8, 255>,
     pub event: Event,
-    pub irq_queue: Queue<IrqEvent>,
+    pub irq_queue: Queue<IrqMessage>,
 }

@@ -1,9 +1,6 @@
 use kernel_types::syscall::SyscallError;
 
-use crate::{
-    memory::{AllocError, PageMarkerError},
-    user::queue::TryPushError,
-};
+use crate::memory::{AllocError, PageMarkerError};
 
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum KernelError {
@@ -21,6 +18,9 @@ pub enum KernelError {
 
     #[error("Operations is not permitted for not module")]
     NotModule,
+
+    #[error("cast to own type from handle is invalid")]
+    ManyOwners,
 }
 
 impl From<KernelError> for SyscallError {

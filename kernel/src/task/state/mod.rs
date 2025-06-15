@@ -1,6 +1,6 @@
 mod running;
 
-use core::{mem, ptr::NonNull};
+use core::mem;
 
 use kernel_macro::ListNode;
 use kernel_types::collections::{HashData, ListNode};
@@ -11,7 +11,7 @@ use crate::{
     object,
 };
 
-use super::{FilePool, TaskContext, TaskFileSystem, TaskPriority, TaskStatus};
+use super::{FilePool, TaskContext, TaskPriority, TaskStatus};
 
 pub use running::{RunningTask, RunningTaskBox};
 

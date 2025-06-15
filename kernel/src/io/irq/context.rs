@@ -1,6 +1,6 @@
 use core::ops::DerefMut;
 
-use alloc::boxed::Box;
+use alloc::sync::Arc;
 use kernel_types::{
     collections::LinkedList, drivers::ModuleId, io::IoOperation,
 };
@@ -8,10 +8,10 @@ use kernel_types::{
 use crate::{
     drivers::current_module,
     error::KernelError,
-    io::IrqLine,
+    io::{InterruptableLazyCell, IrqLine},
     memory::{self, SlabBox},
     object::{Handle, Object, ObjectContainer},
-    user::queue::{Queue, TryPushError},
+    user::queue::Queue,
 };
 
 use super::IrqEvent;
@@ -22,10 +22,10 @@ pub struct ModuleIrqContext {
     pub line: IrqLine,
     //that's safe to handle in interrupt
     //as nested interrupts are not allowed
-    pub queue: Handle<Queue<IrqEvent>>,
+    queue: Handle<Queue<IrqEvent>>,
 
     //the list of reserved irq events
-    reserved_events: spin::Mutex<LinkedList<'static, Object>>,
+    reserved_events: InterruptableLazyCell<LinkedList<'static, Object>>,
 }
 
 #[derive(Debug, thiserror_no_std::Error)]
@@ -41,11 +41,11 @@ pub enum ContextError {
 const RESERVED_EVENTS_COUNT: usize = 5;
 
 impl ModuleIrqContext {
-    pub fn new_boxed(
+    pub fn new(
         line: IrqLine,
         hook: Option<IoOperation>,
         queue: Handle<Queue<IrqEvent>>,
-    ) -> Result<Box<ModuleIrqContext>, KernelError> {
+    ) -> Result<Arc<ModuleIrqContext>, KernelError> {
         let Some(module) = current_module() else {
             return Err(KernelError::NotModule);
         };
@@ -58,9 +58,9 @@ impl ModuleIrqContext {
             reserved_events.push_back(event.object_mut());
         }
 
-        let ctx = Box::try_new(Self {
+        let ctx = Arc::try_new(Self {
             line,
-            reserved_events: spin::Mutex::new(reserved_events),
+            reserved_events: InterruptableLazyCell::new(reserved_events),
             queue,
             hook_op: hook,
             module_id: module.id,
@@ -72,7 +72,7 @@ impl ModuleIrqContext {
     pub fn notify(&self) -> Result<(), ContextError> {
         assert!(memory::is_irq_context());
 
-        let mut events = self.reserved_events.try_lock().unwrap();
+        let mut events = self.reserved_events.get();
 
         let mut maybe_event = events.remove_first().map(|obj_event| unsafe {
             let event = IrqEvent::container_of(obj_event.deref_mut());
@@ -98,5 +98,13 @@ impl ModuleIrqContext {
         }
 
         Ok(())
+    }
+
+    pub fn restore_event(&self, event: SlabBox<IrqEvent>) {
+        let mut events = self.reserved_events.get();
+
+        let event = unsafe { &mut *SlabBox::into_raw(event) };
+
+        events.push_back(event.object_mut());
     }
 }

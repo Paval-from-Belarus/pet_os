@@ -1,7 +1,7 @@
 #![no_std]
 #![feature(allocator_api)]
 
-use kernel_types::syscall;
+pub use kernel_types::syscall;
 use rt::module_task;
 pub use rt::ModuleOperations;
 

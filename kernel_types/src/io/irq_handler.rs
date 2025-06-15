@@ -9,6 +9,6 @@ pub struct IrqHandler {
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
-pub struct IrqEvent {
+pub struct IrqMessage {
     pub line: u8,
 }

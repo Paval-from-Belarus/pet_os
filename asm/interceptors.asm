@@ -90,6 +90,7 @@ public run_process_routine
 ;low 16 bits of edx (dx) -> data segment (as ss)
 ;high 16 bits of edx -> code segment
 ;ecx -> esp to switch
+;ebx -> argument
 ;
 run_process_routine:
     mov es, dx

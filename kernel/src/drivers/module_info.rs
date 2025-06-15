@@ -9,7 +9,7 @@ use kernel_types::{
 use crate::{
     current_task,
     fs::{FileWork, FsWork},
-    io::block,
+    io::{block, InterruptableLazyCell, ModuleIrqContext},
     memory::{self, AllocError, Slab, SlabBox},
     object::Handle,
     user::queue::Queue,
@@ -67,6 +67,7 @@ pub struct Module {
     pub name: heapless::String<MAX_MODULE_NAME_LEN>,
     pub queue: ModuleQueue,
     pub ctx: *const (),
+    irq_ctx: InterruptableLazyCell<Option<Arc<ModuleIrqContext>>>,
 }
 
 impl Module {
@@ -78,7 +79,16 @@ impl Module {
         }
     }
 
-    pub fn ctx(&self) -> *const () {
+    pub fn set_irq_ctx(&self, irq_ctx: Arc<ModuleIrqContext>) {
+        let mut lock = self.irq_ctx.get();
+        *lock = Some(irq_ctx);
+    }
+
+    pub fn irq_ctx(&self) -> Option<Arc<ModuleIrqContext>> {
+        self.irq_ctx.get().clone()
+    }
+
+    pub fn file_ctx(&self) -> *const () {
         self.ctx
     }
 }
@@ -131,6 +141,7 @@ impl Module {
             ctx,
             queue,
             name: concated_name.into(),
+            irq_ctx: InterruptableLazyCell::new(None),
         })
     }
     pub fn as_user_module(&self) -> kernel_types::drivers::UserModule {

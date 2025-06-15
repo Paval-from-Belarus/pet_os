@@ -1,8 +1,11 @@
-use core::{marker::PhantomData, mem::ManuallyDrop};
+use core::{marker::PhantomData, mem::ManuallyDrop, ptr::NonNull};
 
 use kernel_types::collections::{HashCode, HashKey};
 
-use crate::memory::VirtualAddress;
+use crate::{
+    error::KernelError,
+    memory::{SlabBox, VirtualAddress},
+};
 
 use super::{Object, ObjectContainer};
 
@@ -72,6 +75,14 @@ impl<T: ObjectContainer> Handle<T> {
         let handle = self.into_addr();
 
         unsafe { kernel_types::object::RawHandle::new_unchecked(handle) }
+    }
+
+    pub fn into_owned(self) -> Result<SlabBox<T>, KernelError> {
+        //fixme: check ref count
+
+        let slab = T::container_of(self.object() as *mut Object);
+
+        Ok(crate::memory::into_boxed(NonNull::new(slab).unwrap()))
     }
 }
 

@@ -4,7 +4,7 @@ use kernel_types::{
     fs::{FileInfo, FileLookupRequest, FileRequest, FsRequest},
     io::{
         block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, IrqHandler,
-        MemBuf, MemoryRemap,
+        IrqMessage, MemBuf, MemoryRemap,
     },
     string::MutString,
     syscall::{Request, SyscallError},
@@ -190,14 +190,25 @@ pub fn handle(
                 },
 
                 crate::object::Kind::IrqEvent => unsafe {
-                    blocking_pop(&queue, |event: Handle<IrqEvent>| {
-                        todo!()
-                        // memory::switch_to_task(current_task!());
-                        //
-                        // let ptr = edx as *mut IrqLine;
-                        //
-                        // ptr.write(event.line);
-                    })?;
+                    let Some(handle) = queue.cast::<IrqEvent>().blocking_pop()
+                    else {
+                        return Err(SyscallError::QueueIsEmpty);
+                    };
+
+                    let event = handle.into_owned().unwrap();
+                    let message = (&*event).into();
+
+                    let module = current_module().unwrap();
+
+                    let irq_ctx = module.irq_ctx().unwrap();
+
+                    irq_ctx.restore_event(event);
+
+                    memory::switch_to_task(current_task!());
+
+                    let ptr = edx as *mut IrqMessage;
+
+                    ptr.write(message);
                 },
 
                 _ => {
