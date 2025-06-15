@@ -2,7 +2,7 @@ use kernel_types::fs::{FileLookupRequest, FileLookupResponse};
 
 use crate::{
     impl_work,
-    object::{Handle, Object},
+    object::{runtime, Handle, Object, ObjectContainer},
 };
 
 use super::SuperBlock;
@@ -22,4 +22,17 @@ impl_work! {
     obj_kind: FileLookupWork,
     slab: "f_lup_work",
     args: [sb: Handle<SuperBlock> ]
+}
+
+impl FileLookupWork {
+    fn dsfas(&self) -> FileLookupResponse {
+        runtime::critical_section(self.handle(), |work| loop {
+            if let Some(res) = work.response.try_lock().unwrap().take() {
+                break res;
+            }
+
+            runtime::block_on(work.handle()).unwrap();
+        });
+        todo!()
+    }
 }

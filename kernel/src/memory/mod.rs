@@ -14,6 +14,7 @@ use paging::{GDTHandle, PageDirectoryEntries};
 
 use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
 use crate::current_task;
+use crate::io::InterruptableLazyCell;
 use crate::memory::allocators::SystemAllocator;
 use crate::memory::paging::GDTTable;
 
@@ -148,7 +149,7 @@ pub fn init_kernel_space(boot_config: &mut PagingProperties) {
     KERNEL_MARKER.get().load();
 
     unsafe { PHYSICAL_ALLOCATOR.get().init() };
-    unsafe { SYSTEM_ALLOCATOR.get().init() };
+    unsafe { SYSTEM_ALLOCATOR.lock().init() };
 }
 
 #[allow(static_mut_refs)]
@@ -189,7 +190,7 @@ fn alloc_physical_pages(page_count: usize) -> Option<PhysicalAddress> {
 }
 
 fn dealloc_physical_page(page: PhysicalAddress) {
-    SYSTEM_ALLOCATOR.virtual_dealloc(page, Page::SIZE);
+    SYSTEM_ALLOCATOR.lock().virtual_dealloc(page, Page::SIZE);
 }
 
 fn lookup_kernel_physical_page(
@@ -254,7 +255,9 @@ unsafe impl Allocator for SlabInPlaceAllocator {
         _ptr: NonNull<u8>,
         _layout: core::alloc::Layout,
     ) {
-        SYSTEM_ALLOCATOR.dealloc_slab(self.slab_name, self.ptr);
+        SYSTEM_ALLOCATOR
+            .lock()
+            .dealloc_slab(self.slab_name, self.ptr);
     }
 }
 
@@ -265,7 +268,7 @@ pub fn slab_alloc<T: Slab>(value: T) -> Result<SlabBox<T>, AllocError> {
 
     assert!(size < u16::MAX as usize);
 
-    let layout = SYSTEM_ALLOCATOR.get().alloc_slab(SlabAlloc {
+    let layout = SYSTEM_ALLOCATOR.lock().alloc_slab(SlabAlloc {
         name: T::NAME,
         size: size as u16,
         alignment: T::ALIGNMENT,
@@ -287,13 +290,13 @@ pub fn slab_reserve<T: Slab>() -> Result<(), AllocError> {
 
     assert!(size < u16::MAX as usize);
 
-    let layout = SYSTEM_ALLOCATOR.get().alloc_slab(SlabAlloc {
+    let layout = SYSTEM_ALLOCATOR.lock().alloc_slab(SlabAlloc {
         name: T::NAME,
         size: size as u16,
         alignment: T::ALIGNMENT,
     })?;
 
-    SYSTEM_ALLOCATOR.get().dealloc_slab(T::NAME, layout);
+    SYSTEM_ALLOCATOR.lock().dealloc_slab(T::NAME, layout);
 
     Ok(())
 }
@@ -318,13 +321,13 @@ pub fn virtual_alloc(
     flags: MemoryAllocationFlag,
 ) -> Result<VirtualAddress, AllocError> {
     SYSTEM_ALLOCATOR
-        .get()
+        .lock()
         .virtual_alloc(size, flags)
         .map(|ptr| ptr as VirtualAddress)
 }
 
 pub fn virtual_dealloc(offset: VirtualAddress, size: usize) {
-    SYSTEM_ALLOCATOR.get().virtual_dealloc(offset, size);
+    SYSTEM_ALLOCATOR.lock().virtual_dealloc(offset, size);
 }
 
 pub fn new_page_marker() -> Result<PageMarker, AllocError> {
@@ -334,7 +337,7 @@ pub fn new_page_marker() -> Result<PageMarker, AllocError> {
     );
 
     let raw_entries = SYSTEM_ALLOCATOR
-        .get()
+        .lock()
         .virtual_alloc(
             Page::SIZE,
             MemoryAllocationFlag::CONTINOUS
@@ -581,8 +584,8 @@ static mut GDT_HANDLE: GDTHandle = GDTHandle::null();
 static PHYSICAL_ALLOCATOR: UnsafeLazyCell<PhysicalAllocator> =
     UnsafeLazyCell::empty();
 
-static SYSTEM_ALLOCATOR: UnsafeLazyCell<SystemAllocator> =
-    UnsafeLazyCell::empty();
+static SYSTEM_ALLOCATOR: InterruptableLazyCell<SystemAllocator> =
+    InterruptableLazyCell::empty();
 
 pub struct VirtualAllocator;
 #[global_allocator]
@@ -592,7 +595,7 @@ unsafe impl GlobalAlloc for VirtualAllocator {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
         if let Some(slab) = allocators::classify_slab_by_size(layout.size()) {
             let ptr = SYSTEM_ALLOCATOR
-                .get()
+                .lock()
                 .alloc_slab(slab)
                 .inspect_err(|cause| {
                     log::error!(
@@ -615,7 +618,7 @@ unsafe impl GlobalAlloc for VirtualAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
         if let Some(slab) = allocators::classify_slab_by_size(layout.size()) {
-            SYSTEM_ALLOCATOR.get().dealloc_slab(slab.name, ptr);
+            SYSTEM_ALLOCATOR.lock().dealloc_slab(slab.name, ptr);
 
             return;
         }

@@ -137,6 +137,7 @@ pub fn resolve(handle: Handle<FileLookupWork>) -> Result<usize> {
     let Some(res) = handle.wait() else {
         return Err(FsError::FsIsDead);
     };
+    log::debug!("resolve 1");
 
     let Some(file_index) = current_task!().opened_files.alloc_index() else {
         return Err(FsError::MaxOpenedFiles);
@@ -147,6 +148,7 @@ pub fn resolve(handle: Handle<FileLookupWork>) -> Result<usize> {
     let sb = handle.sb.clone();
 
     let file_handle = sb.resolve(inode_info)?;
+    log::debug!("resolve 2");
 
     current_task!().opened_files.set(file_index, file_handle);
 

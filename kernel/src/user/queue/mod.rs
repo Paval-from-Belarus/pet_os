@@ -6,16 +6,16 @@ use core::{
 use kernel_types::{collections::LinkedList, container_of};
 
 use crate::{
+    io::InterruptableLazyCell,
     memory::{self, Slab, SlabBox},
     object::{
         self, alloc_root_object, dealloc_root_object, runtime, AnyObject,
         Handle, Kind, Object, ObjectContainer,
     },
-    task::Mutex,
 };
 
 pub struct Queue<T: 'static> {
-    data: Mutex<LinkedList<'static, Object>>,
+    data: InterruptableLazyCell<LinkedList<'static, Object>>,
     len: AtomicUsize,
     object: Object,
     kind: object::Kind,
@@ -54,7 +54,7 @@ where
     T: ObjectContainer + 'static,
 {
     pub fn new_unbounded() -> Result<Handle<Self>, memory::AllocError> {
-        let data = Mutex::new(LinkedList::empty())?;
+        let data = InterruptableLazyCell::new(LinkedList::empty());
 
         let handle = alloc_root_object(Self {
             object: Self::new_root_object(),
@@ -71,7 +71,7 @@ where
     pub fn new_bounded(
         capacity: usize,
     ) -> Result<Handle<Self>, memory::AllocError> {
-        let data = Mutex::new(LinkedList::empty())?;
+        let data = InterruptableLazyCell::new(LinkedList::empty());
 
         alloc_root_object(Self {
             max_capacity: capacity.into(),
@@ -86,30 +86,27 @@ where
     pub fn push(&self, data: SlabBox<T>) -> Handle<T> {
         let handle = data.handle();
 
-        let data = unsafe { &mut *SlabBox::into_raw(data) };
+        let data_ptr = SlabBox::into_raw(data);
 
-        self.data.lock().push_back(data.object_mut());
+        runtime::critical_section(self.handle(), |queue| {
+            let data = unsafe { &mut *data_ptr };
 
-        runtime::notify(self.handle());
+            queue.data.lock().push_back(data.object_mut());
+        });
 
         handle
     }
 
+    //non-blocking method
     pub fn try_push(
         &self,
         data: SlabBox<T>,
     ) -> Result<Handle<T>, TryPushError<SlabBox<T>>> {
-        let Some(mut queue) = self.data.try_lock() else {
-            return Err(TryPushError::Locked(data));
-        };
-
         let handle = data.handle();
 
         let data = unsafe { &mut *SlabBox::into_raw(data) };
 
-        queue.push_back(data.object_mut());
-
-        drop(queue);
+        self.data.lock().push_back(data.object_mut());
 
         runtime::notify(self.handle());
 
@@ -122,7 +119,7 @@ where
 
     pub fn blocking_pop(&self) -> Option<Handle<T>> {
         runtime::critical_section(self.handle(), |queue| loop {
-            let mut maybe_obj = queue.data.try_lock().unwrap().remove_first();
+            let mut maybe_obj = queue.data.lock().remove_first();
 
             if let Some(obj) = maybe_obj.as_mut() {
                 obj.parent = None;

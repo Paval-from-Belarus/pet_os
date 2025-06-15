@@ -77,8 +77,6 @@ impl ModuleIrqContext {
         let mut maybe_event = events.remove_first().map(|obj_event| unsafe {
             let event = IrqEvent::container_of(obj_event.deref_mut());
 
-            let _ = obj_event;
-
             memory::into_boxed((&mut *event).into())
         });
 
@@ -97,14 +95,18 @@ impl ModuleIrqContext {
             return Err(ContextError::QueueIsBusy);
         }
 
+        log::info!("irq event pushed");
+
         Ok(())
     }
 
     pub fn restore_event(&self, event: SlabBox<IrqEvent>) {
         let mut events = self.reserved_events.lock();
 
-        let event = unsafe { &mut *SlabBox::into_raw(event) };
+        let raw_event = SlabBox::into_raw(event);
 
-        events.push_back(event.object_mut());
+        let event = unsafe { &mut *raw_event };
+
+        events.push_front(event.object_mut());
     }
 }

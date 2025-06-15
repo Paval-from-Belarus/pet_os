@@ -132,7 +132,11 @@ extern "C" fn init_task(_args: *const ()) {
 
     let file = fs::resolve(file).expect("Failed to resolve file");
 
+    log::debug!("After resolve");
+
     let buf1 = "Kernel Buf is cool\n".try_into().unwrap();
+
+    log::debug!("After kerne");
 
     let work = fs::write(file, buf1).unwrap();
 

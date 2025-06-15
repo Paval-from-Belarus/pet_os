@@ -103,7 +103,9 @@ impl<T> ContextLock<T> {
 
                 let lock = mutex.lock();
 
-                let spin_lock = self.spin_lock.try_lock().unwrap();
+                let Some(spin_lock) = self.spin_lock.try_lock() else {
+                    panic!("{} is already holded", core::any::type_name::<T>());
+                };
 
                 Ok(ContextLockGuard {
                     lock: self,

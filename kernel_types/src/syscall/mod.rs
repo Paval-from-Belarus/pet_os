@@ -87,23 +87,23 @@ macro_rules! syscall {
      $(, ecx_out: $ecx_out: ident )?
      $(, edx_out: $edx_out: ident )?
      $(,)?) => ({
-        let mut id = $id as u32;
+        let id = $id as u32;
         let _ecx_out: usize;
         let _edx_out: usize;
+        let status: u32;
 
         core::arch::asm!(
           "int 80h",
            lateout("ecx") _ecx_out,
            lateout("edx") _edx_out,
-           inout("eax") id
+           in("eax") id,
+           lateout("eax") status
            $(,in("ecx") $ecx)?
            $(,in("edx") $edx)?
         );
 
         $($ecx_out = _ecx_out;)?
         $($edx_out = _edx_out;)?
-
-        let status = id;
 
         if status == 0 {
             Ok(())

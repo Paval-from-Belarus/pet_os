@@ -1,4 +1,7 @@
-use core::{marker::PhantomData, mem::ManuallyDrop, ptr::NonNull};
+use core::{
+    marker::PhantomData, mem::ManuallyDrop, ptr::NonNull,
+    sync::atomic::Ordering,
+};
 
 use kernel_types::collections::{HashCode, HashKey};
 
@@ -47,10 +50,7 @@ impl<T: ObjectContainer> Handle<T> {
     pub fn from_addr(raw_handle: RawHandle) -> Result<Self, ()> {
         let handle = unsafe { Self::from_addr_unchecked(raw_handle) };
 
-        (*handle)
-            .object()
-            .ref_count
-            .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        (*handle).object().ref_count.fetch_add(1, Ordering::SeqCst);
 
         Ok(handle)
     }

@@ -59,7 +59,7 @@ pub fn block_on<T: ObjectContainer>(
 pub fn critical_section<T, F, OUTPUT>(handle: Handle<T>, f: F) -> OUTPUT
 where
     T: ObjectContainer,
-    F: Fn(&T) -> OUTPUT,
+    F: FnOnce(&Handle<T>) -> OUTPUT,
 {
     loop {
         let status = T::object(&handle).status.compare_exchange(

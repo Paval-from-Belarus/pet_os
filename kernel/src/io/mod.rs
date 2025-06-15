@@ -377,7 +377,7 @@ static INTERCEPTORS: spin::Mutex<
 pub unsafe fn validate_stack() {
     let stack_size = current_task!().stack_size();
 
-    log::trace!("task#{} IRQ stack size: {stack_size}", current_task!().id);
+    log::debug!("task#{} IRQ stack size: {stack_size}", current_task!().id);
 
     if stack_size == 0 {
         panic!("Red Zone violated");

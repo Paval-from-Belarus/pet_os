@@ -34,31 +34,33 @@ macro_rules! impl_work {
             pub fn wait(&self) -> Option<$res> {
                 use $crate::object::ObjectContainer;
 
-                match $crate::object::runtime::block_on(self.handle()) {
-                    Ok(()) => {
-                        let mut lock = self.response.try_lock().unwrap();
-                        let response = lock.take().expect("No response");
-                        return response.into();
+                $crate::object::runtime::critical_section(self.handle(), |work| loop {
+                    let mut lock = work.response.try_lock().unwrap();
+
+                    if  let Some(res) = lock.take() {
+                        return Some(res);
                     }
 
-                    Err(cause) => {
-                        log::warn!("Failed to wake up after blocking");
+                    drop(lock);
+
+                    if  $crate::object::runtime::block_on(work.handle()).is_err() {
                         return None;
                     }
-                }
+                })
             }
 
             pub fn send_response(&self, response: $res) {
                 use $crate::object::ObjectContainer;
 
-                let mut lock = self.response.try_lock().unwrap();
-                assert!(lock.is_none());
+                $crate::object::runtime::critical_section(self.handle(), move |work| {
+                    let mut lock = self.response.try_lock().unwrap();
+                    assert!(lock.is_none());
 
-                *lock = Some(response);
+                    *lock = Some(response);
 
-                drop(lock);
+                    drop(lock);
 
-                $crate::object::runtime::notify(self.handle());
+                });
             }
         }
 
