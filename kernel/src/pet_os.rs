@@ -123,7 +123,7 @@ pub fn main() {
     task::run();
 }
 
-extern "C" fn init_task() {
+extern "C" fn init_task(_args: *const ()) {
     log::debug!("Init task#{} is started", current_task!().id);
 
     unsafe { fs::mount_dev_fs() }.expect("Failed to mount dev-fs");

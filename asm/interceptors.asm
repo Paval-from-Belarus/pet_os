@@ -99,7 +99,8 @@ run_process_routine:
     mov gs, dx
 
     push (4 shl 3) or 3 ;ss
-    ; shr edx, 16 ;dx holds cs
+    mov [ds: ecx - 4], ebx
+    sub ecx, 8
 
     push ecx
     push 200h; eflags with enabled interrupts

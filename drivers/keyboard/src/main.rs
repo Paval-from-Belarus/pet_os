@@ -63,14 +63,9 @@ impl KernelModule for KeyboardDriver {
     }
 }
 
-extern "C" fn handle_irq() {
+extern "C" fn handle_irq(ctx_ptr: *const ()) {
     let ctx = unsafe {
-        let ctx_ptr: *const DriverContextLock;
-        core::arch::asm! {
-            "",
-            out("ebx") ctx_ptr
-        };
-
+        let ctx_ptr = ctx_ptr as *const DriverContextLock;
         Arc::from_raw(ctx_ptr)
     };
 

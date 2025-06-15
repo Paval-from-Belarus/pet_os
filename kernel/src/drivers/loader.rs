@@ -378,7 +378,7 @@ extern "C" {
 }
 
 #[no_mangle]
-pub extern "C" fn run_process() {
+pub extern "C" fn run_process(_args: *const ()) {
     unsafe { io::disable() }; //disable interrupts to configure kernel task
 
     log::debug!("Process stack size = {}", current_task!().stack_size());
@@ -411,8 +411,8 @@ pub extern "C" fn run_process() {
     }
 }
 
-pub extern "C" fn run_process_task() {
-    let raw_params: *mut TaskParams = unsafe { get_eax!() };
+pub extern "C" fn run_process_task(raw_params: *const ()) {
+    let raw_params = raw_params as *mut TaskParams;
 
     let params = unsafe { Box::from_raw(raw_params) };
 

@@ -61,19 +61,6 @@ pub struct TaskContext {
     _reserved_6: Zeroed<u16>,
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn prepare_task() {
-    // log::debug!("Prepare task#{}", current_task!().id);
-
-    let context = &*current_task!().context_ptr();
-
-    core::arch::asm! {
-        "",
-        in("eax") context.eax,
-        options(nostack)
-    }
-}
-
 impl TaskContext {
     pub fn zeroed() -> Self {
         Self::default()

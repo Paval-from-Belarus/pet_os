@@ -1,4 +1,4 @@
-pub type FnTask = extern "C" fn();
+pub type FnTask = extern "C" fn(*const ());
 
 #[derive(Debug, Clone)]
 #[repr(C)]

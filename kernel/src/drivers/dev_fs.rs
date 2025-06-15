@@ -5,13 +5,13 @@ use kernel_types::{
         FileLookupRequest, FilePermissions, FileSystem, FileSystemKind,
         FsRequest, FsResponse, IndexNodeInfo, NodeKind, SuperBlockInfo,
     },
-    get_eax,
     object::{OpStatus, RawHandle},
 };
 
 use crate::{
     current_task, drivers,
     fs::{self, FileLookupWork, FsWork, SuperBlock},
+    memory::VirtualAddress,
     object::Handle,
     task,
     user::queue::Queue,
@@ -44,11 +44,12 @@ pub struct InitMessage {
     queue: RawHandle,
 }
 
-extern "C" fn fs_task() {
-    let raw_handle = unsafe { get_eax!() };
-    let queue =
-        unsafe { Handle::<Queue<FsWork>>::from_addr_unchecked(raw_handle) };
-
+extern "C" fn fs_task(raw_handle: *const ()) {
+    let queue = unsafe {
+        Handle::<Queue<FsWork>>::from_addr_unchecked(
+            raw_handle as VirtualAddress,
+        )
+    };
 
     log::debug!("dev-fs task #{}", current_task!().id);
 
@@ -88,8 +89,8 @@ extern "C" fn fs_task() {
     log::info!("Dev fs task is completed...");
 }
 
-extern "C" fn sb_task() {
-    let raw_message = unsafe { get_eax!() };
+extern "C" fn sb_task(ptr: *const ()) {
+    let raw_message = ptr as *mut InitMessage;
 
     let message: Box<InitMessage> = unsafe { Box::from_raw(raw_message) };
 

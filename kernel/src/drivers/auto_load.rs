@@ -1,4 +1,5 @@
 use crate::{
+    current_task,
     error::KernelError,
     task::{self, TaskPriority},
 };
@@ -15,7 +16,9 @@ pub fn spawn_task() -> Result<(), KernelError> {
     Ok(())
 }
 
-extern "C" fn autoload_task() {
+extern "C" fn autoload_task(_arg: *const ()) {
+    log::debug!("Autoload task#{} started", current_task!().id);
+
     loop {
         task::sleep(300);
         log::debug!("Autoload task");

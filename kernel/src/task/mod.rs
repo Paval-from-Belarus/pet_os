@@ -184,7 +184,7 @@ pub fn new_task(
 
     context.eax = (arg as VirtualAddress) as u32;
 
-    context.eip = prepare_task as VirtualAddress; //firstly task go to prepare_task routine
+    context.eip = routine as VirtualAddress;
     context.cs = *SegmentSelector::KERNEL_CODE;
 
     context.ds = *SegmentSelector::KERNEL_DATA;
@@ -199,12 +199,14 @@ pub fn new_task(
 
     log::debug!("Kernel Stack={:X}", kernel_stack);
 
-    context.esp -= 4;
+    context.esp -= 4; //put the argument to the stack
 
     unsafe {
-        let routine_ptr = context.esp as *mut VirtualAddress;
-        *routine_ptr = routine as VirtualAddress; //returning from prepare_task routine go to task
+        let arg_ptr = context.esp as *mut VirtualAddress;
+        arg_ptr.write(arg as VirtualAddress);
     }
+
+    context.esp -= 4; //align argument position
 
     log::debug!("Context size = {}", context.size());
 
@@ -251,8 +253,18 @@ pub fn init() -> CallbackInfo {
 }
 
 #[no_mangle]
-extern "C" fn idle_task() {
-    let _args: *mut () = unsafe { get_eax!() };
+extern "C" fn idle_task(arg: *const ()) {
+    let v: usize;
+
+    unsafe {
+        core::arch::asm!(
+            "mov edx, eax",
+            "add edx, 1",
+            in("eax") arg,
+            out("edx") v,
+        )
+    }
+    log::debug!("Idle task param: {v}");
 
     loop {
         log::debug!("Idle task");
