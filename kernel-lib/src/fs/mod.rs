@@ -6,7 +6,7 @@ use core::mem::MaybeUninit;
 pub use index_node::*;
 pub use kernel_types::fs::*;
 use kernel_types::{
-    object::{KernelObject, RawHandle},
+    object::{KernelObject, OpStatus, RawHandle},
     syscall,
 };
 
@@ -19,6 +19,14 @@ use crate::{
 pub enum FsError {
     #[error("Not supported")]
     NotSupported,
+}
+
+impl From<FsError> for OpStatus {
+    fn from(value: FsError) -> Self {
+        match value {
+            FsError::NotSupported => OpStatus::NotSupported,
+        }
+    }
 }
 
 pub type Result<T> = core::result::Result<T, FsError>;

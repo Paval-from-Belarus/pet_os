@@ -8,7 +8,7 @@ use crate::object::{alloc_root_object, Handle, Object, ObjectContainer};
 #[derive(Debug)]
 pub struct KernelBuf {
     object: Object,
-    size: usize,
+    capacity: usize,
     buf: Mutex<Vec<u8>>,
 }
 
@@ -25,7 +25,7 @@ impl KernelBuf {
         let buf = Vec::try_with_capacity(size)?;
 
         let handle = alloc_root_object(Self {
-            size,
+            capacity: size,
             buf: Mutex::new(buf)?,
             object: Self::new_root_object(),
         })?;
@@ -34,7 +34,7 @@ impl KernelBuf {
     }
 
     pub fn len(&self) -> usize {
-        self.size
+        self.buf.lock().len()
     }
 
     pub fn remaining_capacity(&self) -> usize {
@@ -44,7 +44,7 @@ impl KernelBuf {
     }
 
     pub fn capacity(&self) -> usize {
-        self.size
+        self.capacity
     }
 
     pub fn as_slice<'a>(
@@ -72,6 +72,10 @@ impl KernelBuf {
         } else {
             Err(CopyError::NoSpaceAvailable)
         }
+    }
+
+    pub fn reset(&self) {
+        self.buf.lock().clear();
     }
 }
 

@@ -26,6 +26,7 @@ use common::logging;
 use kernel_types::get_eax;
 use memory::PagingProperties;
 use task::Mutex;
+use user::kernel_buf::KernelBuf;
 
 #[cfg(not(target_arch = "x86"))]
 compile_error!("Operation system is suitable for x86 CPU only");
@@ -128,31 +129,34 @@ extern "C" fn init_task(_args: *const ()) {
 
     unsafe { fs::mount_dev_fs() }.expect("Failed to mount dev-fs");
 
-    let file = fs::open("/dev/vga").expect("Failed to open");
+    let output = fs::open("/dev/vga").unwrap();
 
-    let file = fs::resolve(file).expect("Failed to resolve file");
+    let input = fs::open("/dev/keybrd").unwrap();
 
-    log::debug!("After resolve");
+    let input = fs::resolve(input).expect("Failed to resolve keyboard");
+    let output = fs::resolve(output).expect("Failed to resolve vga");
 
-    let buf1 = "Kernel Buf is cool\n".try_into().unwrap();
-
-    log::debug!("After kerne");
-
-    let work = fs::write(file, buf1).unwrap();
-
-    let response = work.wait().unwrap();
-
-    log::debug!("work response: {response:?}");
-
-    let buf2 = "Another line\n".try_into().unwrap();
-    let work = fs::write(file, buf2).unwrap();
-
-    let response = work.wait().unwrap();
-    log::debug!("work response: {response:?}");
+    let buf = KernelBuf::new(1).unwrap();
 
     loop {
-        task::sleep(1000);
+        buf.reset();
+
+        let read_work = fs::read(input, buf.clone()).unwrap();
+        read_work.wait().unwrap().status().unwrap();
+
+        let write_work = fs::write(output, buf.clone()).unwrap();
+        write_work.wait().unwrap().status().unwrap();
     }
+
+    // let response = work.wait().unwrap();
+    //
+    // log::debug!("work response: {response:?}");
+    //
+    // let buf2 = "Another line\n".try_into().unwrap();
+    // let work = fs::write(file, buf2).unwrap();
+    //
+    // let response = work.wait().unwrap();
+    // log::debug!("work response: {response:?}");
 
     // user::exec("/usr/sbin/init");
 }

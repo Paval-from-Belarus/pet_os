@@ -72,37 +72,46 @@ extern "x86-interrupt" {
     pub fn _syscall(frame: InterruptStackFrame);
 }
 
+#[derive(Debug, Clone)]
+#[repr(C)]
+pub struct SyscallParams {
+    pub code: u32,
+    pub edx: u32,
+    pub ecx: u32,
+}
+
 #[no_mangle]
-pub extern "C" fn handle_syscall(
-    id: u32,
-    edx: usize,
-    ecx: usize,
-    frame: InterruptStackFrame,
-) {
-    if id == syscall::RESERVED {
-        unsafe { set_edx!(CHECK_CODE) };
-        unsafe { set_eax!(OK_CODE) };
+pub extern "C" fn handle_syscall(params: *mut SyscallParams) {
+    let SyscallParams { code, edx, ecx } = unsafe { &mut *params }.clone();
+    let params = unsafe { &mut *params };
+
+    if code == syscall::RESERVED {
+        params.code = OK_CODE as u32;
+        params.edx = CHECK_CODE as u32;
         return;
     }
 
-    let Ok(request) = syscall::Request::try_from(id) else {
-        unsafe { set_eax!(syscall::SyscallError::NotSupported as u32) };
+    let Ok(request) = syscall::Request::try_from(code) else {
+        params.code = syscall::SyscallError::NotSupported as u32;
+
         return;
     };
 
     let old_esp = current_task!().context().esp;
 
-    let code = match user::syscall::handle(request, edx, ecx, &frame) {
+    let code = match user::syscall::handle(request, edx as usize, ecx as usize)
+    {
         Ok(_) => 0,
         Err(cause) => cause as u32,
     };
 
+    log::debug!("task#{}. old esp: 0x{old_esp:x?}", current_task!().id);
     if current_task!().context().esp != old_esp {
         current_task!().context_mut().esp = old_esp;
         unsafe { memory::switch_to_task(current_task!()) }
     }
 
-    unsafe { set_eax!(code) }
+    params.code = code;
 }
 
 pub extern "x86-interrupt" fn terminate_process(_frame: InterruptStackFrame) {

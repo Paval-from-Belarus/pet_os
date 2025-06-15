@@ -2,7 +2,7 @@ use core::mem::MaybeUninit;
 
 use kernel_types::{
     drivers::{ModuleKind, UserModule},
-    fs::{FileRequest, FsRequest},
+    fs::{FileRequest, FileResponse, FsRequest, Work},
     io::block,
     object::Queue,
     syscall,
@@ -11,7 +11,7 @@ use kernel_types::{
 use crate::{
     fs::{FileOperations, FsError, SuperBlockOperations},
     io::block::Operations,
-    object::{KernelBuf, UserBuf},
+    object::{KernelBuf, UserBuf, UserBufMut},
     process,
 };
 
@@ -93,34 +93,50 @@ pub enum HandleError {
     FsError(#[from] FsError),
 }
 
-pub fn handle_char_module(queue: Queue<FileRequest>, ops: FileOperations) {
+pub fn handle_char_module(
+    queue: Queue<Work<FileRequest>>,
+    ops: FileOperations,
+) {
     log::debug!("Handling char module");
 
     loop {
-        let Some(op) = queue.blocking_recv() else {
+        let Some(mut work) = queue.blocking_recv() else {
             break;
         };
 
-        match op {
+        let status = match work.request.take().unwrap() {
             FileRequest::Command { .. } => todo!(),
-            FileRequest::Read { .. } => todo!(),
+            FileRequest::Read { file, buf } => {
+                let user_buf = UserBufMut::from(buf);
+
+                (ops.read)(file.into(), user_buf)
+            }
             FileRequest::Write { buf, file } => {
+                log::debug!("write operation");
+
                 let buf = KernelBuf::from(buf);
 
-                log::debug!("Kernel buf: {buf:?}");
-
-                let mut user_buf = UserBuf::new(buf.len());
+                let mut user_buf = UserBuf::new(buf.capacity());
                 buf.copy_to(&mut user_buf).unwrap();
 
-                let status = (ops.write)(file.into(), user_buf);
+                (ops.write)(file.into(), user_buf)
+            }
+        };
 
-                log::debug!("vga write: {status:?}");
+        match status {
+            Ok(_) => work.send_response(FileResponse::Completed).unwrap(),
+            Err(cause) => {
+                work.send_response(FileResponse::Status(cause.into()))
+                    .unwrap();
             }
         }
     }
 }
 
-pub fn handle_fs_module(queue: Queue<FsRequest>, _ops: SuperBlockOperations) {
+pub fn handle_fs_module(
+    queue: Queue<Work<FsRequest>>,
+    _ops: SuperBlockOperations,
+) {
     loop {
         let Some(_op) = queue.blocking_recv() else {
             break;
@@ -128,7 +144,10 @@ pub fn handle_fs_module(queue: Queue<FsRequest>, _ops: SuperBlockOperations) {
     }
 }
 
-pub fn handle_block_module(queue: Queue<block::Request>, _ops: Operations) {
+pub fn handle_block_module(
+    queue: Queue<Work<block::Request>>,
+    _ops: Operations,
+) {
     loop {
         let Some(_request) = queue.blocking_recv() else {
             break;

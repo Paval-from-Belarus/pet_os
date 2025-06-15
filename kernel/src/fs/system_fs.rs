@@ -97,21 +97,35 @@ impl SystemMountPoints {
 
     pub fn lookup_fs<PATH, F, T>(
         &self,
-        _name: PATH,
+        name: PATH,
         mut action: F,
     ) -> fs::Result<T>
     where
         PATH: AsRef<str>,
         F: FnMut(&str, &MountPoint) -> fs::Result<T>,
     {
-        // let file_name = name.as_ref().to_string();
-        //
-        // (file_name, self.root_fs())
-        // ("vga".to_string(), self.mounts.lock().iter().next())
+        let path = name.as_ref().to_string();
 
-        let mounts = self.mounts.lock();
-        let dev_fs = mounts.first().unwrap();
+        let Some(path) = path.strip_prefix("/") else {
+            return Err(fs::FsError::InvalidFileHandle);
+        };
 
-        action("vga", &dev_fs)
+        if path.starts_with("dev") {
+            let Some(device_name) = path.strip_prefix("dev/") else {
+                return Err(fs::FsError::NotFound);
+            };
+
+            let dev_fs = self
+                .mounts
+                .try_lock()
+                .unwrap()
+                .iter()
+                .find(|mount| mount.path_node().eq("/dev"))
+                .unwrap();
+
+            return action(device_name, dev_fs);
+        }
+
+        todo!()
     }
 }

@@ -2,5 +2,6 @@
 pub enum OpStatus {
     Failed,
     NotFound,
+    NotSupported,
     InvalidResponse,
 }

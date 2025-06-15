@@ -1,5 +1,6 @@
 use kernel_types::{object::RawHandle, syscall};
 
+#[derive(Debug)]
 pub struct Event {
     handle: RawHandle,
 }

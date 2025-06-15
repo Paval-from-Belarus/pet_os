@@ -3,7 +3,6 @@ use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, ListNode},
     fs::{FileLookupRequest, SuperBlockInfo},
-    string::QuickString,
 };
 
 use crate::{
@@ -33,6 +32,7 @@ pub struct MountPoint {
     #[list_pivots]
     node: ListNode<MountPoint>,
 
+    path_node: alloc::string::String,
     sb: Handle<SuperBlock>,
     // parent_mount: Option<NonNull<MountPoint>>,
     // //the vfs' root doesn't have parent
@@ -47,15 +47,23 @@ unsafe impl Send for MountPoint {}
 unsafe impl Sync for MountPoint {}
 
 impl MountPoint {
-    pub fn new_boxed(sb_info: SuperBlockInfo) -> Result<MountPointBox> {
+    pub fn new_boxed(
+        sb_info: SuperBlockInfo,
+        mount_point: &str,
+    ) -> Result<MountPointBox> {
         let super_block = SuperBlock::new(sb_info)?;
 
         let mount_point = crate::memory::slab_alloc(Self {
             sb: super_block,
+            path_node: mount_point.to_string(),
             node: ListNode::empty(),
         })?;
 
         Ok(MountPointBox { mount_point })
+    }
+
+    pub fn path_node(&self) -> &str {
+        &self.path_node
     }
 
     pub fn queue(&self) -> Handle<Queue<FileLookupWork>> {

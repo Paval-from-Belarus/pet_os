@@ -7,17 +7,17 @@ use super::UserBuf;
 #[derive(Debug)]
 #[repr(C)]
 pub struct KernelBuf {
-    len: usize,
-    capacity: usize,
-    handle: RawHandle,
+    pub len: usize,
+    pub capacity: usize,
+    pub handle: RawHandle,
 }
 
 #[derive(Debug)]
 #[repr(C)]
 pub struct KernelBufMut {
-    len: usize,
-    capacity: usize,
-    handle: RawHandle,
+    pub len: usize,
+    pub capacity: usize,
+    pub handle: RawHandle,
 }
 
 impl From<RawHandle> for KernelBuf {
@@ -46,6 +46,10 @@ impl From<RawHandle> for KernelBuf {
 impl KernelBuf {
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 
     #[must_use]

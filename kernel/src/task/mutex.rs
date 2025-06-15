@@ -6,7 +6,11 @@ use core::{
 use crate::{
     impl_container,
     memory::AllocError,
-    object::{self, runtime, Handle, Object, ObjectContainer},
+    object::{
+        self,
+        runtime::{self, critical_section},
+        Handle, Object, ObjectContainer,
+    },
 };
 
 pub struct Mutex<T: Sized> {
@@ -25,6 +29,41 @@ impl<T: Sized> core::fmt::Debug for Mutex<T> {
 pub struct MutexObject {
     locked: AtomicBool,
     object: Object,
+}
+
+impl MutexObject {
+    pub fn new() -> Result<Handle<Self>, AllocError> {
+        object::alloc_root_object(MutexObject {
+            object: MutexObject::new_root_object(),
+            locked: AtomicBool::new(false),
+        })
+    }
+
+    pub fn acquire(&self) {
+        loop {
+            let is_locked = self
+                .locked
+                .compare_exchange(
+                    false,
+                    true,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_err();
+
+            if !is_locked {
+                return;
+            }
+
+            runtime::block_on(self.handle()).unwrap();
+        }
+    }
+
+    pub fn release(&self) {
+        self.locked.store(false, Ordering::SeqCst);
+
+        runtime::notify(self.handle());
+    }
 }
 
 impl_container! {
@@ -63,10 +102,7 @@ unsafe impl<T: Sized + Send> Send for Mutex<T> {}
 
 impl<T: Sized> Mutex<T> {
     pub fn new(value: T) -> Result<Mutex<T>, AllocError> {
-        let mutex = object::alloc_root_object(MutexObject {
-            object: MutexObject::new_root_object(),
-            locked: AtomicBool::new(false),
-        })?;
+        let mutex = MutexObject::new()?;
 
         Ok(Self {
             mutex,
@@ -93,12 +129,10 @@ impl<T: Sized> Mutex<T> {
     }
 
     pub fn lock(&self) -> MutexGuard<'_, T> {
-        loop {
-            if let Some(guard) = self.try_lock() {
-                break guard;
-            }
+        runtime::critical_section(self.handle(), |mutex| {
+            mutex.acquire();
+        });
 
-            runtime::block_on(self.handle()).expect("Failed to block on mutex")
-        }
+        MutexGuard { lock: self }
     }
 }

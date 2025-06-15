@@ -1,3 +1,4 @@
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct MemBuf {
     pub ptr: *mut u8,

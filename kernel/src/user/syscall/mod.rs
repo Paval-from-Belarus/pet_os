@@ -1,7 +1,9 @@
 use alloc::boxed::Box;
 use kernel_types::{
     drivers::UserModule,
-    fs::{FileInfo, FileLookupRequest, FileRequest, FsRequest},
+    fs::{
+        FileInfo, FileLookupRequest, FileRequest, FileResponse, FsRequest, Work,
+    },
     io::{
         block::BlockDeviceInfo, char::CharModuleInfo, IoOperation, IrqHandler,
         IrqMessage, MemBuf, MemoryRemap,
@@ -19,12 +21,12 @@ use crate::{
         self,
         block::{self, BlockWork},
         pic::PicLine,
-        InterruptStackFrame, IrqEvent,
+        IrqEvent,
     },
     log_module,
     memory::{self, AllocError, VirtualAddress},
     object::{runtime, AnyObject, Handle, Object, ObjectContainer, UserHandle},
-    task::{self, Event, TaskPriority},
+    task::{self, Event, MutexObject, TaskPriority},
     user,
 };
 
@@ -46,7 +48,6 @@ pub fn handle(
     request: Request,
     edx: usize,
     ecx: usize,
-    _frame: &InterruptStackFrame,
 ) -> Result<(), SyscallError> {
     match request {
         Request::PrintK => {
@@ -150,59 +151,71 @@ pub fn handle(
                 },
                 crate::object::Kind::FsWork => unsafe {
                     blocking_pop(&queue, |work: Handle<FsWork>| {
-                        let request = work.take_request();
+                        let request = work.take_request().into();
+
+                        let user_work = Work {
+                            handle: work.into_raw(),
+                            request,
+                        };
 
                         memory::switch_to_task(current_task!());
 
-                        let ptr = edx as *mut FsRequest;
+                        let ptr = edx as *mut Work<FsRequest>;
 
-                        ptr.write(request);
+                        ptr.write(user_work);
                     })?;
                 },
 
                 crate::object::Kind::FileLookupWork => unsafe {
                     blocking_pop(&queue, |work: Handle<FileLookupWork>| {
-                        let request = work.take_request();
+                        let request = work.take_request().into();
+
+                        let user_work = Work {
+                            request,
+                            handle: work.into_raw(),
+                        };
 
                         memory::switch_to_task(current_task!());
 
-                        let ptr = edx as *mut FileLookupRequest;
+                        let ptr = edx as *mut Work<FileLookupRequest>;
 
-                        ptr.write(request);
+                        ptr.write(user_work);
                     })?;
                 },
 
                 crate::object::Kind::FileWork => unsafe {
                     blocking_pop(&queue, |work: Handle<FileWork>| {
-                        let request = work.take_request();
+                        let request = work.take_request().into();
 
-                        log::debug!("User blocking get: {request:?}");
+                        log::debug!("File Work: {request:?}");
+
+                        let user_work = Work {
+                            handle: work.into_raw(),
+                            request,
+                        };
 
                         memory::switch_to_task(current_task!());
 
-                        let ptr = edx as *mut FileRequest;
+                        let ptr = edx as *mut Work<FileRequest>;
 
-                        ptr.write(request);
-
-                        work.send_response(
-                            kernel_types::fs::FileResponse::Completed,
-                        );
+                        ptr.write(user_work);
                     })?;
                 },
 
                 crate::object::Kind::IrqEvent => unsafe {
                     log::debug!(
-                        "task !!. Stack size before: {}. ESP + {}",
+                        "task !!. Stack size before: {}. ESP= 0x{:x?}",
                         current_task!().stack_size(),
                         unsafe { current_task!().context().esp }
                     );
+
                     let Some(handle) = queue.cast::<IrqEvent>().blocking_pop()
                     else {
                         return Err(SyscallError::QueueIsEmpty);
                     };
 
                     log::debug!(
-                        "task !!. Stack size after: {}. ESP = {}",
+                        "task !!. Stack size after: {}. ESP = 0x{:x?}",
                         current_task!().stack_size(),
                         unsafe { current_task!().context().esp }
                     );
@@ -219,7 +232,7 @@ pub fn handle(
                     memory::switch_to_task(current_task!());
 
                     log::debug!(
-                        "task !!. Stack size somewhere: {}. ESP = {}",
+                        "task !!. Stack size somewhere: {}. ESP = 0x{:x?}",
                         current_task!().stack_size(),
                         unsafe { current_task!().context().esp }
                     );
@@ -234,7 +247,6 @@ pub fn handle(
                 }
             }
         }
-
         Request::FreeKernelObject => unsafe {
             let raw_object = edx as *const Object;
 
@@ -279,9 +291,16 @@ pub fn handle(
 
                     drop(handle);
                 }
+
+                crate::object::Kind::Event => {
+                    let handle =
+                        Handle::<Event>::from_addr_unchecked(raw_handle);
+
+                    drop(handle);
+                }
+
                 crate::object::Kind::SuperBlock => todo!(),
                 crate::object::Kind::Mutex => todo!(),
-                crate::object::Kind::Event => todo!(),
             }
         },
         Request::CloneHandle => {
@@ -290,18 +309,6 @@ pub fn handle(
 
             //prevent droping handle
             let _ = unsafe { handle.into_addr() };
-        }
-        Request::KernelCopy => {
-            let kernel_buf =
-                unsafe { UserHandle::<KernelBuf>::from_addr_unchecked(edx) };
-
-            let mem_buf: &MemBuf = validate_ref(ecx)?;
-
-            let bytes = unsafe {
-                core::slice::from_raw_parts_mut(mem_buf.ptr, mem_buf.len)
-            };
-
-            kernel_buf.copy_to(bytes)?;
         }
         Request::GetObjectInfo => {
             let kind = validate_ref::<Object>(edx)?.kind;
@@ -342,7 +349,30 @@ pub fn handle(
                 _ => todo!(),
             }
         }
-        Request::UserCopy => todo!(),
+        Request::KernelCopy => {
+            let kernel_buf =
+                unsafe { UserHandle::<KernelBuf>::from_addr_unchecked(edx) };
+
+            let mem_buf: &MemBuf = validate_ref(ecx)?;
+
+            let bytes = unsafe {
+                core::slice::from_raw_parts_mut(mem_buf.ptr, mem_buf.len)
+            };
+
+            kernel_buf.copy_to(bytes)?;
+        }
+        Request::UserCopy => {
+            let mem_buf = validate_ref::<MemBuf>(ecx)?.clone();
+
+            let kernel_buf =
+                unsafe { UserHandle::<KernelBuf>::from_addr_unchecked(edx) };
+
+            let bytes = unsafe {
+                core::slice::from_raw_parts(mem_buf.ptr, mem_buf.len)
+            };
+
+            kernel_buf.copy_from(bytes)?;
+        }
         Request::QueueTryGet => todo!(),
         Request::SpawnTask => {
             let params = validate_ref::<TaskParams>(ecx)?.clone();
@@ -415,19 +445,67 @@ pub fn handle(
                 ptr.write(event.into_addr());
             }
         }
-
         Request::EventBlock => {
+            log::debug!("Event block");
+
             let event =
                 unsafe { UserHandle::<Event>::from_addr_unchecked(edx) };
 
             runtime::block_on(event.to_owned())?;
         }
-
         Request::EventNotifyOne | Request::EventNotifyAll => {
+            log::debug!("Event notify");
+
             let event =
                 unsafe { UserHandle::<Event>::from_addr_unchecked(edx) };
 
             runtime::notify(event.to_owned());
+        }
+        Request::MutexNew => {
+            let mutex = MutexObject::new()?;
+
+            let ptr = edx as *mut kernel_types::object::RawHandle;
+            unsafe { ptr.write(mutex.into_raw()) };
+        }
+        Request::MutexAcquire => {
+            log::debug!("MutexAcquire: 0x{edx:x}");
+
+            let mutex =
+                unsafe { UserHandle::<MutexObject>::from_addr_unchecked(edx) };
+
+            mutex.acquire();
+        }
+        Request::MutexRelease => {
+            log::debug!("MutexRelease: 0x{edx:x}");
+
+            let mutex =
+                unsafe { UserHandle::<MutexObject>::from_addr_unchecked(edx) };
+
+            mutex.release();
+        }
+        Request::SetWorkResponse => {
+            let raw_object = edx as *const Object;
+
+            let raw_handle = edx;
+            let kind = unsafe { (*raw_object).kind };
+
+            match kind {
+                crate::object::Kind::BlockDeviceWork => todo!(),
+                crate::object::Kind::FsWork => todo!(),
+                crate::object::Kind::FileLookupWork => todo!(),
+                crate::object::Kind::FileWork => unsafe {
+                    let response = validate_ref::<FileResponse>(ecx)?.clone();
+
+                    let handle =
+                        UserHandle::<FileWork>::from_addr_unchecked(raw_handle);
+
+                    log::debug!("Setting: {response:?} for {raw_handle}");
+
+                    handle.send_response(response);
+                },
+
+                _ => return Err(SyscallError::InvalidObjectKind),
+            }
         }
     }
 

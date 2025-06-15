@@ -60,6 +60,9 @@ pub enum FsError {
 
     #[error("The process has reached max files limit")]
     MaxOpenedFiles,
+
+    #[error("Invalid file name")]
+    InvalidFileName,
 }
 
 declare_constants!(
@@ -105,7 +108,7 @@ pub unsafe fn mount_dev_fs() -> Result<()> {
     let sb_info = work.wait().unwrap().super_block().unwrap();
     log::debug!("dev fs sb is taken");
 
-    let mount_point = MountPoint::new_boxed(sb_info)?;
+    let mount_point = MountPoint::new_boxed(sb_info, "/dev")?;
 
     let queue = mount_point.queue().into_raw();
 
@@ -159,29 +162,24 @@ pub fn open<T: AsRef<str>>(path: T) -> Result<Handle<FileLookupWork>> {
 
 pub fn read(
     file_handle: usize,
-    _dest: *mut u8,
-    _count: usize,
+    buf: Handle<KernelBuf>,
 ) -> Result<object::Handle<FileWork>> {
-    let Some(_file) = current_task!().opened_files.get(file_handle) else {
+    let Some(file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };
 
-    // let op_handle = file.super_block().work(Fileo::Read {
-    //     file: file.id(),
-    //     buffer: dest,
-    //     count,
-    // });
+    let res = FileRequest::Read {
+        file: file.handle().into_raw(),
+        buf: buf.into_raw(),
+    };
 
-    // Ok(op_handle.as_raw())
-    todo!()
+    file.send_request(res)
 }
 
 pub fn write(
     file_handle: usize,
     buf: Handle<KernelBuf>,
 ) -> Result<Handle<FileWork>> {
-    log::debug!("Writing to file!!!");
-
     let Some(file) = current_task!().opened_files.get(file_handle) else {
         return Err(FsError::InvalidFileHandle);
     };

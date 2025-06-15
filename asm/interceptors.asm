@@ -31,11 +31,16 @@ rept IRQ_LINES_COUNT index: 0
         push edx eax
         call Interceptors.service
 
-        pop eax eax
+        pop eax eax ;;last is the new task context
         mov esp, eax
 
+        ;add dword [ds:eax + TaskContext.esp], 16 ;pop segments
+
         popa
+
         mov esp, dword [esp - 4 * 5] ; use value in stack frame to restore esp
+
+        ;sub esp, 16
 
         pop gs fs es ds
 
@@ -77,9 +82,13 @@ switch_context:
 
     mov esp, edx ;switch to another task context
 
+    ;add dword [ds:edx + TaskContext.esp], 16 ;pop segments
+
     popa
 
     mov esp, dword [esp - 4 * 5] ; use value in stack frame to restore esp
+
+    ;sub esp, 16
 
     pop gs fs es ds
 
@@ -128,6 +137,8 @@ extrn handle_syscall
 
 _syscall:
     push ecx edx eax
+    push esp
     call handle_syscall
-    add esp, 4 * 3
+    pop eax
+    pop eax edx ecx
     iret

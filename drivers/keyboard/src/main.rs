@@ -4,12 +4,12 @@
 
 mod ps;
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use kernel_lib::{
     fs::{self, not_supported_write, File, FileOperations},
-    io::{self, char::register_module, spin, IrqMessage},
+    io::{self, char::register_module, IrqMessage},
     module,
-    object::{Event, Queue, UserBufMut},
+    object::{Event, Mutex, Queue, UserBufMut},
     task::{self, TaskHandle},
     KernelModule, ModuleError,
 };
@@ -28,24 +28,31 @@ module! {
 
 impl KernelModule for KeyboardDriver {
     fn init() -> Result<Self, ModuleError> {
+        let context = Box::<DriverContextLock>::try_new_uninit()?;
+
+        let boxed_context = Box::into_raw(context);
+
         register_module(io::char::CharModuleInfo {
             name: "keybrd".into(),
-            ctx: core::ptr::null_mut(),
+            ctx: boxed_context as *mut (),
         })?;
+
+        let _ = ps::read_scan_code().expect("Failed to read scan code");
 
         let irq_queue = io::set_irq(1, None)?;
 
         let event = Event::new()?;
 
-        let context = spin::Mutex::new(DriverContext {
+        let context = unsafe { &mut *boxed_context };
+        context.write(Mutex::new(DriverContext {
             scan_codes: heapless::Deque::new(),
             event,
             irq_queue,
-        });
+        }));
 
-        let boxed_context = Arc::try_new(context)?;
+        let context = unsafe { context.assume_init_ref() };
 
-        let arg = Arc::into_raw(boxed_context.clone()) as *const ();
+        let arg = context as *const DriverContextLock as *const ();
 
         let irq_task = task::spawn(handle_irq, arg, 3)?;
 
@@ -65,29 +72,40 @@ impl KernelModule for KeyboardDriver {
 
 extern "C" fn handle_irq(ctx_ptr: *const ()) {
     let ctx = unsafe {
-        let ctx_ptr = ctx_ptr as *const DriverContextLock;
-        Arc::from_raw(ctx_ptr)
+        let ptr = ctx_ptr as *const DriverContextLock;
+
+        &*ptr
     };
 
     log::debug!("Keybrd irq task");
 
-    let queue = ctx.try_lock().unwrap().irq_queue.try_clone().unwrap();
+    let queue = ctx.lock().irq_queue.try_clone().unwrap();
 
     loop {
         let Some(_event) = queue.blocking_recv() else {
             break;
         };
 
-        log::debug!("before process");
-
         let scan_code = ps::read_scan_code().expect("Failed to read scan code");
 
-        log::info!("key read: {scan_code:?}");
+        if let Some(letter) = scan_code {
+            let mut ctx_lock = ctx.lock();
+
+            if let Err(data) = ctx_lock.scan_codes.push_back(letter) {
+                let _ = ctx_lock.scan_codes.pop_front().unwrap(); //remove key from buffer
+
+                ctx_lock.scan_codes.push_back(data).unwrap();
+            }
+
+            log::debug!("new letter = {letter}");
+
+            ctx_lock.event.notify_all().unwrap();
+        }
     }
 
     log::debug!("irq queue is exit");
 
-    loop {}
+    task::terminate(1);
 
     // let mut context = ctx.try_lock().unwrap();
 
@@ -107,28 +125,35 @@ fn handle_read(file: File, mut buf: UserBufMut) -> fs::Result<()> {
     let context_lock = unsafe { &*file.ctx::<DriverContextLock>() };
 
     while buf.has_remaining_capacity() {
-        let mut context = context_lock.try_lock().unwrap();
+        let mut context = context_lock.lock();
+
         if context.scan_codes.is_empty() {
             let event = context.event.try_clone().unwrap();
+
             drop(context);
-            buf.flush().unwrap();
+
+            log::debug!("waiting new key codes: {event:?}");
+
             event.wait().unwrap();
+
             continue;
         }
 
         if let Some(scan_code) = context.scan_codes.pop_front() {
-            buf.push(scan_code);
+            buf.push(scan_code as u8);
         }
+
+        buf.flush().unwrap();
     }
 
     Ok(())
 }
 
 //allocation in user space
-pub type DriverContextLock = spin::Mutex<DriverContext>;
+pub type DriverContextLock = Mutex<DriverContext>;
 
 pub struct DriverContext {
-    pub scan_codes: heapless::Deque<u8, 255>,
+    pub scan_codes: heapless::Deque<char, 255>,
     pub event: Event,
     pub irq_queue: Queue<IrqMessage>,
 }

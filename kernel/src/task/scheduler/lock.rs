@@ -155,7 +155,9 @@ impl SchedulerLock {
             in("ecx") *SegmentSelector::KERNEL_CODE
         }
 
-        log::debug!("Returning from switch");
+        log::debug!("Returning from switch. esp = 0x{:x}", unsafe {
+            current_task!().context().esp
+        });
 
         memory::switch_to_kernel();
     }

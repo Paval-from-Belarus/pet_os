@@ -9,7 +9,7 @@ pub enum FileRequest {
     Write { file: RawHandle, buf: RawHandle },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FileResponse {
     File(NodeId),
     Status(OpStatus),

@@ -12,9 +12,31 @@ pub use fs_op::*;
 pub use index_node::*;
 pub use super_block::*;
 
+use crate::{object::RawHandle, syscall};
+
 const MAX_FILE_SYSTEM_NAME: usize = 32;
 
 pub type FsId = usize;
+
+#[repr(C)]
+pub struct Work<T> {
+    pub request: Option<T>,
+    pub handle: RawHandle,
+}
+
+impl<T> Work<T> {
+    pub fn send_response<K>(&self, response: K) -> syscall::Result<()> {
+        unsafe {
+            syscall! {
+                syscall::Request::SetWorkResponse,
+                ecx: &response,
+                edx: self.handle.syscall()
+            }?;
+        }
+
+        Ok(())
+    }
+}
 
 /// user-space structure to register file system
 #[repr(C)]

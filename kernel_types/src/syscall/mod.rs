@@ -41,6 +41,12 @@ pub enum Request {
     QueueBlockingGet,
     QueueTryGet,
 
+    SetWorkResponse,
+
+    MutexNew,
+    MutexAcquire,
+    MutexRelease,
+
     //event operations
     EventNew,
     EventBlock,
@@ -75,6 +81,7 @@ pub enum SyscallError {
     InvalidModuleParams = 9,
 
     NoSpaceInBuffer = 10,
+    InvalidObjectKind = 11,
 
     #[num_enum(default)]
     Failed = 0x42,
