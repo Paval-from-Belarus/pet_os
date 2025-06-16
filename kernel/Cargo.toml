@@ -34,6 +34,7 @@ bitvec = { git = "https://github.com/ferrilab/ferrilab", default-features = fals
     "atomic",
 ] }
 atomic_enum = "0.3.0"
+talc = "4.4.3"
 # format_no_std = "1.2.0"
 ##generic-array = { version = "1.0.0", features = ["const-default"]}
 

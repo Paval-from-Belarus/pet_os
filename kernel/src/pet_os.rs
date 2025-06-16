@@ -22,6 +22,7 @@ extern crate multiboot2;
 
 use crate::task::TaskPriority;
 use alloc::{
+    format,
     string::{String, ToString},
     sync::Arc,
     vec::Vec,
@@ -132,6 +133,8 @@ pub fn main() {
 extern "C" fn init_task(_args: *const ()) {
     log::debug!("Init task#{} is started", current_task!().id);
 
+    unsafe { fs::mount_root_fs() }.expect("Failed to mount dev-fs");
+
     unsafe { fs::mount_dev_fs() }.expect("Failed to mount dev-fs");
 
     let output = fs::open("/dev/vga").unwrap();
@@ -140,6 +143,9 @@ extern "C" fn init_task(_args: *const ()) {
 
     let input = fs::resolve(input).expect("Failed to resolve keyboard");
     let output = fs::resolve(output).expect("Failed to resolve vga");
+
+    let _work =
+        fs::write(output, "Welcome to PetOS!\n".try_into().unwrap()).unwrap();
 
     // let disk = fs::open("/dev/ata").unwrap();
     // let disk = fs::resolve(disk).expect("Failed to open disk");
@@ -197,6 +203,8 @@ extern "C" fn init_task(_args: *const ()) {
             continue;
         };
 
+        let cat_buf = KernelBuf::new(128).unwrap();
+
         should_print_name = true;
 
         match cmd {
@@ -231,9 +239,52 @@ extern "C" fn init_task(_args: *const ()) {
                     fs::write(output, cur_dir.as_str().try_into().unwrap())
                         .unwrap();
             }
-            Command::Ls => todo!(),
+
+            Command::Ls => match fs::dir_entries(&cur_dir) {
+                Ok(work) => {
+                    let entries = work.wait().unwrap().dir_entries().unwrap();
+                    print_ls(output, &entries);
+                }
+
+                Err(cause) => {
+                    let msg = format!("{cause}");
+                    let _ = fs::write(output, msg.as_str().try_into().unwrap())
+                        .unwrap();
+                }
+            },
+            Command::Clear => {
+                let _work = fs::ioctl(output, 1).unwrap();
+            }
+            Command::Mkdir(path) => {
+                let path = format!("{cur_dir}{path}");
+                let _work = fs::mkdir(&path).unwrap();
+            }
             Command::Echo(_, _) => todo!(),
-            Command::Cat(_) => {}
+            Command::Cat(file) => {
+                let file_path = alloc::format!("{cur_dir}{file}");
+                match fs::open(file_path) {
+                    Ok(work) => {
+                        let file = fs::resolve(work).unwrap();
+                        cat_buf.reset();
+
+                        let _work = fs::read(file, cat_buf.clone())
+                            .unwrap()
+                            .wait()
+                            .unwrap();
+
+                        let _work = fs::write(output, cat_buf.clone())
+                            .unwrap()
+                            .wait()
+                            .unwrap();
+                    }
+                    Err(cause) => {
+                        let msg = format!("Failed to open file: {cause}");
+                        let _ =
+                            fs::write(output, msg.as_str().try_into().unwrap())
+                                .unwrap();
+                    }
+                }
+            }
             Command::Invalid => {
                 continue;
             }
@@ -310,11 +361,11 @@ fn normalize_components(path: &str) -> String {
         String::from("/")
     } else {
         let mut normalized = String::from("/");
-        for (i, component) in result.iter().enumerate() {
+        for component in result.iter() {
             normalized.push_str(component);
-            if i < result.len() - 1 {
-                normalized.push('/');
-            }
+            // if i < result.len()  {
+            normalized.push('/');
+            // }
         }
         normalized
     }
@@ -329,7 +380,9 @@ pub enum Command {
     Echo(String, Option<String>), // echo "Text" <optional_file_name>
     Cat(String),                  // cat <file_name>
     Invalid,
+    Mkdir(String),
     Files,
+    Clear,
 }
 
 // Parser state for collecting bytes
@@ -392,7 +445,7 @@ impl CommandParser {
                     Command::Invalid
                 }
             }
-
+            "cls" | "clear" => Command::Clear,
             "pwd" => Command::Pwd,
             "files" => Command::Files,
             "modinfo" => {
@@ -408,6 +461,13 @@ impl CommandParser {
                 } else {
                     Command::Invalid
                 }
+            }
+
+            "mkdir" => {
+                if tokens.len() < 2 {
+                    return Command::Invalid;
+                }
+                Command::Mkdir(tokens[1].to_string())
             }
             "echo" => {
                 if tokens.len() < 2 {

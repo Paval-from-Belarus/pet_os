@@ -8,6 +8,12 @@ pub enum ModuleKind {
     Block,
 }
 
+impl ModuleKind {
+    pub fn is_file(&self) -> bool {
+        !matches!(self, Self::Fs)
+    }
+}
+
 pub type ModuleId = usize;
 
 #[repr(C)]

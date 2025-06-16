@@ -164,6 +164,8 @@ pub fn init() {
     auto_load::spawn_task().expect("Failed to init autoload task");
 
     dev_fs::spawn_task().expect("Failed to init dev fs");
+
+    fat_fs::spawn_task().expect("Failed to init fat fs");
 }
 
 // extern "Rust" {

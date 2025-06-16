@@ -11,6 +11,7 @@ use kernel_types::collections::LinkedList;
 use kernel_types::declare_constants;
 pub use paging::PagingProperties;
 use paging::{GDTHandle, PageDirectoryEntries};
+use talc::{ClaimOnOom, Span, Talc, Talck};
 
 use crate::common::atomics::{SpinLockLazyCell, UnsafeLazyCell};
 use crate::current_task;
@@ -530,7 +531,7 @@ pub unsafe fn switch_to_kernel() {
 //duplicates in kernel.ld script
 declare_constants!(
     pub usize,
-    MAX_PHYSICAL_MEMORY_SIZE = 32 * 1024 * 1024;//bytes
+    MAX_PHYSICAL_MEMORY_SIZE = 64 * 1024 * 1024;//bytes
     MEMORY_MAP_SIZE = MAX_PHYSICAL_MEMORY_SIZE / Page::SIZE, "the count of pages in memory map array";
 );
 
@@ -626,5 +627,12 @@ unsafe impl GlobalAlloc for VirtualAllocator {
         virtual_dealloc(ptr as VirtualAddress, layout.size());
     }
 }
+
+// static mut ARENA: [u8; 10_000] = [0; 10_000];
+//
+// #[global_allocator]
+// static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> =
+//     Talc::new(unsafe { ClaimOnOom::new(Span::from_array(&raw mut ARENA)) })
+//         .lock();
 
 static KERNEL_MARKER: SpinLockLazyCell<PageMarker> = SpinLockLazyCell::empty();

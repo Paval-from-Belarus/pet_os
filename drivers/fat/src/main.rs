@@ -15,11 +15,10 @@ use alloc::boxed::Box;
 use bpb::BiosParameterBlock;
 use kernel_lib::{
     fs::{
-        self, FileId, FileSystemKind, IndexNode, IndexNodeInfo, SuperBlock,
+        self, FileSystemKind, IndexNode, IndexNodeInfo, SuperBlock,
         SuperBlockInfo,
     },
     io::{self, block::BlockDevice, spin::Mutex, UserBuf, UserBufMut},
-    object::Handle,
     string::QuickString,
     KernelModule, ModuleError,
 };

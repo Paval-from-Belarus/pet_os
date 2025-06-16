@@ -1,4 +1,5 @@
 use alloc::{boxed::Box, string::ToString};
+use elf::hash;
 use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, ListNode},
@@ -68,6 +69,15 @@ impl MountPoint {
 
     pub fn queue(&self) -> Handle<Queue<FileLookupWork>> {
         self.sb.queue.clone()
+    }
+
+    pub fn mkdir(&self, name: &str) -> Result<Handle<FileLookupWork>> {
+        let req = FileLookupRequest::CreateDirectory {
+            sb: self.sb.handle().into_raw(),
+            name: name.to_string(),
+        };
+
+        self.sb.send_request(req)
     }
 
     pub fn open(&self, name: &str) -> Result<Handle<FileLookupWork>> {

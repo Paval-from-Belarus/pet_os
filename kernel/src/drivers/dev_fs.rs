@@ -162,6 +162,7 @@ extern "C" fn sb_task(ptr: *const ()) {
                     .modules
                     .lock()
                     .iter()
+                    .filter(|m| m.state.kind().is_file())
                     .map(|m| m.state.name.to_string())
                     .collect::<Vec<_>>();
 

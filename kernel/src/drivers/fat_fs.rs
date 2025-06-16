@@ -1,12 +1,13 @@
+#![allow(unused)]
 use alloc::{
-    boxed::Box,
-    collections::btree_map::BTreeMap,
-    string::String,
-    vec::{self, Vec},
+    boxed::Box, collections::btree_map::BTreeMap, string::String, vec::Vec,
 };
-use kernel_types::fs::{
-    FileLookupResponse, FileSystem, FileSystemKind, FsRequest, FsResponse,
-    SuperBlockInfo,
+use kernel_types::{
+    fs::{
+        DirEntriesInfo, FileLookupResponse, FileSystem, FileSystemKind,
+        FsRequest, FsResponse, SuperBlockInfo,
+    },
+    object::OpStatus,
 };
 
 use crate::{
@@ -42,7 +43,7 @@ pub fn spawn_task() -> Result<(), KernelError> {
 }
 
 #[derive(Debug)]
-enum Node {
+pub enum Node {
     File(FatFile),
     Directory(BTreeMap<String, Node>), // Directories contain a map of name -> Node
 }
@@ -188,6 +189,38 @@ impl Files {
 
         Ok(current.keys().map(|s| s.as_str()).collect())
     }
+
+    pub fn find<'a>(&'a self, path: &str) -> Option<&'a Node> {
+        if path.is_empty() {
+            return Some(&self.root);
+        }
+
+        // Get the directory map from the root
+        let mut current = match &self.root {
+            Node::Directory(map) => map,
+            _ => return None,
+        };
+
+        // Split relative path into components
+        let components: alloc::vec::Vec<&str> =
+            path.split('/').filter(|s| !s.is_empty()).collect();
+
+        // Traverse components
+        for (i, component) in components.iter().enumerate() {
+            let node = current.get(*component)?;
+            if i == components.len() - 1 {
+                // Last component: return the node (file or dir)
+                return Some(node);
+            }
+            // Intermediate component: must be a directory
+            current = match &node {
+                Node::Directory(map) => map,
+                _ => return None,
+            };
+        }
+
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -213,7 +246,11 @@ extern "C" fn fs_task(arg: *const ()) {
 
         match request {
             FsRequest::Mount { .. } => {
-                let files = Box::new(Files::new());
+                let mut files = Box::new(Files::new());
+                files.create_dir("/kernel").unwrap();
+                files.create_dir("/dev").unwrap();
+                files.create_file("/test.txt").unwrap();
+                files.create_file("/kernel/io.sys").unwrap();
 
                 let sb_info = SuperBlockInfo {
                     block_size: 512,
@@ -268,17 +305,36 @@ extern "C" fn sb_task(ptr: *const ()) {
         };
 
         match work.take_request() {
-            kernel_types::fs::FileLookupRequest::LookupNode { sb, name } => {
+            kernel_types::fs::FileLookupRequest::LookupNode { sb, .. } => {
                 let sb = Handle::<SuperBlock>::from_raw(sb);
-                let files = unsafe { &mut *(sb.ctx as *mut Files) };
+                // let files = unsafe { &mut *(sb.ctx as *mut Files) };
+                // files.find(&name)
+                // files.create_file(path)
             }
             kernel_types::fs::FileLookupRequest::CreateFile { sb, name } => {
-                todo!()
+                let sb = Handle::<SuperBlock>::from_raw(sb);
+                let files = unsafe { &mut *(sb.ctx as *mut Files) };
+                if files.create_file(&name).is_err() {
+                    work.send_response(OpStatus::InvalidResponse.into());
+                } else {
+                    work.send_response(FileLookupResponse::Completed);
+                }
             }
             kernel_types::fs::FileLookupRequest::CreateDirectory {
                 sb,
                 name,
-            } => todo!(),
+            } => {
+                task::sleep(100_000);
+
+                let sb = Handle::<SuperBlock>::from_raw(sb);
+                let files = unsafe { &mut *(sb.ctx as *mut Files) };
+
+                if files.create_dir(&name).is_err() {
+                    work.send_response(OpStatus::NotFound.into());
+                } else {
+                    work.send_response(FileLookupResponse::Completed);
+                }
+            }
             kernel_types::fs::FileLookupRequest::FlushNode { .. } => {
                 work.send_response(FileLookupResponse::Completed);
             }
@@ -286,7 +342,17 @@ extern "C" fn sb_task(ptr: *const ()) {
             kernel_types::fs::FileLookupRequest::DirectoryEnries {
                 sb,
                 name,
-            } => todo!(),
+            } => {
+                let sb = Handle::<SuperBlock>::from_raw(sb);
+                let files = unsafe { &mut *(sb.ctx as *mut Files) };
+                if let Some(dir) = files.get_dir_mut(&name) {
+                    let entries = dir.keys().cloned().collect();
+
+                    work.send_response(DirEntriesInfo { entries }.into());
+                } else {
+                    work.send_response(OpStatus::NotFound.into());
+                }
+            }
         }
     }
 }

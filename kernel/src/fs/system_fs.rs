@@ -79,14 +79,6 @@ impl SystemMountPoints {
         action(fs)
     }
 
-    pub fn dev_fs(&self) -> SpinBox<'_, &FileSystemItem> {
-        todo!()
-    }
-
-    pub fn root_fs(&self) -> SpinBox<'_, &MountPoint> {
-        todo!()
-    }
-
     pub fn fs_queue(&self, id: FsId) -> Option<Handle<Queue<FsWork>>> {
         self.fs
             .lock()
@@ -126,6 +118,14 @@ impl SystemMountPoints {
             return action(device_name, dev_fs);
         }
 
-        todo!()
+        let root_fs = self
+            .mounts
+            .try_lock()
+            .unwrap()
+            .iter()
+            .find(|mount| mount.path_node().eq("/"))
+            .unwrap();
+
+        action(path, &root_fs)
     }
 }

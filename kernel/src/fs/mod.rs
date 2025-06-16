@@ -94,6 +94,43 @@ pub fn unregister_fs(id: FsId) -> Result<()> {
     FILE_SYSTEMS.unregister(id)
 }
 
+pub unsafe fn mount_root_fs() -> Result<()> {
+    let work = FILE_SYSTEMS
+        .fs_by_name("fat-fs", move |fs| {
+            log::debug!("sending dev-fs mount");
+
+            fs.send_request(FsRequest::Mount {
+                device: RawHandle::null(),
+            })
+        })
+        .expect("Failed to mount dev-fs");
+
+    let sb_info = work.wait().unwrap().super_block().unwrap();
+    log::debug!("fat fs sb is taken");
+
+    let mount_point = MountPoint::new_boxed(sb_info, "/")?;
+
+    let queue = mount_point.queue().into_raw();
+
+    let work = FILE_SYSTEMS
+        .fs_by_name("fat-fs", |fs| {
+            log::debug!("Sending fat-fs queue");
+            fs.send_request(FsRequest::FsQueue { queue })
+        })
+        .unwrap();
+
+    work.wait().unwrap().status().unwrap();
+
+    log::info!("Mounting fat-fs");
+
+    FILE_SYSTEMS.set_root_fs(mount_point.into_node());
+
+    Ok(())
+}
+pub fn mkdir(path: &str) -> Result<Handle<FileLookupWork>> {
+    FILE_SYSTEMS.lookup_fs(path, |dir, sb| sb.mkdir(dir))
+}
+
 pub unsafe fn mount_dev_fs() -> Result<()> {
     let work = FILE_SYSTEMS
         .fs_by_name("dev-fs", move |fs| {
@@ -162,6 +199,19 @@ pub fn open<T: AsRef<str>>(path: T) -> Result<Handle<FileLookupWork>> {
 
 pub fn dir_entries(path: &str) -> Result<Handle<FileLookupWork>> {
     FILE_SYSTEMS.lookup_fs(path, |name, fs| fs.dir_entries(name))
+}
+
+pub fn ioctl(file_handle: usize, cmd: u32) -> Result<object::Handle<FileWork>> {
+    let Some(file) = current_task!().opened_files.get(file_handle) else {
+        return Err(FsError::InvalidFileHandle);
+    };
+
+    let res = FileRequest::Command {
+        file: file.handle().into_raw(),
+        command: cmd,
+    };
+
+    file.send_request(res)
 }
 
 pub fn read(

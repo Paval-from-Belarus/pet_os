@@ -105,7 +105,10 @@ pub fn handle_char_module(
         };
 
         let status = match work.request.take().unwrap() {
-            FileRequest::Command { .. } => todo!(),
+            FileRequest::Command { file, command } => {
+                (ops.ioctl)(file.into(), command)
+            }
+
             FileRequest::Read { file, buf } => {
                 let user_buf = UserBufMut::from(buf);
 

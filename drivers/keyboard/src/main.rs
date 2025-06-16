@@ -6,7 +6,9 @@ mod ps;
 
 use alloc::{boxed::Box, sync::Arc};
 use kernel_lib::{
-    fs::{self, not_supported_write, File, FileOperations},
+    fs::{
+        self, not_supported_ioctl, not_supported_write, File, FileOperations,
+    },
     io::{self, char::register_module, IrqMessage},
     module,
     object::{Event, Mutex, Queue, UserBufMut},
@@ -65,6 +67,7 @@ impl KernelModule for KeyboardDriver {
         FileOperations {
             read: handle_read,
             write: not_supported_write,
+            ioctl: not_supported_ioctl,
         }
         .into()
     }

@@ -22,12 +22,12 @@ pub enum FileLookupRequest {
 
     CreateFile {
         sb: RawHandle,
-        name: QuickString<'static>,
+        name: String,
     },
 
     CreateDirectory {
         sb: RawHandle,
-        name: QuickString<'static>,
+        name: String,
     },
 
     FlushNode {

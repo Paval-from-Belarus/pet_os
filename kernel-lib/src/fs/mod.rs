@@ -46,6 +46,10 @@ pub fn not_supported_write(_file: File, _buf: UserBuf) -> Result<()> {
     Err(FsError::NotSupported)
 }
 
+pub fn not_supported_ioctl(_file: File, _cmd: u32) -> Result<()> {
+    Err(FsError::NotSupported)
+}
+
 pub fn not_supported_read(_file: File, _buf: UserBufMut) -> Result<()> {
     Err(FsError::NotSupported)
 }
@@ -130,8 +134,10 @@ impl KernelObject for File {}
 
 pub type FnRead = fn(File, UserBufMut) -> Result<()>;
 pub type FnWrite = fn(File, UserBuf) -> Result<()>;
+pub type FnIoctl = fn(File, u32) -> Result<()>;
 
 pub struct FileOperations {
     pub write: FnWrite,
     pub read: FnRead,
+    pub ioctl: FnIoctl,
 }

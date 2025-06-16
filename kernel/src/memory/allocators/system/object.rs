@@ -7,6 +7,9 @@ pub trait Slab: Sized {
         16 => "slab-16",
         32 => "slab-32",
         64 => "slab-64",
+        128 => "slab-128",
+        256 => "slab-256",
+        512 => "slab-512",
         _ => panic!("Custom size should be provided"),
     };
 
@@ -21,6 +24,9 @@ pub fn classify_slab_by_size(size: usize) -> Option<SlabAlloc> {
         16 => "slab-16",
         32 => "slab-32",
         64 => "slab-64",
+        128 => "slab-128",
+        256 => "slab-256",
+        512 => "slab-512",
         _ => return None,
     };
 

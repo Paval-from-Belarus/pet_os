@@ -141,6 +141,16 @@ pub fn write(file: File, buf: UserBuf) -> fs::Result<()> {
     Ok(())
 }
 
+pub fn ioctl(file: File, cmd: u32) -> fs::Result<()> {
+    let writer = unsafe { &mut *(file.ctx::<VgaWriter>() as *mut VgaWriter) };
+    if cmd == 1 {
+        writer.clear();
+        Ok(())
+    } else {
+        Err(fs::FsError::NotSupported)
+    }
+}
+
 impl KernelModule for VgaDriver {
     fn init() -> Result<Self, ModuleError> {
         let offset = unsafe { VGA_BUFFER.buffer.as_ptr() };
@@ -168,6 +178,7 @@ impl KernelModule for VgaDriver {
         FileOperations {
             read: not_supported_read,
             write,
+            ioctl,
         }
         .into()
     }
