@@ -65,6 +65,7 @@ pub struct SuperBlock {
     pub block_size: usize,
 
     pub queue: object::Handle<Queue<FileLookupWork>>,
+    pub ctx: *const (),
     object: Object,
 }
 
@@ -73,6 +74,7 @@ impl SuperBlock {
         let queue = Queue::new_bounded(info.queue_size)?;
 
         alloc_root_object(Self {
+            ctx: info.context,
             queue,
             block_size: info.block_size,
             files: spin::Mutex::new(LinkedList::empty()),

@@ -74,11 +74,13 @@ impl KernelBuf {
     }
 
     pub fn copy_to(&self, bytes: &mut [u8]) -> Result<(), CopyError> {
-        if bytes.len() != self.len() {
-            return Err(CopyError::NoSpaceAvailable);
+        if bytes.is_empty() || self.is_empty() {
+            return Ok(());
         }
 
-        bytes.copy_from_slice(self.buf.lock().as_slice());
+        let end = usize::min(bytes.len(), self.len());
+
+        bytes[0..end].copy_from_slice(&self.as_slice()[0..end]);
 
         Ok(())
     }

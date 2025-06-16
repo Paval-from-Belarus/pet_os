@@ -78,6 +78,18 @@ impl MountPoint {
 
         self.sb.send_request(req)
     }
+
+    pub fn dir_entries(
+        &self,
+        dir_path: &str,
+    ) -> Result<Handle<FileLookupWork>> {
+        let req = FileLookupRequest::DirectoryEnries {
+            sb: self.sb.handle().into_raw(),
+            name: dir_path.to_string(),
+        };
+
+        self.sb.send_request(req)
+    }
 }
 
 impl MountPointBox {

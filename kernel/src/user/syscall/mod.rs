@@ -361,7 +361,7 @@ pub fn handle(
             let mem_buf: &MemBuf = validate_ref(ecx)?;
 
             let bytes = unsafe {
-                core::slice::from_raw_parts_mut(mem_buf.ptr, mem_buf.len)
+                core::slice::from_raw_parts_mut(mem_buf.ptr, mem_buf.capacity)
             };
 
             kernel_buf.copy_to(bytes)?;

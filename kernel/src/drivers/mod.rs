@@ -4,7 +4,9 @@ use crate::error::KernelError;
 use crate::io::InterruptableLazyCell;
 use crate::object::Handle;
 use crate::task::Event;
+use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use kernel_types::collections::LinkedList;
 pub use kernel_types::drivers::ModuleId;
 use kernel_types::drivers::ModuleKind;
@@ -13,6 +15,7 @@ pub mod api;
 mod auto_load;
 mod dev_fs;
 mod error;
+mod fat_fs;
 mod generated;
 mod loader;
 mod module_info;
@@ -81,6 +84,24 @@ impl ModuleManager {
 
 pub fn find_by_name<T: AsRef<str>>(name: T) -> Option<Arc<Module>> {
     MODULES.get().find_module_by_name(name.as_ref())
+}
+
+pub struct ModuleEntry {
+    pub name: heapless::String<12>,
+    pub status: &'static str,
+}
+
+pub fn modules() -> Vec<ModuleEntry> {
+    MODULES
+        .get()
+        .modules
+        .lock()
+        .iter()
+        .map(|m| ModuleEntry {
+            name: m.state.name.clone(),
+            status: "Ok",
+        })
+        .collect()
 }
 
 pub fn current_module() -> Option<Arc<Module>> {

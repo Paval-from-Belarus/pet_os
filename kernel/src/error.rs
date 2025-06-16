@@ -1,6 +1,9 @@
 use kernel_types::syscall::SyscallError;
 
-use crate::memory::{AllocError, PageMarkerError};
+use crate::{
+    fs,
+    memory::{AllocError, PageMarkerError},
+};
 
 #[derive(Debug, thiserror_no_std::Error)]
 pub enum KernelError {
@@ -21,6 +24,9 @@ pub enum KernelError {
 
     #[error("cast to own type from handle is invalid")]
     ManyOwners,
+
+    #[error("File system error")]
+    FsError(#[from] fs::FsError),
 }
 
 impl From<KernelError> for SyscallError {

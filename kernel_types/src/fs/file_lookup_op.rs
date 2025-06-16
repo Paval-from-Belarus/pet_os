@@ -1,4 +1,6 @@
 #![allow(unused)]
+use alloc::{string::String, vec::Vec};
+
 use crate::{
     from_variant,
     object::{OpStatus, RawHandle},
@@ -9,6 +11,11 @@ use super::IndexNodeInfo;
 
 pub enum FileLookupRequest {
     LookupNode {
+        sb: RawHandle,
+        name: alloc::string::String,
+    },
+
+    DirectoryEnries {
         sb: RawHandle,
         name: alloc::string::String,
     },
@@ -34,13 +41,19 @@ pub enum FileLookupRequest {
     },
 }
 
+pub struct DirEntriesInfo {
+    pub entries: Vec<String>,
+}
+
 pub enum FileLookupResponse {
     IndexNodeInfo(IndexNodeInfo),
+    DirEntriesInfo(DirEntriesInfo),
     Completed,
     OpStatus(OpStatus),
 }
 
 from_variant!(FileLookupResponse, IndexNodeInfo);
+from_variant!(FileLookupResponse, DirEntriesInfo);
 from_variant!(FileLookupResponse, OpStatus);
 
 impl FileLookupResponse {
@@ -49,6 +62,9 @@ impl FileLookupResponse {
             FileLookupResponse::IndexNodeInfo(node) => Ok(node),
             FileLookupResponse::Completed => Err(OpStatus::InvalidResponse),
             FileLookupResponse::OpStatus(status) => Err(status),
+            FileLookupResponse::DirEntriesInfo(_) => {
+                Err(OpStatus::InvalidResponse)
+            }
         }
     }
 
@@ -59,6 +75,20 @@ impl FileLookupResponse {
             }
             FileLookupResponse::Completed => Ok(()),
             FileLookupResponse::OpStatus(status) => Err(status),
+            FileLookupResponse::DirEntriesInfo(_) => {
+                Err(OpStatus::InvalidResponse)
+            }
+        }
+    }
+
+    pub fn dir_entries(self) -> Result<DirEntriesInfo, OpStatus> {
+        match self {
+            FileLookupResponse::IndexNodeInfo(_) => {
+                Err(OpStatus::InvalidResponse)
+            }
+            FileLookupResponse::Completed => Err(OpStatus::InvalidResponse),
+            FileLookupResponse::OpStatus(status) => Err(status),
+            FileLookupResponse::DirEntriesInfo(entries) => Ok(entries),
         }
     }
 }

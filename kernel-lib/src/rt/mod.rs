@@ -116,7 +116,7 @@ pub fn handle_char_module(
 
                 let buf = KernelBuf::from(buf);
 
-                let mut user_buf = UserBuf::new(buf.capacity());
+                let mut user_buf = UserBuf::new(buf.len());
                 buf.copy_to(&mut user_buf).unwrap();
 
                 (ops.write)(file.into(), user_buf)

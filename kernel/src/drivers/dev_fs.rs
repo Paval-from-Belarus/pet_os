@@ -1,22 +1,25 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use kernel_types::{
     drivers::ModuleKind,
     fs::{
-        FileLookupRequest, FilePermissions, FileSystem, FileSystemKind,
-        FsRequest, FsResponse, IndexNodeInfo, NodeKind, SuperBlockInfo,
+        DirEntriesInfo, FileLookupRequest, FilePermissions, FileSystem,
+        FileSystemKind, FsRequest, FsResponse, IndexNodeInfo, NodeKind,
+        SuperBlockInfo,
     },
     object::{OpStatus, RawHandle},
 };
 
 use crate::{
     current_task,
-    drivers::{self, ready_event},
+    drivers::{self, ready_event, MODULES},
     fs::{self, FileLookupWork, FsWork, SuperBlock},
     memory::VirtualAddress,
     object::Handle,
     task,
     user::queue::Queue,
 };
+
+use super::init_module;
 
 pub fn spawn_task() -> fs::Result<()> {
     let fs_info = FileSystem {
@@ -36,6 +39,8 @@ pub fn spawn_task() -> fs::Result<()> {
     .expect("Failed to spawn dev-fs task");
 
     task::submit_task(fs_task);
+
+    init_module("fat-fs", core::ptr::null(), ModuleKind::Fs, 3).unwrap();
 
     Ok(())
 }
@@ -151,11 +156,23 @@ extern "C" fn sb_task(ptr: *const ()) {
                     work.send_response(OpStatus::NotFound.into());
                 }
             }
+            FileLookupRequest::DirectoryEnries { sb, .. } => {
+                let _ = Handle::<SuperBlock>::from_raw(sb);
+                let entries = MODULES
+                    .modules
+                    .lock()
+                    .iter()
+                    .map(|m| m.state.name.to_string())
+                    .collect::<Vec<_>>();
 
-            FileLookupRequest::FlushNode { .. } => todo!(),
-            FileLookupRequest::DestroyNode { .. } => todo!(),
-            FileLookupRequest::CreateFile { .. } => todo!(),
-            FileLookupRequest::CreateDirectory { .. } => todo!(),
+                work.send_response(DirEntriesInfo { entries }.into());
+            }
+            FileLookupRequest::FlushNode { .. }
+            | FileLookupRequest::DestroyNode { .. }
+            | FileLookupRequest::CreateFile { .. }
+            | FileLookupRequest::CreateDirectory { .. } => {
+                work.send_response(OpStatus::NotSupported.into());
+            }
         }
     }
 }

@@ -62,7 +62,7 @@ impl KernelBuf {
         buf: &mut UserBuf,
     ) -> Result<(), syscall::SyscallError> {
         let mem_buf = MemBuf {
-            len: buf.capacity(),
+            len: 0,
             capacity: buf.capacity(),
             ptr: buf.as_mut_ptr(),
         };

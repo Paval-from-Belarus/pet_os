@@ -160,6 +160,10 @@ pub fn open<T: AsRef<str>>(path: T) -> Result<Handle<FileLookupWork>> {
     FILE_SYSTEMS.lookup_fs(path, |name, fs| fs.open(name))
 }
 
+pub fn dir_entries(path: &str) -> Result<Handle<FileLookupWork>> {
+    FILE_SYSTEMS.lookup_fs(path, |name, fs| fs.dir_entries(name))
+}
+
 pub fn read(
     file_handle: usize,
     buf: Handle<KernelBuf>,
