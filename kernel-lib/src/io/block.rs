@@ -1,17 +1,14 @@
 pub use kernel_types::io::block::*;
 
-use kernel_types::{
-    object::{KernelObject, RawHandle},
-    syscall,
-};
+use kernel_types::{object::RawHandle, syscall};
 
 //todo: handle hardware and software request
 //separately
 #[derive(Debug, Clone)]
 pub struct Operations {
-    read: fn(sector: u32, buf: KernelBufMut),
-    write: fn(sector: u32, buf: UserBuf),
-    ioctl: fn(u32),
+    pub read: fn(sector: u32, buf: KernelBufMut) -> Result<()>,
+    pub write: fn(sector: u32, buf: UserBuf) -> Result<()>,
+    pub ioctl: fn(u32) -> Result<()>,
 }
 
 use crate::{
@@ -28,12 +25,6 @@ pub fn register_device(device: BlockDeviceInfo) -> Result<()> {
     }
     Ok(())
 }
-
-pub fn handle_ioctl() {}
-
-pub fn handle_open() {}
-
-pub fn handle_close() {}
 
 pub struct BlockDevice;
 

@@ -1,4 +1,7 @@
-use crate::object::RawHandle;
+use crate::{
+    from_variant,
+    object::{OpStatus, RawHandle},
+};
 
 #[derive(Debug)]
 pub enum Work {
@@ -15,6 +18,7 @@ pub enum Work {
     },
 }
 
+#[derive(Debug)]
 pub struct Request {
     //unique id for device
     pub disk: usize,
@@ -29,4 +33,19 @@ pub struct BlockDeviceInfo {
     pub queue_size: usize,
 }
 
-pub enum Response {}
+#[derive(Debug, Clone)]
+pub enum Response {
+    Completed,
+    OpStatus(OpStatus),
+}
+
+impl Response {
+    pub fn status(self) -> Result<(), OpStatus> {
+        match self {
+            Response::Completed => Ok(()),
+            Response::OpStatus(status) => Err(status),
+        }
+    }
+}
+
+from_variant!(Response, OpStatus);

@@ -140,13 +140,18 @@ pub fn handle(
             match queue.kind() {
                 crate::object::Kind::BlockDeviceWork => unsafe {
                     blocking_pop(&queue, |work: Handle<BlockWork>| {
-                        let request = work.take_request();
+                        let request = work.take_request().into();
+
+                        let user_work = Work {
+                            request,
+                            handle: work.into_raw(),
+                        };
 
                         memory::switch_to_task(current_task!());
 
-                        let ptr = edx as *mut block::Request;
+                        let ptr = edx as *mut Work<block::Request>;
 
-                        ptr.write(request);
+                        ptr.write(user_work);
                     })?;
                 },
                 crate::object::Kind::FsWork => unsafe {
@@ -490,9 +495,20 @@ pub fn handle(
             let kind = unsafe { (*raw_object).kind };
 
             match kind {
-                crate::object::Kind::BlockDeviceWork => todo!(),
                 crate::object::Kind::FsWork => todo!(),
                 crate::object::Kind::FileLookupWork => todo!(),
+                crate::object::Kind::BlockDeviceWork => unsafe {
+                    let response =
+                        validate_ref::<block::Response>(ecx)?.clone();
+
+                    let handle = UserHandle::<BlockWork>::from_addr_unchecked(
+                        raw_handle,
+                    );
+
+                    log::debug!("Setting: {response:?} for {raw_handle}");
+
+                    handle.send_response(response);
+                },
                 crate::object::Kind::FileWork => unsafe {
                     let response = validate_ref::<FileResponse>(ecx)?.clone();
 

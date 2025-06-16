@@ -95,6 +95,8 @@ impl<const N: usize> IoBatch<Read, N> {
             )
             .unwrap();
 
+        self.commit()?;
+
         Ok(())
     }
 }

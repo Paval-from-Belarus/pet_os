@@ -4,4 +4,5 @@ pub enum OpStatus {
     NotFound,
     NotSupported,
     InvalidResponse,
+    NoSpace,
 }

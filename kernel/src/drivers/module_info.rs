@@ -1,18 +1,23 @@
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use kernel_macro::ListNode;
 use kernel_types::{
     collections::{BoxedNode, ListNode},
     drivers::{ModuleId, ModuleKind, UserModule},
-    object::RawHandle,
+    object::{OpStatus, RawHandle},
 };
 
 use crate::{
     current_task,
-    fs::{FileWork, FsWork},
-    io::{block, InterruptableLazyCell, ModuleIrqContext},
+    error::KernelError,
+    fs::{FileWork, FsWork, IndexNode},
+    io::{
+        block::{self, BlockWork},
+        InterruptableLazyCell, ModuleIrqContext,
+    },
     memory::{self, AllocError, Slab, SlabBox},
-    object::Handle,
-    user::queue::Queue,
+    object::{Handle, ObjectContainer},
+    task,
+    user::{kernel_buf::KernelBuf, queue::Queue},
 };
 
 use super::KERNEL_MODULE;
@@ -75,7 +80,7 @@ impl Module {
         match self.queue {
             ModuleQueue::Fs(_) => ModuleKind::Fs,
             ModuleQueue::Char(_) => ModuleKind::Char,
-            ModuleQueue::Block(_) => ModuleKind::Block,
+            ModuleQueue::Block(_, _) => ModuleKind::Block,
         }
     }
 
@@ -97,33 +102,187 @@ impl Module {
 pub enum ModuleQueue {
     Fs(Handle<Queue<FsWork>>),
     Char(Handle<Queue<FileWork>>),
-    Block(Handle<Queue<block::BlockWork>>),
+    Block(Handle<Queue<block::BlockWork>>, Handle<Queue<FileWork>>),
 }
 
 impl ModuleQueue {
-    pub fn into_raw(self) -> RawHandle {
+    pub fn into_file_queue(self) -> Option<RawHandle> {
         match self {
-            ModuleQueue::Fs(handle) => handle.into_raw(),
-            ModuleQueue::Char(handle) => handle.into_raw(),
-            ModuleQueue::Block(handle) => handle.into_raw(),
+            ModuleQueue::Fs(_) => None,
+            ModuleQueue::Char(file_queue)
+            | ModuleQueue::Block(_, file_queue) => Some(file_queue.into_raw()),
         }
     }
+}
+
+pub struct QueueExchange<TX: ObjectContainer, RX: ObjectContainer> {
+    pub tx: Handle<Queue<TX>>,
+    pub rx: Handle<Queue<RX>>,
+}
+
+pub struct BlkFile {
+    pub sector: u32,
+    pub disk_buf: Handle<KernelBuf>,
+}
+
+pub extern "C" fn blk_exchange(ctx: *const ()) {
+    log::debug!("blk_exchange #{} started", current_task!().id);
+
+    use kernel_types::fs::{FileRequest, FileResponse};
+
+    let xchg = unsafe {
+        Box::from_raw(ctx as *mut QueueExchange<block::BlockWork, FileWork>)
+    };
+
+    loop {
+        let Some(file_work) = xchg.rx.blocking_pop() else {
+            break;
+        };
+
+        match file_work.take_request() {
+            FileRequest::Command { command, .. } => {
+                let req = block::Request {
+                    disk: 0,
+                    work: block::Work::Passthrough { cmd: command },
+                };
+
+                let work =
+                    unsafe { BlockWork::new_boxed(req, &xchg.tx).unwrap() };
+
+                let work = xchg.tx.push(work);
+
+                match work.wait().unwrap().status() {
+                    Ok(_) => file_work.send_response(FileResponse::Completed),
+                    Err(status) => file_work.send_response(status.into()),
+                }
+            }
+
+            FileRequest::Read { file, buf } => {
+                let file = Handle::<IndexNode>::from_raw(file);
+                let buf = Handle::<KernelBuf>::from_raw(buf);
+
+                let ctx = unsafe { &mut *(file.ctx as *mut BlkFile) };
+
+                ctx.disk_buf.reset();
+
+                let req = block::Request {
+                    disk: 0,
+                    work: block::Work::Read {
+                        sector: ctx.sector,
+                        buffer: ctx.disk_buf.handle().into_raw(),
+                    },
+                };
+
+                let work =
+                    unsafe { BlockWork::new_boxed(req, &xchg.tx).unwrap() };
+
+                let work = xchg.tx.push(work);
+
+                match work.wait().unwrap().status() {
+                    Ok(_) => {
+                        let bytes = &ctx.disk_buf.as_slice()
+                            [0..usize::min(buf.capacity(), 512)];
+                        if buf.copy_from(bytes).is_err() {
+                            file_work.send_response(OpStatus::NoSpace.into());
+                        } else {
+                            file_work.send_response(FileResponse::Completed);
+                        }
+                    }
+                    Err(status) => {
+                        file_work.send_response(status.into());
+                    }
+                }
+
+                ctx.sector += 1;
+            }
+
+            FileRequest::Write { file, buf } => {
+                let file = Handle::<IndexNode>::from_raw(file);
+                let buf = Handle::<KernelBuf>::from_raw(buf);
+
+                let ctx = unsafe { &mut *(file.ctx as *mut BlkFile) };
+
+                ctx.disk_buf.reset();
+
+                let bytes = buf.as_slice();
+
+                ctx.disk_buf.copy_from(&bytes).unwrap();
+
+                drop(bytes);
+
+                ctx.disk_buf.fill_with(0);
+
+                let req = block::Request {
+                    disk: 0,
+                    work: block::Work::Write {
+                        sector: ctx.sector,
+                        buffer: ctx.disk_buf.handle().into_raw(),
+                    },
+                };
+
+                let work =
+                    unsafe { BlockWork::new_boxed(req, &xchg.tx).unwrap() };
+
+                let work = xchg.tx.push(work);
+                match work.wait().unwrap().status() {
+                    Ok(_) => file_work.send_response(FileResponse::Completed),
+                    Err(status) => file_work.send_response(status.into()),
+                }
+
+                ctx.sector += 1;
+            }
+        };
+    }
+}
+
+pub fn spawn_block_exchange(
+    capacity: usize,
+) -> Result<(ModuleQueue, *const ()), KernelError> {
+    let blk_q = Queue::<block::BlockWork>::new_bounded(capacity)?;
+    let file_q = Queue::<FileWork>::new_bounded(capacity)?;
+
+    let xchg_ctx = Box::try_new(QueueExchange {
+        tx: blk_q.clone(),
+        rx: file_q.clone(),
+    })?;
+
+    let file_ctx = Box::try_new(BlkFile {
+        disk_buf: KernelBuf::new(512)?,
+        sector: 0,
+    })?;
+
+    let xchg_task = task::new_task(
+        blk_exchange,
+        Box::into_raw(xchg_ctx) as *const (),
+        task::TaskPriority::Module(5),
+    )?;
+
+    task::submit_task(xchg_task);
+
+    Ok((
+        ModuleQueue::Block(blk_q, file_q),
+        Box::into_raw(file_ctx) as *const (),
+    ))
 }
 
 impl Module {
     pub fn new(
         name: &str,
-        ctx: *const (),
+        mut ctx: *const (),
         kind: ModuleKind,
         capacity: usize,
-    ) -> Result<Self, AllocError> {
+    ) -> Result<Self, KernelError> {
         let queue = match kind {
             ModuleKind::Fs => ModuleQueue::Fs(Queue::new_bounded(capacity)?),
             ModuleKind::Char => {
                 ModuleQueue::Char(Queue::new_bounded(capacity)?)
             }
             ModuleKind::Block => {
-                ModuleQueue::Block(Queue::new_bounded(capacity)?)
+                let (queue, xchg_ctx) = spawn_block_exchange(capacity)?;
+
+                ctx = xchg_ctx;
+
+                queue
             }
         };
 
@@ -153,7 +312,7 @@ impl Module {
                 ModuleQueue::Char(handle) => {
                     (handle.into_addr(), ModuleKind::Char)
                 }
-                ModuleQueue::Block(handle) => {
+                ModuleQueue::Block(handle, _) => {
                     (handle.into_addr(), ModuleKind::Block)
                 }
             }

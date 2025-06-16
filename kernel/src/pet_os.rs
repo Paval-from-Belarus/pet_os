@@ -133,8 +133,21 @@ extern "C" fn init_task(_args: *const ()) {
 
     let input = fs::open("/dev/keybrd").unwrap();
 
+    let disk = fs::open("/dev/ata").unwrap();
+
     let input = fs::resolve(input).expect("Failed to resolve keyboard");
     let output = fs::resolve(output).expect("Failed to resolve vga");
+
+    let disk = fs::resolve(disk).expect("Failed to open disk");
+
+    let buf = KernelBuf::new(100).unwrap();
+
+    let work = fs::read(disk, buf.clone()).unwrap();
+    work.wait().unwrap().status().unwrap();
+
+    log::debug!("Read from file: {:x?}", *buf.as_slice());
+    let show_work = fs::write(output, buf.clone()).unwrap();
+    show_work.wait().unwrap().status().unwrap();
 
     let buf = KernelBuf::new(1).unwrap();
 

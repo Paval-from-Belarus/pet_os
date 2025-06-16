@@ -21,30 +21,7 @@ kernel_lib::module! {
 
 pub struct AtaDriver;
 
-fn handle_request(request: block::Request) -> io::Result<()> {
-    match request.work {
-        block::Work::Read { sector, mut buffer } => {}
-
-        block::Work::Write { sector, mut buffer } => {
-            assert!(buffer.size() % 512 == 0);
-
-            let sector_count = buffer.size() / 512;
-
-            for i in 0..sector_count {
-                let sector = sector + i as u32;
-                ide::write_sector(0, request.disk as u8, sector, &buffer)?;
-
-                buffer.move_bytes(512).unwrap();
-            }
-
-            Ok(())
-        }
-
-        block::Work::Passthrough { .. } => Err(io::Error::NotSupported),
-    }
-}
-
-fn read(sector: u32, mut buffer: KernelBufMut) -> io::Result<()> {
+fn handle_read(sector: u32, mut buffer: KernelBufMut) -> io::Result<()> {
     assert!(buffer.remaining_capacity() % 512 == 0);
 
     let sector_count = buffer.remaining_capacity() / 512;
@@ -57,10 +34,12 @@ fn read(sector: u32, mut buffer: KernelBufMut) -> io::Result<()> {
     Ok(())
 }
 
-fn write(sector: u32, buf: UserBuf) -> io::Result<()> {}
-
-fn ioctl(cmd: u32) -> io::Result<()> {
+fn handle_write(_sector: u32, _buf: UserBuf) -> io::Result<()> {
     todo!()
+}
+
+fn ioctl(_cmd: u32) -> io::Result<()> {
+    Err(io::IoError::NotSupported)
 }
 
 impl KernelModule for AtaDriver {
@@ -77,6 +56,11 @@ impl KernelModule for AtaDriver {
     }
 
     fn ops() -> kernel_lib::ModuleOperations {
-        block::Operations { write, read, ioctl }.into()
+        block::Operations {
+            write: handle_write,
+            read: handle_read,
+            ioctl,
+        }
+        .into()
     }
 }

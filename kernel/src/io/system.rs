@@ -239,7 +239,8 @@ pub extern "x86-interrupt" fn page_fault(
     let code = PageFaultError(code as u32);
 
     log_module! {
-        "Page Fault ({access_address:X}): {code:?} at IP={:X} CS={:X}\n",
+        "[Task#{}] Page Fault ({access_address:X}): {code:?} at IP={:X} CS={:X}\n",
+        current_task!().id,
         frame.ip,
         frame.cs
     };

@@ -135,12 +135,14 @@ extern "C" fn sb_task(ptr: *const ()) {
                         ModuleKind::Block => NodeKind::Block,
                     };
 
+                    let queue = module.queue.clone().into_file_queue().unwrap();
+
                     let inode_info = IndexNodeInfo {
                         id: module.id as _,
                         size: 0,
                         ctx: module.file_ctx(),
                         kind: node_kind,
-                        queue: module.queue.clone().into_raw(),
+                        queue,
                         permissions: FilePermissions::READ_WRITE,
                     };
 

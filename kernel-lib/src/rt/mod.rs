@@ -4,14 +4,14 @@ use kernel_types::{
     drivers::{ModuleKind, UserModule},
     fs::{FileRequest, FileResponse, FsRequest, Work},
     io::block,
-    object::Queue,
+    object::{OpStatus, Queue},
     syscall,
 };
 
 use crate::{
     fs::{FileOperations, FsError, SuperBlockOperations},
     io::block::Operations,
-    object::{KernelBuf, UserBuf, UserBufMut},
+    object::{KernelBuf, KernelBufMut, UserBuf, UserBufMut},
     process,
 };
 
@@ -126,7 +126,7 @@ pub fn handle_char_module(
         match status {
             Ok(_) => work.send_response(FileResponse::Completed).unwrap(),
             Err(cause) => {
-                work.send_response(FileResponse::Status(cause.into()))
+                work.send_response(FileResponse::OpStatus(cause.into()))
                     .unwrap();
             }
         }
@@ -146,12 +146,40 @@ pub fn handle_fs_module(
 
 pub fn handle_block_module(
     queue: Queue<Work<block::Request>>,
-    _ops: Operations,
+    ops: Operations,
 ) {
     loop {
-        let Some(_request) = queue.blocking_recv() else {
+        let Some(mut work) = queue.blocking_recv() else {
             break;
         };
+
+        let req = work.request.take().unwrap();
+
+        log::debug!("Next blk req: {req:?}");
+
+        let status = match req.work {
+            block::Work::Read { sector, buffer } => {
+                let buf = KernelBufMut::from(buffer);
+
+                (ops.read)(sector, buf)
+            }
+            block::Work::Write { sector, buffer } => {
+                let buf = KernelBuf::from(buffer);
+
+                let mut user_buf = UserBuf::new(buf.capacity());
+                buf.copy_to(&mut user_buf).unwrap();
+
+                (ops.write)(sector, user_buf)
+            }
+            block::Work::Passthrough { cmd } => (ops.ioctl)(cmd),
+        };
+
+        match status {
+            Ok(_) => work.send_response(block::Response::Completed).unwrap(),
+            Err(status) => work
+                .send_response(block::Response::OpStatus(status.into()))
+                .unwrap(),
+        }
     }
 }
 

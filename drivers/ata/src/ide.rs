@@ -1,5 +1,8 @@
 #![allow(unused)]
-use kernel_lib::io::{self, IoTransaction, KernelBuf, KernelBufMut};
+use kernel_lib::{
+    io::{self, IoBatch},
+    object::{KernelBuf, KernelBufMut},
+};
 
 pub const ATA_PRIMARY: u8 = 0x0;
 pub const ATA_SECONDARY: u8 = 0x01;
@@ -109,7 +112,7 @@ pub fn read_sector(
 
     let command = if drive == ATA_MASTER { 0xE0 } else { 0xF0 };
 
-    IoTransaction::new_write()
+    IoBatch::new_write()
         .port_u8(
             io_base + ATA_REG_HDDEVSEL,
             command | (lba >> 24 & 0x0F) as u8,
@@ -125,7 +128,7 @@ pub fn read_sector(
 
     poll(io_base)?;
 
-    IoTransaction::new_read().port_to_buf(io_base + ATA_REG_DATA, buffer)?;
+    IoBatch::new_read().port_to_buf(io_base + ATA_REG_DATA, buffer)?;
 
     delay(io_base)?;
 
@@ -144,8 +147,7 @@ fn poll(io_base: u16) -> io::Result<()> {
     delay(io_base)?;
 
     loop {
-        let status =
-            IoTransaction::new_read().port_u8(io_base + ATA_REG_STATUS)?;
+        let status = IoBatch::new_read().port_u8(io_base + ATA_REG_STATUS)?;
 
         if (status & ATA_SR_BSY) == 0 {
             break;
@@ -153,8 +155,7 @@ fn poll(io_base: u16) -> io::Result<()> {
     }
 
     loop {
-        let status =
-            IoTransaction::new_read().port_u8(io_base + ATA_REG_STATUS)?;
+        let status = IoBatch::new_read().port_u8(io_base + ATA_REG_STATUS)?;
 
         if (status & ATA_SR_ERR) != 0 {
             panic!("ata-device err is set. device failure");
@@ -168,7 +169,7 @@ fn poll(io_base: u16) -> io::Result<()> {
     Ok(())
 }
 fn delay(io_base: u16) -> io::Result<()> {
-    let _ = IoTransaction::new_read().port_u8(io_base + ATA_REG_ALTSTATUS)?;
+    let _ = IoBatch::new_read().port_u8(io_base + ATA_REG_ALTSTATUS)?;
 
     Ok(())
 }

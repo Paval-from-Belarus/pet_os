@@ -16,6 +16,7 @@ pub struct IndexNodeInfo {
     pub ctx: *const (),
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum NodeKind {
     File,
     Block,

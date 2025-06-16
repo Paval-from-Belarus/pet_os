@@ -1,10 +1,13 @@
-use crate::object::{OpStatus, RawHandle};
+use crate::{
+    from_variant,
+    object::{OpStatus, RawHandle},
+};
 
 use super::NodeId;
 
 #[derive(Debug)]
 pub enum FileRequest {
-    Command { file: RawHandle, command: usize },
+    Command { file: RawHandle, command: u32 },
     Read { file: RawHandle, buf: RawHandle },
     Write { file: RawHandle, buf: RawHandle },
 }
@@ -12,15 +15,17 @@ pub enum FileRequest {
 #[derive(Debug, Clone)]
 pub enum FileResponse {
     File(NodeId),
-    Status(OpStatus),
+    OpStatus(OpStatus),
     Completed,
 }
+
+from_variant!(FileResponse, OpStatus);
 
 impl FileResponse {
     pub fn file(self) -> Result<NodeId, OpStatus> {
         match self {
             FileResponse::File(id) => Ok(id),
-            FileResponse::Status(status) => Err(status),
+            FileResponse::OpStatus(status) => Err(status),
             FileResponse::Completed => Err(OpStatus::InvalidResponse),
         }
     }
@@ -28,7 +33,7 @@ impl FileResponse {
     pub fn status(self) -> Result<(), OpStatus> {
         match self {
             FileResponse::File(_) => Err(OpStatus::InvalidResponse),
-            FileResponse::Status(status) => Err(status),
+            FileResponse::OpStatus(status) => Err(status),
             FileResponse::Completed => Ok(()),
         }
     }

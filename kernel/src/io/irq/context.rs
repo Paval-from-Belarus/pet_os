@@ -38,7 +38,7 @@ pub enum ContextError {
     RustAllocFailed(#[from] alloc::alloc::AllocError),
 }
 
-const RESERVED_EVENTS_COUNT: usize = 20;
+const RESERVED_EVENTS_COUNT: usize = 7;
 
 impl ModuleIrqContext {
     pub fn new(

@@ -95,7 +95,7 @@ impl From<RawHandle> for KernelBufMut {
 
 impl KernelBufMut {
     pub fn remaining_capacity(&self) -> usize {
-        self.len
+        self.capacity
     }
 
     pub fn handle(&self) -> &RawHandle {

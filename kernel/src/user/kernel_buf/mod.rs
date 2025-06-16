@@ -33,6 +33,10 @@ impl KernelBuf {
         Ok(handle)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.buf.lock().is_empty()
+    }
+
     pub fn len(&self) -> usize {
         self.buf.lock().len()
     }
@@ -51,6 +55,22 @@ impl KernelBuf {
         &'a self,
     ) -> impl core::ops::Deref<Target = Vec<u8>> + 'a {
         self.buf.lock()
+    }
+
+    pub fn as_slice_mut<'a>(
+        &'a self,
+    ) -> impl core::ops::DerefMut<Target = Vec<u8>> + 'a {
+        self.buf.lock()
+    }
+
+    pub fn fill_with(&self, v: u8) {
+        let remaining = self.remaining_capacity();
+
+        let mut buf = self.buf.lock();
+
+        for _ in 0..remaining {
+            buf.push(v);
+        }
     }
 
     pub fn copy_to(&self, bytes: &mut [u8]) -> Result<(), CopyError> {

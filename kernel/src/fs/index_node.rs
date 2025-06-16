@@ -9,6 +9,7 @@ use kernel_types::{
 use crate::{
     common::time::Timestamp,
     impl_container,
+    io::block::BlockWork,
     memory::{self, AllocError, Slab, SlabBox},
     object::{self, Handle, Object, ObjectContainer, UserHandle},
     user::queue::Queue,

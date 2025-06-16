@@ -279,9 +279,13 @@ pub fn set_irq(
 pub const KERNEL_TRAP_SIZE: usize =
     4 * 2 + 8 * 4 + mem::size_of::<InterruptStackFrame>() + 4 + 4 * 2;
 
-pub fn start_op_tx() {}
+pub fn start_op_tx() {
+    log::debug!("JIT started");
+}
 
-pub fn end_op_tx() {}
+pub fn end_op_tx() {
+    log::debug!("JIT ended");
+}
 
 pub unsafe fn interpretate_op(op: &IoOperation) {
     use kernel_types::io::PortOperation;
@@ -308,10 +312,18 @@ pub unsafe fn interpretate_op(op: &IoOperation) {
                 let buf: UserHandle<KernelBuf> =
                     unsafe { UserHandle::from_addr_unchecked(*buf) };
 
-                for _ in 0..buf.remaining_capacity() {
+                let len = buf.remaining_capacity();
+
+                let mut bytes = buf.as_slice_mut();
+
+                for _ in 0..len {
                     let byte = inb(*port);
-                    buf.copy_from(&[byte]).unwrap();
+                    bytes.push(byte);
                 }
+
+                drop(bytes);
+
+                log::debug!("buf size = {}", buf.len());
             }
         },
         IoOperation::MemoryOperation(_) => todo!(),
