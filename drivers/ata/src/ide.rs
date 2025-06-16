@@ -1,7 +1,7 @@
 #![allow(unused)]
 use kernel_lib::{
     io::{self, IoBatch},
-    object::{KernelBuf, KernelBufMut},
+    object::{KernelBuf, KernelBufMut, UserBufMut},
 };
 
 pub const ATA_PRIMARY: u8 = 0x0;
@@ -128,7 +128,7 @@ pub fn read_sector(
 
     poll(io_base)?;
 
-    IoBatch::new_read().port_to_buf(io_base + ATA_REG_DATA, buffer)?;
+    IoBatch::new_read().port_u16_to_buf(io_base + ATA_REG_DATA, buffer)?;
 
     delay(io_base)?;
 

@@ -29,6 +29,7 @@ fn handle_read(sector: u32, mut buffer: KernelBufMut) -> io::Result<()> {
     for i in 0..sector_count {
         let sector = sector + i as u32;
         ide::read_sector(0, 0, sector, &mut buffer)?;
+        // buffer.flush()?;
     }
 
     Ok(())

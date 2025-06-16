@@ -80,14 +80,34 @@ impl<const N: usize> IoBatch<Read, N> {
         Ok(v)
     }
 
-    pub fn port_to_buf(
+    pub fn port_u8_to_buf(
         &mut self,
         port: u16,
         buf: &mut KernelBufMut,
     ) -> io::Result<()> {
         self.ops
             .push(
-                PortOperation::ReadToBuf {
+                PortOperation::ReadBytesToBuf {
+                    port,
+                    buf: unsafe { buf.handle().syscall() },
+                }
+                .into(),
+            )
+            .unwrap();
+
+        self.commit()?;
+
+        Ok(())
+    }
+
+    pub fn port_u16_to_buf(
+        &mut self,
+        port: u16,
+        buf: &mut KernelBufMut,
+    ) -> io::Result<()> {
+        self.ops
+            .push(
+                PortOperation::ReadWordsToBuf {
                     port,
                     buf: unsafe { buf.handle().syscall() },
                 }

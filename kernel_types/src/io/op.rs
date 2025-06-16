@@ -17,7 +17,8 @@ pub enum PortOperation {
     ReadByte { port: u16, value: *mut u8 },
     ReadWord { port: u16, value: *mut u16 },
 
-    ReadToBuf { port: u16, buf: usize },
+    ReadBytesToBuf { port: u16, buf: usize },
+    ReadWordsToBuf { port: u16, buf: usize },
 }
 
 #[derive(Debug, Clone)]

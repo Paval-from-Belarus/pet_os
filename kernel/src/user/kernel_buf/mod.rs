@@ -84,6 +84,10 @@ impl KernelBuf {
     }
 
     pub fn copy_from(&self, bytes: &[u8]) -> Result<(), CopyError> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+
         let mut buf = self.buf.lock();
 
         if buf.capacity() - buf.len() >= bytes.len() {

@@ -308,7 +308,7 @@ pub unsafe fn interpretate_op(op: &IoOperation) {
                 let read_word = inw(*port);
                 value.write_volatile(read_word);
             }
-            PortOperation::ReadToBuf { port, buf } => {
+            PortOperation::ReadBytesToBuf { port, buf } => {
                 let buf: UserHandle<KernelBuf> =
                     unsafe { UserHandle::from_addr_unchecked(*buf) };
 
@@ -324,6 +324,19 @@ pub unsafe fn interpretate_op(op: &IoOperation) {
                 drop(bytes);
 
                 log::debug!("buf size = {}", buf.len());
+            }
+            PortOperation::ReadWordsToBuf { port, buf } => {
+                let buf: UserHandle<KernelBuf> =
+                    unsafe { UserHandle::from_addr_unchecked(*buf) };
+
+                let len = buf.remaining_capacity() / 2;
+
+                let mut bytes = buf.as_slice_mut();
+
+                for _ in 0..len {
+                    let w = unsafe { inw(*port) };
+                    bytes.extend_from_slice(&w.to_le_bytes());
+                }
             }
         },
         IoOperation::MemoryOperation(_) => todo!(),

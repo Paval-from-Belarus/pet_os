@@ -140,7 +140,7 @@ extern "C" fn init_task(_args: *const ()) {
 
     let disk = fs::resolve(disk).expect("Failed to open disk");
 
-    let buf = KernelBuf::new(100).unwrap();
+    let buf = KernelBuf::new(512).unwrap();
 
     let work = fs::read(disk, buf.clone()).unwrap();
     work.wait().unwrap().status().unwrap();
