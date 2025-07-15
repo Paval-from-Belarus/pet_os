@@ -1,0 +1,21 @@
+[workspace]
+members = ["ata", "fat", "keyboard", "vga"]
+
+resolver = "2"
+
+[profile.release]
+lto = true
+panic = "abort"
+strip = "debuginfo"
+incremental = true
+codegen-units = 1
+opt-level = 3
+debug = false
+
+[profile.dev]
+panic = "abort"
+debug = false
+
+[workspace.dependencies]
+kernel-lib = { path = "../kernel-lib" }
+log = "0.4"

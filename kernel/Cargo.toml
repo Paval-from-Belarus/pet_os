@@ -1,0 +1,53 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/pet_os.rs"
+
+[dependencies]
+thiserror-no-std = { workspace = true }
+spin = { workspace = true }
+static_assertions = { workspace = true }
+
+volatile = { workspace = true }
+bitfield = { workspace = true }
+
+paste = { workspace = true }
+num_enum = { workspace = true }
+fallible_collections = { workspace = true }
+
+crc = { workspace = true }
+strum_macros = { workspace = true }
+kernel-macro = { workspace = true }
+kernel-types = { workspace = true }
+
+multiboot2 = { workspace = true }
+multiboot = { workspace = true }
+heapless = { workspace = true }
+log = { workspace = true }
+elf = { version = "0.7.4", default-features = false, features = [] }
+bitflags = "2.9.0"
+bitvec = { git = "https://github.com/ferrilab/ferrilab", default-features = false, features = [
+    "atomic",
+] }
+atomic_enum = "0.3.0"
+talc = "4.4.3"
+# format_no_std = "1.2.0"
+##generic-array = { version = "1.0.0", features = ["const-default"]}
+
+#failure = { version = "0.1", features = ["failure_derive"], default-features = false }
+#static_assertions = "1.1.0"
+#volatile = "0.2.6"
+#bitfield = "0.14.0"
+#paste = "1.0.14"
+#num_enum = { version = "0.7.0", default-features = false }
+#fallible_collections = { version = "0.4.9", features = ["hashbrown"] }
+#kernel-macro = { path = "../kernel_macro" }
+#kernel-types = { path = "../kernel_types" }
+#strum = "0.25.0"
+[features]
+default = ["grub"]
+grub = []

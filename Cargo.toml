@@ -1,21 +1,40 @@
-[package]
-name = "pet_os"
-version = "0.1.0"
-edition = "2021"
-[lib]
-crate-type = ["staticlib"]
-path = "src/pet_os.rs"
-#build-std = ["core", "compiler_builtins"]
-#[dependencies]
-#compiler_builtins = { version = "0.1.101", features = ["mem"] }
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[dependencies]
-failure = {version = "0.1", features = ["failure_derive"], default-features = false}
+[workspace]
+members = ["kernel_macro", "kernel_types", "kernel", "kernel-lib"]
+
+exclude = ["drivers"]
+
+resolver = "2"
+
+[profile.release]
+lto = true
+panic = "abort"
+strip = "debuginfo"
+incremental = true
+codegen-units = 1
+opt-level = 3
+debug = false
+
+[workspace.dependencies]
+kernel-types = { path = "kernel_types" }
+kernel-macro = { path = "kernel_macro" }
+
+spin = "0.9.8"
+strum_macros = { version = "0.25.0" }
+thiserror-no-std = { version = "2.0.2" }
+crc = "3.0.1"
 static_assertions = "1.1.0"
-volatile = "0.2.6"#don't remove such dependency
-lazy_static = { version = "1.2.0", features = ["spin_no_std"] }
+volatile = "0.2.6"
 bitfield = "0.14.0"
+pc-keyboard = "0.7.0"
+paste = "1.0.14"
+num_enum = { version = "0.7.2", default-features = false }
+fallible_collections = { version = "0.4.9", features = ["hashbrown"] }
+elf_rs = { version = "0.3.1" }
+multiboot2 = { version = "0.23" }
+multiboot = { version = "0.8" }
+log = { version = "0.4.20" }
+heapless = { version = "0.7", default-features = false }
+#generic-array = { version = "1.0.0", features = ["const-default"]}
 #bitflags = "2.3.3"
-#spin = "0.8.0" #newest version is not available for old archietectures
 ##alloca = "0.3.4"
 #impl_ops = "0.1.1"

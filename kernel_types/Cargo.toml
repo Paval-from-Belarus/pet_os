@@ -1,0 +1,22 @@
+[package]
+name = "kernel-types"
+version = "0.1.0"
+edition = "2021"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+num_enum = { workspace = true }
+thiserror-no-std = { workspace = true }
+static_assertions = { workspace = true }
+fallible_collections = { workspace = true }
+bitfield = { workspace = true }
+paste = { workspace = true }
+log.workspace = true
+bitflags = "2.9.0"
+heapless.workspace = true
+typenum = "1.18.0"
+generic-array = "1.2.0"
+
+
+[features]
+default = ["alloc"]
+alloc = []

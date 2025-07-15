@@ -1,1 +1,11 @@
-/target
+.idea
+.vscode
+.idea/**/*
+.vscode/**/*
+**/target
+**/Cargo.lock
+Cargo.lock
+*.iml
+**/*.o
+Makefile
+logs

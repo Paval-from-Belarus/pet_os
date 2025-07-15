@@ -2,7 +2,14 @@
 # https://rust-lang.github.io/rustup/overrides.html
 
 [toolchain]
-channel = "nightly"
-# equals to rust nightly 1.54 as of the release day 2021-05-10
+channel = "nightly-2025-02-13"
+
 targets = ["i686-unknown-linux-gnu"]
-components = [ "rust-src", "rustc", "cargo"]
+components = [
+    "rust-src",
+    "rustc",
+    "cargo",
+    "rust-std",
+    "clippy",
+    "rust_analyzer",
+]
